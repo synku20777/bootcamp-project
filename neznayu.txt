@@ -1,0 +1,21 @@
+For global, country-level COVID-19 epidemiological data, use a recent Kaggle mirror of the World Bank World Development Indicators (WDI)—preferably “World Bank Indicators (1960–Present)” or “World Development Indicators 1960–2024.” These versions provide country-year panels and ISO-3 country codes, making them substantially easier to merge than wide, country-name-only datasets.
+
+automate EDA=automate ingestion and cleanup
+napisat pyspark kotorij delaet injest i cleanup to the bronze level
+
+kogda commit isort, black, ruff na githube
+proveyat code quality
+
+napishi v readme how to deploy
+
+hochu s UV.lock i s toml, pyproject vse dependency smenegirovany
+isolated and operable in vse enviroments
+
+github actions: v branche on commit progonyat code quality unit test, resolvit piton version
+
+
+.env example snowflake mongo db i td i tp
+
+v dockere proizvodi: deploy mongo db, run pyspark gde-to, fast api
+
+

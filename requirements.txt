@@ -1,8 +1,0 @@
-fastapi
-uvicorn[standard]
-pymongo
-redis
-pandas
-requests
-python-dotenv
-snowflake-connector-python[pandas] 

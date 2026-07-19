@@ -1,9 +1,7 @@
 .env
 .venv/
 __pycache__/
-outputs/
-.agents/
 *.pyc
 .pytest_cache/
-neznayu.txt
-tasks.md
+.ruff_cache/
+outputs/
