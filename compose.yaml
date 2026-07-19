@@ -1,0 +1,98 @@
+name: covid-platform
+
+services:
+  api:
+    build:
+      context: .
+      dockerfile: Dockerfile
+
+    container_name: covid_api
+
+    env_file:
+      - .env
+
+    environment:
+      MONGODB_URI: >-
+        mongodb://${MONGO_ROOT_USERNAME}:${MONGO_ROOT_PASSWORD}@mongo:27017/${MONGO_DATABASE}?authSource=admin
+      REDIS_URL: redis://redis:6379/0
+
+    command:
+      - uvicorn
+      - app.main:app
+      - --host
+      - 0.0.0.0
+      - --port
+      - "8000"
+      - --reload
+
+    ports:
+      - "8000:8000"
+
+    volumes:
+      - .:/app
+
+    depends_on:
+      mongo:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+
+    restart: unless-stopped
+
+  mongo:
+    image: mongo:7.0
+
+    container_name: covid_mongo
+
+    environment:
+      MONGO_INITDB_ROOT_USERNAME: ${MONGO_ROOT_USERNAME}
+      MONGO_INITDB_ROOT_PASSWORD: ${MONGO_ROOT_PASSWORD}
+      MONGO_INITDB_DATABASE: ${MONGO_DATABASE}
+
+    ports:
+      - "127.0.0.1:27017:27017"
+
+    volumes:
+      - mongo_data:/data/db
+
+    healthcheck:
+      test:
+        [
+          "CMD-SHELL",
+          'mongosh --quiet --username $$MONGO_INITDB_ROOT_USERNAME --password $$MONGO_INITDB_ROOT_PASSWORD --authenticationDatabase admin --eval "quit(db.adminCommand({ ping: 1 }).ok ? 0 : 1)"',
+        ]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+      start_period: 10s
+
+    restart: unless-stopped
+
+  redis:
+    image: redis:7.4-alpine
+
+    container_name: covid_redis
+
+    command:
+      - redis-server
+      - --appendonly
+      - "yes"
+
+    volumes:
+      - redis_data:/data
+
+    healthcheck:
+      test:
+        - CMD
+        - redis-cli
+        - ping
+      interval: 5s
+      timeout: 3s
+      retries: 10
+      start_period: 5s
+
+    restart: unless-stopped
+
+volumes:
+  mongo_data:
+  redis_data:

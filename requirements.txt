@@ -1,4 +1,8 @@
+fastapi
+uvicorn[standard]
+pymongo
+redis
 pandas
 requests
-snowflake-connector-python[pandas]
 python-dotenv
+snowflake-connector-python[pandas] 
