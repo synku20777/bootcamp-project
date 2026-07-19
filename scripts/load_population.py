@@ -10,7 +10,6 @@ import snowflake.connector
 from dotenv import load_dotenv
 from snowflake.connector.pandas_tools import write_pandas
 
-
 WORLD_BANK_BASE_URL = "https://api.worldbank.org/v2"
 POPULATION_YEAR = 2020
 
@@ -30,9 +29,7 @@ def request_world_bank_data(
     payload = response.json()
 
     if not isinstance(payload, list) or len(payload) < 2:
-        raise RuntimeError(
-            f"Unexpected World Bank response for endpoint: {endpoint}"
-        )
+        raise RuntimeError(f"Unexpected World Bank response for endpoint: {endpoint}")
 
     return payload[1] or []
 
@@ -50,8 +47,7 @@ def build_population_dataframe() -> pd.DataFrame:
     valid_countries = {
         country["iso2Code"]: country
         for country in country_metadata
-        if country.get("iso2Code")
-        and country.get("region", {}).get("id") != "NA"
+        if country.get("iso2Code") and country.get("region", {}).get("id") != "NA"
     }
 
     population_records = request_world_bank_data(
@@ -112,16 +108,10 @@ def connect_to_snowflake() -> snowflake.connector.SnowflakeConnection:
         "SNOWFLAKE_SCHEMA",
     ]
 
-    missing = [
-        variable
-        for variable in required_variables
-        if not os.getenv(variable)
-    ]
+    missing = [variable for variable in required_variables if not os.getenv(variable)]
 
     if missing:
-        raise RuntimeError(
-            f"Missing environment variables: {', '.join(missing)}"
-        )
+        raise RuntimeError(f"Missing environment variables: {', '.join(missing)}")
 
     print(
         "Connecting to Snowflake account:",
@@ -158,8 +148,7 @@ def main() -> None:
     try:
         cursor = connection.cursor()
 
-        cursor.execute(
-            """
+        cursor.execute("""
             CREATE OR REPLACE TABLE
                 COVID_ANALYTICS.RAW.WORLD_BANK_POPULATION_2020
             (
@@ -169,8 +158,7 @@ def main() -> None:
                 POPULATION NUMBER(38, 0),
                 POPULATION_YEAR NUMBER(4, 0)
             )
-            """
-        )
+            """)
 
         success, chunks, rows, _ = write_pandas(
             connection,
@@ -184,10 +172,7 @@ def main() -> None:
         if not success:
             raise RuntimeError("write_pandas reported an unsuccessful load.")
 
-        print(
-            f"Loaded {rows} rows into Snowflake "
-            f"using {chunks} upload chunk(s)."
-        )
+        print(f"Loaded {rows} rows into Snowflake " f"using {chunks} upload chunk(s).")
 
     finally:
         connection.close()

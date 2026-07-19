@@ -6,7 +6,6 @@ from fastapi import FastAPI, HTTPException
 from pymongo import MongoClient
 from redis import Redis
 
-
 app = FastAPI(
     title="COVID-19 Analytics API",
     description="API for the COVID-19 data engineering project.",

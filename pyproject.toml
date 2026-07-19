@@ -1,0 +1,32 @@
+[project]
+name = "covid-platform"
+version = "0.1.0"
+
+[tool.black]
+line-length = 88
+target-version = ["py312"]
+
+
+[tool.isort]
+profile = "black"
+line_length = 88
+py_version = 312
+skip_gitignore = true
+
+
+[tool.ruff]
+line-length = 88
+target-version = "py312"
+
+
+[tool.ruff.lint]
+select = [
+    "E4",
+    "E7",
+    "E9",
+    "F",
+    "W",
+    "B",
+    "UP",
+]
+

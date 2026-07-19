@@ -50,7 +50,6 @@ def main() -> None:
                     AS ROWS_WITHOUT_POPULATION
             FROM COVID_ANALYTICS.MARTS.COVID_ENRICHED
         """,
-
         "missing_population": """
             SELECT DISTINCT
                 COUNTRY,
@@ -59,7 +58,6 @@ def main() -> None:
             WHERE POPULATION IS NULL
             ORDER BY COUNTRY
         """,
-
         "data_corrections": """
             SELECT
                 COUNTRY,
@@ -73,7 +71,6 @@ def main() -> None:
                 OR NEGATIVE_DEATH_CORRECTIONS > 0
             ORDER BY NEGATIVE_CASE_CORRECTIONS DESC
         """,
-
         "latest_country_metrics": """
             SELECT
                 COUNTRY,
@@ -103,10 +100,7 @@ def main() -> None:
             output_path = output_directory / f"{report_name}.csv"
             dataframe.to_csv(output_path, index=False)
 
-            print(
-                f"Created {output_path} "
-                f"with {len(dataframe)} rows."
-            )
+            print(f"Created {output_path} " f"with {len(dataframe)} rows.")
     finally:
         connection.close()
 
