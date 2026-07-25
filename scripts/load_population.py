@@ -122,7 +122,7 @@ def connect_to_snowflake() -> snowflake.connector.SnowflakeConnection:
         account=os.environ["SNOWFLAKE_ACCOUNT"],
         user=os.environ["SNOWFLAKE_USER"],
         password=os.environ["SNOWFLAKE_PASSWORD"],
-        role=os.getenv("SNOWFLAKE_ROLE", "ACCOUNTADMIN"),
+        role=os.getenv("SNOWFLAKE_ROLE", "COVID_PROJECT_ADMIN"),
         warehouse=os.environ["SNOWFLAKE_WAREHOUSE"],
         database=os.environ["SNOWFLAKE_DATABASE"],
         schema=os.environ["SNOWFLAKE_SCHEMA"],

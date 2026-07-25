@@ -13,7 +13,7 @@ def connect_to_snowflake() -> snowflake.connector.SnowflakeConnection:
         account=os.environ["SNOWFLAKE_ACCOUNT"],
         user=os.environ["SNOWFLAKE_USER"],
         password=os.environ["SNOWFLAKE_PASSWORD"],
-        role=os.getenv("SNOWFLAKE_ROLE", "ACCOUNTADMIN"),
+        role=os.getenv("SNOWFLAKE_ROLE", "COVID_PROJECT_ADMIN"),
         warehouse=os.environ["SNOWFLAKE_WAREHOUSE"],
         database="COVID_ANALYTICS",
         schema="MARTS",
@@ -53,10 +53,12 @@ def main() -> None:
         "missing_population": """
             SELECT DISTINCT
                 COUNTRY,
-                COUNTRY_CODE
+                COUNTRY_ISO2,
+                COUNTRY_ISO3,
+                POPULATION_JOIN_STATUS
             FROM COVID_ANALYTICS.MARTS.COVID_ENRICHED
             WHERE POPULATION IS NULL
-            ORDER BY COUNTRY
+            ORDER BY POPULATION_JOIN_STATUS, COUNTRY
         """,
         "data_corrections": """
             SELECT
