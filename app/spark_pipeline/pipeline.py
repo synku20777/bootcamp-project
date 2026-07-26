@@ -16,7 +16,9 @@ from pyspark.sql import DataFrame, SparkSession
 from pyspark.sql import functions as F
 
 from app.spark_pipeline.benchmark import (
+    FINGERPRINT_PROTOCOL,
     BenchmarkRunner,
+    CorrectnessOutputs,
     directory_metrics,
     layout_decision,
     parse_event_logs,
@@ -50,10 +52,25 @@ class QualityFailure(SparkPipelineError):
 
 def _write_json(path: Path, payload: dict[str, Any]) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(
-        json.dumps(payload, indent=2, sort_keys=True, default=str),
-        encoding="utf-8",
-    )
+    path.write_text(_json_document(payload), encoding="utf-8")
+
+
+def _json_document(payload: dict[str, Any]) -> str:
+    return json.dumps(payload, indent=2, sort_keys=True, default=str)
+
+
+def _document_sha256(payload: dict[str, Any]) -> str:
+    return hashlib.sha256(_json_document(payload).encode("utf-8")).hexdigest()
+
+
+def _write_json_atomic(path: Path, payload: dict[str, Any]) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    staging = path.parent / f".{path.name}.staging-{uuid4().hex}"
+    try:
+        staging.write_text(_json_document(payload), encoding="utf-8")
+        staging.replace(path)
+    finally:
+        staging.unlink(missing_ok=True)
 
 
 def _file_sha256(path: Path) -> str:
@@ -88,6 +105,7 @@ def create_spark_session(
         .config("spark.sql.adaptive.coalescePartitions.enabled", "true")
         .config("spark.sql.adaptive.advisoryPartitionSizeInBytes", 1024 * 1024)
         .config("spark.sql.shuffle.partitions", 32)
+        .config("spark.sql.session.timeZone", "UTC")
         .config("spark.sql.autoBroadcastJoinThreshold", -1)
         .config("spark.eventLog.enabled", "true")
         .config("spark.eventLog.dir", event_log_directory.resolve().as_uri())
@@ -111,6 +129,7 @@ def _schema_failure_quality(
     *,
     headers: dict[str, dict[str, Any]],
     source_batch_id: str,
+    source_batch_sha256: str,
     ingestion_id: str,
 ) -> dict[str, Any]:
     checks = [
@@ -123,15 +142,48 @@ def _schema_failure_quality(
         }
         for name, result in headers.items()
     ]
+    return _quality_document(
+        assessment={
+            "ruleset_version": QUALITY_RULESET_VERSION,
+            "status": "FAIL",
+            "checks": checks,
+        },
+        source_batch_id=source_batch_id,
+        source_batch_sha256=source_batch_sha256,
+        ingestion_id=ingestion_id,
+        headers=headers,
+        profiles={},
+        publication={"bronze": False, "curated": False},
+    )
+
+
+def _quality_document(
+    *,
+    assessment: dict[str, Any],
+    source_batch_id: str,
+    source_batch_sha256: str,
+    ingestion_id: str,
+    headers: dict[str, dict[str, Any]],
+    profiles: dict[str, dict[str, Any]],
+    publication: dict[str, bool],
+) -> dict[str, Any]:
     return {
+        **assessment,
         "ruleset_version": QUALITY_RULESET_VERSION,
-        "status": "FAIL",
         "source_batch_id": source_batch_id,
+        "source_batch_sha256": source_batch_sha256,
         "ingestion_id": ingestion_id,
         "headers": headers,
-        "profiles": {},
-        "checks": checks,
-        "publication": {"bronze": False, "curated": False},
+        "profiles": profiles,
+        "publication": publication,
+    }
+
+
+def _quality_summary(quality: dict[str, Any]) -> dict[str, str]:
+    return {
+        "ruleset_version": str(quality["ruleset_version"]),
+        "status": str(quality["status"]),
+        "quality_document_sha256": _document_sha256(quality),
     }
 
 
@@ -185,6 +237,7 @@ def _publish_bronze(
     source_files: dict[str, Any],
     ingestion_id: str,
     spark_application_id: str,
+    quality_summary: dict[str, str],
 ) -> Path:
     target = bronze_root / f"ingestion_id={ingestion_id}"
     if target.exists():
@@ -202,13 +255,14 @@ def _publish_bronze(
         _write_json(
             staging / "manifest.json",
             {
-                "manifest_version": 1,
+                "manifest_version": 2,
                 "source_batch_id": source_batch_id,
                 "source_batch_sha256": source_batch_sha256,
                 "source_files": source_files,
                 "ingestion_id": ingestion_id,
                 "spark_application_id": spark_application_id,
                 "datasets": list(frames),
+                "quality_summary": quality_summary,
             },
         )
         staging.replace(target)
@@ -239,9 +293,12 @@ def _count_action(dataframe: DataFrame) -> Any:
     return action
 
 
-def _projection_actions(ecdc: DataFrame) -> tuple[Any, Any]:
-    full = ecdc
-    projected = ecdc.select(
+def _single_output(name: str, dataframe: DataFrame) -> CorrectnessOutputs:
+    return CorrectnessOutputs({name: dataframe})
+
+
+def _projected_input(ecdc: DataFrame) -> DataFrame:
+    return ecdc.select(
         "COUNTRY_REGION",
         "ISO3166_1",
         "REPORT_DATE",
@@ -249,29 +306,41 @@ def _projection_actions(ecdc: DataFrame) -> tuple[Any, Any]:
         "DEATHS",
     ).where(F.col("COUNTRY_REGION").isNotNull() & F.col("REPORT_DATE").isNotNull())
 
-    def aggregate(dataframe: DataFrame) -> dict[str, Any]:
-        row = dataframe.agg(
-            F.count(F.lit(1)).alias("rows"),
-            F.sum(F.coalesce("CASES", F.lit(0))).alias("cases"),
-            F.sum(F.coalesce("DEATHS", F.lit(0))).alias("deaths"),
-        ).first()
+
+def _projection_result(dataframe: DataFrame) -> DataFrame:
+    return dataframe.agg(
+        F.count(F.lit(1)).alias("rows"),
+        F.sum(F.coalesce("CASES", F.lit(0))).alias("cases"),
+        F.sum(F.coalesce("DEATHS", F.lit(0))).alias("deaths"),
+    )
+
+
+def _projection_action(dataframe: DataFrame) -> Any:
+    def action() -> dict[str, Any]:
+        row = _projection_result(dataframe).first()
         return {
             "row_count": int(row["rows"]),
             "column_count": len(dataframe.columns),
             "partitions": dataframe.rdd.getNumPartitions(),
         }
 
-    return lambda: aggregate(full), lambda: aggregate(projected)
+    return action
 
 
-def _aqe_action(ecdc: DataFrame, spark: SparkSession, *, enabled: bool) -> Any:
-    def action() -> dict[str, Any]:
-        spark.conf.set("spark.sql.adaptive.enabled", str(enabled).lower())
-        aggregation = (
-            ecdc.select("COUNTRY_REGION", "REPORT_DATE", "CASES", "DEATHS")
-            .groupBy("COUNTRY_REGION", "REPORT_DATE")
-            .agg(F.sum("CASES"), F.sum("DEATHS"))
+def _duplicate_aggregation(ecdc: DataFrame) -> DataFrame:
+    return (
+        ecdc.select("COUNTRY_REGION", "REPORT_DATE", "CASES", "DEATHS")
+        .groupBy("COUNTRY_REGION", "REPORT_DATE")
+        .agg(
+            F.sum("CASES").alias("cases"),
+            F.sum("DEATHS").alias("deaths"),
         )
+    )
+
+
+def _aqe_action(ecdc: DataFrame) -> Any:
+    def action() -> dict[str, Any]:
+        aggregation = _duplicate_aggregation(ecdc)
         row_count = aggregation.count()
         return {
             "row_count": row_count,
@@ -281,20 +350,68 @@ def _aqe_action(ecdc: DataFrame, spark: SparkSession, *, enabled: bool) -> Any:
     return action
 
 
+def _cache_input(ecdc: DataFrame) -> DataFrame:
+    return ecdc.select("COUNTRY_REGION", "REPORT_DATE", "CASES", "DEATHS")
+
+
+def _cache_results(reused: DataFrame) -> dict[str, DataFrame]:
+    return {
+        "totals": reused.agg(
+            F.sum("CASES").alias("cases"),
+            F.sum("DEATHS").alias("deaths"),
+        ),
+        "country_counts": reused.groupBy("COUNTRY_REGION")
+        .count()
+        .select(
+            F.col("COUNTRY_REGION").alias("country"),
+            F.col("count").cast("long").alias("row_count"),
+        ),
+    }
+
+
 def _cache_action(ecdc: DataFrame, *, cache_enabled: bool) -> Any:
     def action() -> dict[str, Any]:
-        reused = ecdc.select("COUNTRY_REGION", "REPORT_DATE", "CASES", "DEATHS")
+        reused = _cache_input(ecdc)
         if cache_enabled:
             reused = reused.persist(StorageLevel.MEMORY_AND_DISK)
             reused.count()
-        reused.agg(F.sum("CASES"), F.sum("DEATHS")).collect()
-        reused.groupBy("COUNTRY_REGION").count().collect()
-        partitions = reused.rdd.getNumPartitions()
-        if cache_enabled:
-            reused.unpersist()
-        return {"partitions": partitions, "reuse_count": 2}
+        try:
+            for dataframe in _cache_results(reused).values():
+                dataframe.collect()
+            return {
+                "partitions": reused.rdd.getNumPartitions(),
+                "reuse_count": 2,
+            }
+        finally:
+            if cache_enabled:
+                reused.unpersist()
 
     return action
+
+
+def _cache_correctness(ecdc: DataFrame, *, cache_enabled: bool) -> CorrectnessOutputs:
+    reused = _cache_input(ecdc)
+    if cache_enabled:
+        reused = reused.persist(StorageLevel.MEMORY_AND_DISK)
+        reused.count()
+    cleanup = reused.unpersist if cache_enabled else (lambda: None)
+    return CorrectnessOutputs(_cache_results(reused), cleanup)
+
+
+def _write_dataframe(
+    dataframe: DataFrame,
+    target: Path,
+    *,
+    partitions: int,
+    repartition: bool,
+) -> dict[str, int]:
+    output = (
+        dataframe.repartition(partitions)
+        if repartition
+        else dataframe.coalesce(partitions)
+    )
+    output.write.mode("error").parquet(str(target))
+    return directory_metrics(target)
 
 
 def _write_action(
@@ -306,17 +423,40 @@ def _write_action(
 ) -> Any:
     def action() -> dict[str, Any]:
         target = root / uuid4().hex
-        output = (
-            dataframe.repartition(partitions)
-            if repartition
-            else dataframe.coalesce(partitions)
-        )
-        output.write.mode("error").parquet(str(target))
-        metrics = directory_metrics(target)
-        shutil.rmtree(target)
-        return {**metrics, "partitions": partitions}
+        try:
+            metrics = _write_dataframe(
+                dataframe,
+                target,
+                partitions=partitions,
+                repartition=repartition,
+            )
+            return {**metrics, "partitions": partitions}
+        finally:
+            shutil.rmtree(target, ignore_errors=True)
 
     return action
+
+
+def _write_correctness(
+    spark: SparkSession,
+    dataframe: DataFrame,
+    root: Path,
+    *,
+    partitions: int,
+    repartition: bool,
+) -> CorrectnessOutputs:
+    target = root / f"correctness-{uuid4().hex}"
+    _write_dataframe(
+        dataframe,
+        target,
+        partitions=partitions,
+        repartition=repartition,
+    )
+    read_back = spark.read.parquet(str(target))
+    return CorrectnessOutputs(
+        {"parquet_read_back": read_back},
+        lambda: shutil.rmtree(target, ignore_errors=True),
+    )
 
 
 def _calibrate_layout(dataframe: DataFrame, root: Path) -> dict[str, Any]:
@@ -350,13 +490,18 @@ def _benchmark_suite(
     frames: dict[str, DataFrame],
     *,
     benchmark_run_id: str,
-    scratch_root: Path,
+    run_output: Path,
 ) -> tuple[list[dict[str, Any]], DataFrame, dict[str, Any], dict[str, Any]]:
-    runner = BenchmarkRunner(spark, benchmark_run_id)
+    scratch_root = run_output / "benchmark_scratch"
+    runner = BenchmarkRunner(
+        spark,
+        benchmark_run_id,
+        run_output / "correctness_failure.json",
+    )
     ecdc = frames["ecdc"]
     mapping = frames["mapping"]
     population = frames["population"]
-    projection_before, projection_after = _projection_actions(ecdc)
+    projected_ecdc = _projected_input(ecdc)
 
     baseline_daily = normalized_daily(ecdc, mapping, broadcast_mapping=False)
     optimized_daily = normalized_daily(ecdc, mapping, broadcast_mapping=True)
@@ -374,23 +519,41 @@ def _benchmark_suite(
     benchmarks = [
         runner.compare(
             name="early_projection_filter",
-            before=projection_before,
-            after=projection_after,
+            before=_projection_action(ecdc),
+            after=_projection_action(projected_ecdc),
+            correctness_before=lambda: _single_output(
+                "aggregate", _projection_result(ecdc)
+            ),
+            correctness_after=lambda: _single_output(
+                "aggregate", _projection_result(projected_ecdc)
+            ),
         ),
         runner.compare(
             name="broadcast_joins",
             before=_count_action(baseline_enriched),
             after=_count_action(optimized_enriched),
+            correctness_before=lambda: _single_output("enriched", baseline_enriched),
+            correctness_after=lambda: _single_output("enriched", optimized_enriched),
         ),
         runner.compare(
             name="adaptive_duplicate_aggregation",
-            before=_aqe_action(ecdc, spark, enabled=False),
-            after=_aqe_action(ecdc, spark, enabled=True),
+            before=_aqe_action(ecdc),
+            after=_aqe_action(ecdc),
+            correctness_before=lambda: _single_output(
+                "duplicate_aggregation", _duplicate_aggregation(ecdc)
+            ),
+            correctness_after=lambda: _single_output(
+                "duplicate_aggregation", _duplicate_aggregation(ecdc)
+            ),
+            before_configuration={"spark.sql.adaptive.enabled": "false"},
+            after_configuration={"spark.sql.adaptive.enabled": "true"},
         ),
         runner.compare(
             name="reused_frame_cache",
             before=_cache_action(ecdc, cache_enabled=False),
             after=_cache_action(ecdc, cache_enabled=True),
+            correctness_before=lambda: _cache_correctness(ecdc, cache_enabled=False),
+            correctness_after=lambda: _cache_correctness(ecdc, cache_enabled=True),
         ),
     ]
     spark.conf.set("spark.sql.adaptive.enabled", "true")
@@ -419,6 +582,20 @@ def _benchmark_suite(
                 repartition=True,
             ),
             after=_write_action(
+                optimized_enriched,
+                scratch_root,
+                partitions=layout["target_file_count"],
+                repartition=False,
+            ),
+            correctness_before=lambda: _write_correctness(
+                spark,
+                optimized_enriched,
+                scratch_root,
+                partitions=8,
+                repartition=True,
+            ),
+            correctness_after=lambda: _write_correctness(
+                spark,
                 optimized_enriched,
                 scratch_root,
                 partitions=layout["target_file_count"],
@@ -518,8 +695,9 @@ def _sanitized_evidence(
         for name, plan in plans.items()
     }
     return {
-        "evidence_version": 1,
+        "evidence_version": 2,
         "generated_at_utc": datetime.now(UTC).isoformat(),
+        "fingerprint_protocol": FINGERPRINT_PROTOCOL,
         "environment": environment,
         "source_batch": {
             "source_batch_id": source_manifest["source_batch_id"],
@@ -539,6 +717,7 @@ def _sanitized_evidence(
         "quality": {
             "ruleset_version": quality["ruleset_version"],
             "status": quality["status"],
+            "quality_document_sha256": quality["quality_document_sha256"],
         },
         "layout": layout,
         "plans": compact_plans,
@@ -553,15 +732,20 @@ def _sanitized_evidence(
     }
 
 
-def _quality_for_ingestion(output_root: Path, ingestion_id: str) -> dict[str, str]:
-    for path in sorted(output_root.glob("*/quality.json"), reverse=True):
-        payload = json.loads(path.read_text(encoding="utf-8"))
-        if payload.get("ingestion_id") == ingestion_id:
-            return {
-                "ruleset_version": payload["ruleset_version"],
-                "status": payload["status"],
-            }
-    raise SparkPipelineError("No quality result exists for the Bronze ingestion.")
+def _quality_from_bronze_manifest(manifest: dict[str, Any]) -> dict[str, str]:
+    if manifest.get("manifest_version") != 2:
+        raise SparkPipelineError(
+            "Benchmark-only mode requires Bronze manifest version 2."
+        )
+    quality = manifest.get("quality_summary")
+    if not isinstance(quality, dict):
+        raise SparkPipelineError("Bronze manifest has no quality summary.")
+    required = {"ruleset_version", "status", "quality_document_sha256"}
+    if not required.issubset(quality):
+        raise SparkPipelineError("Bronze quality summary is incomplete.")
+    if quality["status"] not in {"PASS", "WARN"}:
+        raise SparkPipelineError("Bronze quality status does not permit benchmarking.")
+    return {name: str(quality[name]) for name in sorted(required)}
 
 
 def run_ingest_profile(
@@ -630,14 +814,19 @@ def run_ingest_profile(
             frames,
             normalized_duplicate_count=normalized_duplicates,
         )
-        quality = {
-            **assessment,
-            "source_batch_id": source_batch_id,
-            "ingestion_id": ingestion_id,
-            "headers": headers,
-            "profiles": profiles,
-            "publication": {"bronze": True, "curated": assessment["status"] != "FAIL"},
-        }
+        quality = _quality_document(
+            assessment=assessment,
+            source_batch_id=source_batch_id,
+            source_batch_sha256=source_manifest["batch_sha256"],
+            ingestion_id=ingestion_id,
+            headers=headers,
+            profiles=profiles,
+            publication={
+                "bronze": True,
+                "curated": assessment["status"] != "FAIL",
+            },
+        )
+        quality_summary = _quality_summary(quality)
         _publish_bronze(
             frames,
             bronze_root=bronze_root,
@@ -646,6 +835,7 @@ def run_ingest_profile(
             source_files=source_manifest["files"],
             ingestion_id=ingestion_id,
             spark_application_id=environment["spark_application_id"],
+            quality_summary=quality_summary,
         )
         _write_json(quality_path, quality)
         if assessment["status"] == "FAIL":
@@ -655,7 +845,7 @@ def run_ingest_profile(
             spark,
             frames,
             benchmark_run_id=benchmark_run_id,
-            scratch_root=run_output / "benchmark_scratch",
+            run_output=run_output,
         )
         curated_metrics = _write_curated(
             curated,
@@ -695,10 +885,10 @@ def run_ingest_profile(
         benchmarks=benchmarks,
         layout=layout,
         plans=plans,
-        quality=quality,
+        quality=quality_summary,
         cold_end_to_end_ms=cold_end_to_end_ms,
     )
-    _write_json(evidence_path, evidence)
+    _write_json_atomic(evidence_path, evidence)
     logger.info(
         "spark_ingest_profile_completed",
         extra={
@@ -723,6 +913,7 @@ def run_benchmark(
     bronze_manifest = json.loads(
         (ingestion_directory / "manifest.json").read_text(encoding="utf-8")
     )
+    quality = _quality_from_bronze_manifest(bronze_manifest)
     run_output = output_root / benchmark_run_id
     if run_output.exists():
         raise FileExistsError(f"Benchmark run already exists: {benchmark_run_id}")
@@ -738,7 +929,7 @@ def run_benchmark(
             spark,
             frames,
             benchmark_run_id=benchmark_run_id,
-            scratch_root=run_output / "benchmark_scratch",
+            run_output=run_output,
         )
     finally:
         for frame in frames.values():
@@ -753,7 +944,6 @@ def run_benchmark(
         "batch_sha256": bronze_manifest["source_batch_sha256"],
         "files": bronze_manifest["source_files"],
     }
-    quality = _quality_for_ingestion(output_root, ingestion_id)
     cold_end_to_end_ms = round((time.perf_counter() - started) * 1000, 3)
     evidence = _sanitized_evidence(
         environment=environment,
@@ -767,4 +957,4 @@ def run_benchmark(
         cold_end_to_end_ms=cold_end_to_end_ms,
     )
     _write_json(run_output / "optimization_metrics.json", evidence)
-    _write_json(evidence_path, evidence)
+    _write_json_atomic(evidence_path, evidence)

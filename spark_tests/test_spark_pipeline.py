@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 import tempfile
 import unittest
 from datetime import UTC, datetime
@@ -9,6 +10,7 @@ from pyspark.sql import SparkSession
 from pyspark.sql import types as T
 
 from app.spark_pipeline.benchmark import layout_decision, plan_evidence
+from app.spark_pipeline.pipeline import _publish_bronze, _quality_summary
 from app.spark_pipeline.quality import inspect_header, read_bronze_source
 from app.spark_pipeline.schemas import ECDC
 from app.spark_pipeline.transformations import (
@@ -212,6 +214,40 @@ class SparkPipelineTests(unittest.TestCase):
                 encoding="utf-8",
             )
             self.assertFalse(inspect_header(source, ECDC.headers)["matches"])
+
+    def test_bronze_manifest_v2_contains_quality_provenance(self) -> None:
+        quality = {
+            "ruleset_version": "bronze-quality-v1",
+            "status": "WARN",
+            "checks": [],
+        }
+        quality_summary = _quality_summary(quality)
+        dataframe = self.spark.createDataFrame(
+            [("value", None)],
+            "value string, _corrupt_record string",
+        )
+        with tempfile.TemporaryDirectory() as temporary_directory:
+            root = Path(temporary_directory)
+            target = _publish_bronze(
+                {
+                    "ecdc": dataframe,
+                    "population": dataframe,
+                    "mapping": dataframe,
+                },
+                bronze_root=root,
+                source_batch_id="source-v1",
+                source_batch_sha256="a" * 64,
+                source_files={},
+                ingestion_id="bronze-v1",
+                spark_application_id="local-fixture",
+                quality_summary=quality_summary,
+            )
+            manifest = json.loads(
+                (target / "manifest.json").read_text(encoding="utf-8")
+            )
+
+            self.assertEqual(manifest["manifest_version"], 2)
+            self.assertEqual(manifest["quality_summary"], quality_summary)
 
 
 if __name__ == "__main__":

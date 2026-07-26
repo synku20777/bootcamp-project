@@ -653,6 +653,8 @@ and broadcast-joins typed population keys such as `ISO2:LV`.
 Bronze is written to `data/bronze/ingestion_id=bronze-v1/`; successful curated
 output is written to `data/curated/ingestion_id=bronze-v1/`; local quality,
 event-log, plan, and benchmark artifacts go to `outputs/spark/benchmark-v1/`.
+Both the ingestion and benchmark IDs are immutable, so choose unused IDs when
+repeating the commands.
 
 The `bronze-quality-v1` rules have deterministic publication behavior:
 
@@ -664,7 +666,9 @@ The `bronze-quality-v1` rules have deterministic publication behavior:
 
 Schema failures publish only quality evidence. Other failures publish Bronze
 and quarantine evidence but block curated output. Warnings permit curated
-publication.
+publication. Bronze manifest version 2 stores the ruleset, quality status, and
+quality-document checksum, allowing later benchmarks to run without retaining
+the original benchmark output directory.
 
 ### 3. Repeat benchmarks without rewriting Bronze
 
@@ -676,14 +680,25 @@ docker compose --profile spark run --rm spark benchmark \
 
 Each comparison performs one warm-up and five measured repetitions in one JVM,
 alternating variant order. Results include individual durations, median, range,
-input and shuffle bytes, partitions, and output file counts.
+input and shuffle bytes, partitions, and output file counts. Before timing, both
+variants must pass an exact correctness gate covering ordered schema, row count,
+and an order-independent SHA-256 row-multiset checksum. Correctness work is not
+included in benchmark durations.
+
+If a gate fails, the run exits nonzero and writes a sanitized
+`correctness_failure.json` inside that run's output directory. Warm-up and
+measured actions are skipped, and the committed evidence file is unchanged.
+Benchmark-only mode requires Bronze manifest version 2; legacy version 1
+ingestions must be recreated from their local immutable source batch.
 
 Final file count is derived from measured Parquet bytes with a 128 MiB target.
 Year/month directories are used only when monthly partitions are sufficiently
 large and bounded in cardinality. This dataset should remain unpartitioned and
 coalesce to one file.
 
-Only `reports/spark/evidence.json` is committed. Raw Marketplace extracts,
+Only a completely passing suite atomically publishes
+`reports/spark/evidence.json`. Evidence version 2 records the fingerprint
+protocol and a passing correctness block for all five comparisons. Raw Marketplace extracts,
 Parquet data, event logs, complete plans, and scratch output remain ignored.
 The summary contains source and plan hashes without credentials, account names,
 SQL, raw rows, or local paths.
