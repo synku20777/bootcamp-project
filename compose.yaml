@@ -149,6 +149,36 @@ services:
 
     restart: unless-stopped
 
+  spark:
+    profiles:
+      - spark
+
+    build:
+      context: .
+      dockerfile: dockerfile.spark
+
+    environment:
+      LOG_LEVEL: ${LOG_LEVEL:-INFO}
+      SPARK_LOCAL_IP: 127.0.0.1
+
+    entrypoint:
+      - python
+      - -m
+      - scripts.run_spark_bronze
+
+    volumes:
+      - ./app:/app/app:ro
+      - ./scripts:/app/scripts:ro
+      - ./spark_tests:/app/spark_tests:ro
+      - ./data:/app/data
+      - ./outputs:/app/outputs
+      - ./reports/spark:/app/reports/spark
+
+    deploy:
+      resources:
+        limits:
+          memory: 3G
+
 volumes:
   mongo_data:
   redis_data:

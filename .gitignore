@@ -8,3 +8,10 @@ outputs/
 .vscode/
 *.egg-info/
 ahdsd.md
+reports/*
+.docx
+data/source/
+data/bronze/
+data/curated/
+!reports/spark/
+!reports/spark/**

@@ -606,6 +606,95 @@ Results are written to the ignored `outputs/eda/` directory:
 - `data_corrections.csv`
 - `latest_country_metrics.csv`
 
+## PySpark Bronze and profiling demonstration
+
+Spark is isolated from the production API. At the current approximately
+61,900-row scale, pandas or Snowflake SQL are simpler and cheaper; this path
+demonstrates explicit schemas, immutable Bronze storage, quality rules,
+broadcast joins, physical-plan inspection, and measured layout decisions.
+
+The pinned runtime is Python 3.12.13, PySpark 3.5.6, Java 17.0.19, and uv
+0.11.29. Normal API containers do not contain Java or PySpark. The optional
+Spark service runs one local application with two execution threads through
+`local[2]`.
+
+### 1. Export one reusable source batch
+
+Complete the Snowflake setup, load population data, and configure `.env` for
+the project-admin role. Then run:
+
+```bash
+uv run python scripts/export_spark_sources.py \
+  --source-batch-id ecdc-2020-v1
+```
+
+This is the only Spark workflow step that contacts Snowflake. It opens one
+connection, executes two required-column statements, copies the local
+population snapshot, and writes `data/source/ecdc-2020-v1/`. Its manifest
+contains row counts, byte counts, and SHA-256 checksums. Existing batch IDs are
+never overwritten.
+
+### 2. Build and run the pinned Spark container
+
+```bash
+docker compose --profile spark build spark
+
+docker compose --profile spark run --rm spark ingest-profile \
+  --source-batch-id ecdc-2020-v1 \
+  --ingestion-id bronze-v1 \
+  --benchmark-run-id benchmark-v1
+```
+
+The job validates exact headers, applies explicit schemas, preserves all input
+and corrupt records in immutable Bronze Parquet, profiles each source,
+aggregates duplicate normalized country/date rows, applies null-safe mappings,
+and broadcast-joins typed population keys such as `ISO2:LV`.
+
+Bronze is written to `data/bronze/ingestion_id=bronze-v1/`; successful curated
+output is written to `data/curated/ingestion_id=bronze-v1/`; local quality,
+event-log, plan, and benchmark artifacts go to `outputs/spark/benchmark-v1/`.
+
+The `bronze-quality-v1` rules have deterministic publication behavior:
+
+- Schema drift, corrupt input, missing required values, invalid ISO lengths,
+  duplicate mapping/population keys, and non-positive population are failures.
+- Null daily measures, duplicate normalized dates, and recoverable missing ISO
+  values are warnings.
+- Negative cases and deaths are informational corrections and remain unchanged.
+
+Schema failures publish only quality evidence. Other failures publish Bronze
+and quarantine evidence but block curated output. Warnings permit curated
+publication.
+
+### 3. Repeat benchmarks without rewriting Bronze
+
+```bash
+docker compose --profile spark run --rm spark benchmark \
+  --ingestion-id bronze-v1 \
+  --benchmark-run-id benchmark-v2
+```
+
+Each comparison performs one warm-up and five measured repetitions in one JVM,
+alternating variant order. Results include individual durations, median, range,
+input and shuffle bytes, partitions, and output file counts.
+
+Final file count is derived from measured Parquet bytes with a 128 MiB target.
+Year/month directories are used only when monthly partitions are sufficiently
+large and bounded in cardinality. This dataset should remain unpartitioned and
+coalesce to one file.
+
+Only `reports/spark/evidence.json` is committed. Raw Marketplace extracts,
+Parquet data, event logs, complete plans, and scratch output remain ignored.
+The summary contains source and plan hashes without credentials, account names,
+SQL, raw rows, or local paths.
+
+Run the Spark fixture suite with:
+
+```bash
+uv sync --locked --group spark
+uv run --group spark python -m unittest discover -s spark_tests -v
+```
+
 ## Code quality and CI
 
 Install the Git hook once:
@@ -642,6 +731,7 @@ checks on every push and pull request.
 |   |-- models/                         # Pydantic response contracts
 |   |-- repositories/                   # Snowflake and MongoDB access
 |   |-- services/                       # Cache, analytics, annotations
+|   |-- spark_pipeline/                 # Bronze, profiling, transformations
 |   |-- config.py                       # Typed environment settings
 |   |-- logging_config.py               # Structured JSON logging
 |   `-- main.py                         # FastAPI factory and lifespan
@@ -649,8 +739,10 @@ checks on every push and pull request.
 |   `-- world_bank_population_2020.csv  # Population snapshot
 |-- scripts/
 |   |-- clear_cache.py                   # Prefix-scoped Redis invalidation
+|   |-- export_spark_sources.py          # Snowflake -> immutable local batch
 |   |-- load_population.py              # World Bank -> CSV/Snowflake
 |   |-- run_eda.py                       # Snowflake mart -> CSV reports
+|   |-- run_spark_bronze.py              # Spark ingest/profile/benchmark CLI
 |   `-- setup_mongodb.py                 # Annotation collection and indexes
 |-- sql/
 |   |-- 00_project_setup.sql             # Monitor, warehouse, DB, schemas
@@ -667,6 +759,7 @@ checks on every push and pull request.
 |-- tests/                              # Focused API, cache, repository tests
 |-- compose.yaml                         # API, dashboard, MongoDB, Redis
 |-- dockerfile                          # API image
+|-- dockerfile.spark                    # Pinned Java/PySpark image
 |-- pyproject.toml                       # Project metadata and dependencies
 `-- uv.lock                              # Resolved dependency lockfile
 ```

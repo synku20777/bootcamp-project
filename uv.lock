@@ -219,6 +219,9 @@ dev = [
     { name = "pre-commit" },
     { name = "ruff" },
 ]
+spark = [
+    { name = "pyspark" },
+]
 
 [package.metadata]
 requires-dist = [
@@ -242,6 +245,7 @@ dev = [
     { name = "pre-commit", specifier = "==4.6.0" },
     { name = "ruff", specifier = "==0.15.22" },
 ]
+spark = [{ name = "pyspark", specifier = "==3.5.6" }]
 
 [[package]]
 name = "cryptography"
@@ -646,6 +650,15 @@ wheels = [
 ]
 
 [[package]]
+name = "py4j"
+version = "0.10.9.7"
+source = { registry = "https://pypi.org/simple" }
+sdist = { url = "https://files.pythonhosted.org/packages/1e/f2/b34255180c72c36ff7097f7c2cdca02abcbd89f5eebf7c7c41262a9a0637/py4j-0.10.9.7.tar.gz", hash = "sha256:0b6e5315bb3ada5cf62ac651d107bb2ebc02def3dee9d9548e3baac644ea8dbb", size = 1508234, upload-time = "2022-08-12T22:49:09.792Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/10/30/a58b32568f1623aaad7db22aa9eafc4c6c194b429ff35bdc55ca2726da47/py4j-0.10.9.7-py2.py3-none-any.whl", hash = "sha256:85defdfd2b2376eb3abf5ca6474b51ab7e0de341c75a02f46dc9b5976f5a5c1b", size = 200481, upload-time = "2022-08-12T22:49:07.05Z" },
+]
+
+[[package]]
 name = "pyarrow"
 version = "25.0.0"
 source = { registry = "https://pypi.org/simple" }
@@ -770,6 +783,15 @@ sdist = { url = "https://files.pythonhosted.org/packages/74/b7/da07bae88f5a9506b
 wheels = [
     { url = "https://files.pythonhosted.org/packages/54/18/1dd71c9b43192ab83f1d531ad6002dc81108ac36c475f79fb7a295abe2f4/pyopenssl-26.3.0-py3-none-any.whl", hash = "sha256:46367f8f66b92271e6d218da9c87607e1ef5a0bc5c8dea5bb3db82f395c385a3", size = 56008, upload-time = "2026-06-12T20:28:05.999Z" },
 ]
+
+[[package]]
+name = "pyspark"
+version = "3.5.6"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "py4j" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/2e/62/36e50d38e5fe158e97cddec983b44f9417b1e205b02320e3c463b5f802fa/pyspark-3.5.6.tar.gz", hash = "sha256:f8b1c4360e41ab398c64904fae08740503bcb6bd389457d659fa6d9f2952cc48", size = 317359167, upload-time = "2025-05-27T08:24:20.82Z" }
 
 [[package]]
 name = "python-dateutil"

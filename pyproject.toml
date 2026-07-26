@@ -27,6 +27,9 @@ dev = [
     "pre-commit==4.6.0",
     "ruff==0.15.22",
 ]
+spark = [
+    "pyspark==3.5.6",
+]
 
 
 [build-system]
