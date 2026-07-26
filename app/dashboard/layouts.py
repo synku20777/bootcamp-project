@@ -9,6 +9,15 @@ from app.models.covid import Metric
 
 DEFAULT_START_DATE = date(2020, 3, 1)
 DEFAULT_END_DATE = date(2020, 12, 14)
+DATE_DISPLAY_FORMAT = "YYYY-MM-DD"
+ERROR_STATE = "error"
+NEUTRAL_STATE = "neutral"
+LOADING_TYPE = "circle"
+CONTROL_CLASS = "control"
+WIDE_CONTROL_CLASS = "control control--wide"
+CONTROL_PANEL_CLASS = "control-panel"
+CONTROL_BUTTON_CLASS = "secondary-button control-button"
+RETRY_DATA_LABEL = "Retry data"
 
 
 def status_badge(label: str, state: str, detail: str) -> html.Div:
@@ -28,11 +37,11 @@ def status_badge(label: str, state: str, detail: str) -> html.Div:
     )
 
 
-def alert(message: str, state: str = "error") -> html.Div:
+def alert(message: str, state: str = ERROR_STATE) -> html.Div:
     return html.Div(
         message,
         className=f"alert alert--{state}",
-        role="alert" if state == "error" else "status",
+        role="alert" if state == ERROR_STATE else "status",
     )
 
 
@@ -50,11 +59,11 @@ def page_heading(eyebrow: str, title: str, description: str) -> html.Header:
 def loading_panel(component_id: str) -> dcc.Loading:
     return dcc.Loading(
         html.Div(
-            status_badge("Loading", "neutral", "Waiting for page data"),
+            status_badge("Loading", NEUTRAL_STATE, "Waiting for page data"),
             id=component_id,
             **{"aria-live": "polite"},
         ),
-        type="circle",
+        type=LOADING_TYPE,
     )
 
 
@@ -76,12 +85,12 @@ def status_page(public_api_base_url: str) -> html.Div:
                                 html.Div(
                                     status_badge(
                                         "Checking",
-                                        "neutral",
+                                        NEUTRAL_STATE,
                                         "Confirming process liveness",
                                     ),
                                     id="api-live-status",
                                 ),
-                                type="circle",
+                                type=LOADING_TYPE,
                             ),
                             html.A(
                                 "Open Swagger documentation",
@@ -99,12 +108,12 @@ def status_page(public_api_base_url: str) -> html.Div:
                                 html.Div(
                                     status_badge(
                                         "Not checked",
-                                        "neutral",
+                                        NEUTRAL_STATE,
                                         "No warehouse query made",
                                     ),
                                     id="snowflake-status-view",
                                 ),
-                                type="circle",
+                                type=LOADING_TYPE,
                             ),
                             html.Button(
                                 "Check Snowflake",
@@ -136,7 +145,7 @@ def overview_page() -> html.Div:
                 "Latest cumulative outcomes and population-normalized impact.",
             ),
             html.Button(
-                "Retry data",
+                RETRY_DATA_LABEL,
                 id="overview-retry",
                 n_clicks=0,
                 className="secondary-button",
@@ -208,7 +217,7 @@ def country_page(catalog_state: dict[str, Any] | None) -> html.Div:
                                 disabled=not options,
                             ),
                         ],
-                        className="control",
+                        className=CONTROL_CLASS,
                     ),
                     html.Label(
                         [
@@ -226,7 +235,7 @@ def country_page(catalog_state: dict[str, Any] | None) -> html.Div:
                                 clearable=False,
                             ),
                         ],
-                        className="control",
+                        className=CONTROL_CLASS,
                     ),
                     html.Label(
                         [
@@ -235,19 +244,19 @@ def country_page(catalog_state: dict[str, Any] | None) -> html.Div:
                                 id="country-date-range",
                                 start_date=DEFAULT_START_DATE,
                                 end_date=DEFAULT_END_DATE,
-                                display_format="YYYY-MM-DD",
+                                display_format=DATE_DISPLAY_FORMAT,
                             ),
                         ],
-                        className="control control--wide",
+                        className=WIDE_CONTROL_CLASS,
                     ),
                     html.Button(
-                        "Retry data",
+                        RETRY_DATA_LABEL,
                         id="country-retry",
                         n_clicks=0,
-                        className="secondary-button control-button",
+                        className=CONTROL_BUTTON_CLASS,
                     ),
                 ],
-                className="control-panel",
+                className=CONTROL_PANEL_CLASS,
             ),
             loading_panel("country-content"),
         ]
@@ -285,7 +294,7 @@ def comparison_page(catalog_state: dict[str, Any] | None) -> html.Div:
                                 disabled=not options,
                             ),
                         ],
-                        className="control control--wide",
+                        className=WIDE_CONTROL_CLASS,
                     ),
                     html.Label(
                         [
@@ -294,19 +303,19 @@ def comparison_page(catalog_state: dict[str, Any] | None) -> html.Div:
                                 id="comparison-date-range",
                                 start_date=DEFAULT_START_DATE,
                                 end_date=DEFAULT_END_DATE,
-                                display_format="YYYY-MM-DD",
+                                display_format=DATE_DISPLAY_FORMAT,
                             ),
                         ],
-                        className="control control--wide",
+                        className=WIDE_CONTROL_CLASS,
                     ),
                     html.Button(
-                        "Retry data",
+                        RETRY_DATA_LABEL,
                         id="comparison-retry",
                         n_clicks=0,
-                        className="secondary-button control-button",
+                        className=CONTROL_BUTTON_CLASS,
                     ),
                 ],
-                className="control-panel",
+                className=CONTROL_PANEL_CLASS,
             ),
             loading_panel("comparison-content"),
         ]
@@ -345,7 +354,7 @@ def annotation_page(catalog_state: dict[str, Any] | None) -> html.Div:
                                 disabled=not options,
                             ),
                         ],
-                        className="control",
+                        className=CONTROL_CLASS,
                     ),
                     html.Label(
                         [
@@ -358,7 +367,7 @@ def annotation_page(catalog_state: dict[str, Any] | None) -> html.Div:
                                 clearable=False,
                             ),
                         ],
-                        className="control",
+                        className=CONTROL_CLASS,
                     ),
                     html.Label(
                         [
@@ -367,20 +376,20 @@ def annotation_page(catalog_state: dict[str, Any] | None) -> html.Div:
                                 id="annotation-filter-dates",
                                 start_date=DEFAULT_START_DATE,
                                 end_date=DEFAULT_END_DATE,
-                                display_format="YYYY-MM-DD",
+                                display_format=DATE_DISPLAY_FORMAT,
                                 clearable=True,
                             ),
                         ],
-                        className="control control--wide",
+                        className=WIDE_CONTROL_CLASS,
                     ),
                     html.Button(
                         "Retry list",
                         id="annotation-retry",
                         n_clicks=0,
-                        className="secondary-button control-button",
+                        className=CONTROL_BUTTON_CLASS,
                     ),
                 ],
-                className="control-panel",
+                className=CONTROL_PANEL_CLASS,
             ),
             html.Section(
                 [
@@ -393,10 +402,10 @@ def annotation_page(catalog_state: dict[str, Any] | None) -> html.Div:
                                     dcc.DatePickerSingle(
                                         id="annotation-report-date",
                                         date=DEFAULT_END_DATE,
-                                        display_format="YYYY-MM-DD",
+                                        display_format=DATE_DISPLAY_FORMAT,
                                     ),
                                 ],
-                                className="control",
+                                className=CONTROL_CLASS,
                             ),
                             html.Label(
                                 [
@@ -408,7 +417,7 @@ def annotation_page(catalog_state: dict[str, Any] | None) -> html.Div:
                                         clearable=False,
                                     ),
                                 ],
-                                className="control",
+                                className=CONTROL_CLASS,
                             ),
                             html.Label(
                                 [
@@ -421,7 +430,7 @@ def annotation_page(catalog_state: dict[str, Any] | None) -> html.Div:
                                         placeholder="Your name",
                                     ),
                                 ],
-                                className="control",
+                                className=CONTROL_CLASS,
                             ),
                         ],
                         className="annotation-form-grid",

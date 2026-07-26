@@ -6,7 +6,7 @@ from pymongo import MongoClient
 
 from app.config import get_settings
 from app.exceptions import DataSourceUnavailableError
-from app.logging_config import configure_logging
+from app.logging_config import configure_logging, sanitized_exception_info
 from app.repositories.annotation_repository import AnnotationRepository
 
 logger = logging.getLogger(__name__)
@@ -23,7 +23,11 @@ def main() -> None:
     try:
         index_names = AnnotationRepository(client, settings).ensure_indexes()
     except DataSourceUnavailableError as exc:
-        logger.error("mongodb_setup_failed", extra={"source": exc.source})
+        logger.exception(
+            "mongodb_setup_failed",
+            extra={"source": exc.source},
+            exc_info=sanitized_exception_info(exc),
+        )
         raise SystemExit(1) from exc
     finally:
         client.close()

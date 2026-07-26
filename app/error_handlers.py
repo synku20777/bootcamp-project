@@ -10,6 +10,7 @@ from app.exceptions import (
     DataSourceUnavailableError,
     DomainValidationError,
 )
+from app.logging_config import sanitized_exception_info
 
 logger = logging.getLogger(__name__)
 
@@ -58,9 +59,10 @@ def register_error_handlers(app: FastAPI) -> None:
 
     @app.exception_handler(Exception)
     async def unexpected_error(request: Request, exc: Exception) -> JSONResponse:
-        logger.error(
+        logger.exception(
             "unexpected_application_error",
             extra={"exception_type": type(exc).__name__},
+            exc_info=sanitized_exception_info(exc),
         )
         return JSONResponse(
             status_code=500,

@@ -9,6 +9,7 @@ from snowflake.connector import SnowflakeConnection
 
 from app.config import Settings
 from app.exceptions import DataSourceUnavailableError
+from app.logging_config import sanitized_exception_info
 from app.models.covid import Metric
 
 logger = logging.getLogger(__name__)
@@ -54,9 +55,10 @@ class SnowflakeRepository:
                 application="COVID_ANALYTICS_API",
             )
         except snowflake.connector.Error as exc:
-            logger.error(
+            logger.exception(
                 "snowflake_connection_failed",
                 extra={"connector_error_type": type(exc).__name__},
+                exc_info=sanitized_exception_info(exc),
             )
             raise DataSourceUnavailableError("Snowflake") from exc
 
@@ -85,12 +87,13 @@ class SnowflakeRepository:
         except DataSourceUnavailableError:
             raise
         except snowflake.connector.Error as exc:
-            logger.error(
+            logger.exception(
                 "snowflake_query_failed",
                 extra={
                     "operation": operation,
                     "connector_error_type": type(exc).__name__,
                 },
+                exc_info=sanitized_exception_info(exc),
             )
             raise DataSourceUnavailableError("Snowflake") from exc
         finally:

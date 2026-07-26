@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from collections import defaultdict
 from datetime import date
+from functools import partial
 from typing import Any
 
 from pydantic import RootModel
@@ -94,6 +95,186 @@ class CovidService:
             for row in rows
             if row["REPORT_DATE"] is not None
         ]
+
+    @classmethod
+    def _normalize_comparison_identifiers(
+        cls,
+        identifiers: list[str],
+    ) -> list[str]:
+        if len(identifiers) < 2:
+            raise DomainValidationError("Comparison requires 2 to 10 countries.")
+        if len(identifiers) > 10:
+            raise DomainValidationError("Comparison requires 2 to 10 countries.")
+
+        normalized = [cls._identifier(value) for value in identifiers]
+        if len(set(normalized)) != len(normalized):
+            raise DomainValidationError("Comparison countries must be unique.")
+        return normalized
+
+    @staticmethod
+    def _group_comparison_rows(
+        rows: list[dict[str, Any]],
+    ) -> dict[int, list[dict[str, Any]]]:
+        grouped: dict[int, list[dict[str, Any]]] = defaultdict(list)
+        for row in rows:
+            grouped[row["REQUEST_ORDER"]].append(row)
+        return grouped
+
+    @staticmethod
+    def _resolved_country_rows(
+        grouped: dict[int, list[dict[str, Any]]],
+        request_order: int,
+        original_identifier: str,
+    ) -> list[dict[str, Any]]:
+        country_rows = grouped.get(request_order, [])
+        if not country_rows:
+            raise CountryNotFoundError(original_identifier)
+        if country_rows[0]["COUNTRY"] is None:
+            raise CountryNotFoundError(original_identifier)
+        return country_rows
+
+    @staticmethod
+    def _register_location(
+        row: dict[str, Any],
+        seen_locations: set[str],
+    ) -> None:
+        location_key = row["LOCATION_KEY"]
+        if location_key in seen_locations:
+            raise DomainValidationError(
+                "Comparison identifiers resolve to the same country."
+            )
+        seen_locations.add(location_key)
+
+    @staticmethod
+    def _has_observations(rows: list[dict[str, Any]]) -> bool:
+        return any(row["REPORT_DATE"] is not None for row in rows)
+
+    @classmethod
+    def _comparison_series(
+        cls,
+        country_rows: list[dict[str, Any]],
+        seen_locations: set[str],
+    ) -> tuple[ComparisonSeries, str | None]:
+        first = country_rows[0]
+        cls._register_location(first, seen_locations)
+        points = cls._points(country_rows, "METRIC_VALUE")
+        missing_country = first["COUNTRY"] if not points else None
+        return (
+            ComparisonSeries(
+                **cls._identity(first),
+                points=points,
+            ),
+            missing_country,
+        )
+
+    @classmethod
+    def _dashboard_comparison_series(
+        cls,
+        country_rows: list[dict[str, Any]],
+        seen_locations: set[str],
+    ) -> tuple[DashboardComparisonSeries, str | None]:
+        first = country_rows[0]
+        cls._register_location(first, seen_locations)
+        missing_country = (
+            None if cls._has_observations(country_rows) else first["COUNTRY"]
+        )
+        return (
+            DashboardComparisonSeries(
+                **cls._identity(first),
+                cases_per_100k=MetricSeries(
+                    metric=Metric.CASES_PER_100K,
+                    points=cls._points(country_rows, "CASES_PER_100K"),
+                ),
+                deaths_per_100k=MetricSeries(
+                    metric=Metric.DEATHS_PER_100K,
+                    points=cls._points(country_rows, "DEATHS_PER_100K"),
+                ),
+                mortality=MetricSeries(
+                    metric=Metric.MORTALITY_RATE_PERCENT,
+                    points=cls._points(country_rows, "MORTALITY_RATE_PERCENT"),
+                ),
+            ),
+            missing_country,
+        )
+
+    def _load_comparison(
+        self,
+        identifiers: list[str],
+        normalized: list[str],
+        metric: Metric,
+        start_date: date,
+        end_date: date,
+    ) -> CountryComparison:
+        rows = self.repository.fetch_comparison(
+            normalized,
+            metric,
+            start_date,
+            end_date,
+        )
+        grouped = self._group_comparison_rows(rows)
+        series: list[ComparisonSeries] = []
+        seen_locations: set[str] = set()
+        missing_data: list[str] = []
+
+        for request_order, original_identifier in enumerate(identifiers):
+            country_rows = self._resolved_country_rows(
+                grouped,
+                request_order,
+                original_identifier,
+            )
+            country_series, missing_country = self._comparison_series(
+                country_rows,
+                seen_locations,
+            )
+            series.append(country_series)
+            if missing_country is not None:
+                missing_data.append(missing_country)
+
+        return CountryComparison(
+            metric=metric,
+            start_date=start_date,
+            end_date=end_date,
+            series=series,
+            countries_without_data=missing_data,
+        )
+
+    def _load_dashboard_comparison(
+        self,
+        identifiers: list[str],
+        normalized: list[str],
+        start_date: date,
+        end_date: date,
+    ) -> DashboardComparison:
+        rows = self.repository.fetch_dashboard_comparison(
+            normalized,
+            start_date,
+            end_date,
+        )
+        grouped = self._group_comparison_rows(rows)
+        series: list[DashboardComparisonSeries] = []
+        seen_locations: set[str] = set()
+        missing_data: list[str] = []
+
+        for request_order, original_identifier in enumerate(identifiers):
+            country_rows = self._resolved_country_rows(
+                grouped,
+                request_order,
+                original_identifier,
+            )
+            country_series, missing_country = self._dashboard_comparison_series(
+                country_rows,
+                seen_locations,
+            )
+            series.append(country_series)
+            if missing_country is not None:
+                missing_data.append(missing_country)
+
+        return DashboardComparison(
+            start_date=start_date,
+            end_date=end_date,
+            series=series,
+            countries_without_data=missing_data,
+        )
 
     def overview(self) -> tuple[DashboardOverview, CacheStatus]:
         def compute() -> DashboardOverview:
@@ -219,62 +400,15 @@ class CovidService:
         end_date: date,
     ) -> tuple[CountryComparison, CacheStatus]:
         self._validate_dates(start_date, end_date)
-        if not 2 <= len(identifiers) <= 10:
-            raise DomainValidationError("Comparison requires 2 to 10 countries.")
-
-        normalized = [self._identifier(value) for value in identifiers]
-        if len(set(normalized)) != len(normalized):
-            raise DomainValidationError("Comparison countries must be unique.")
-
-        def compute() -> CountryComparison:
-            rows = self.repository.fetch_comparison(
-                normalized,
-                metric,
-                start_date,
-                end_date,
-            )
-            grouped: dict[int, list[dict[str, Any]]] = defaultdict(list)
-            for row in rows:
-                grouped[row["REQUEST_ORDER"]].append(row)
-
-            series: list[ComparisonSeries] = []
-            seen_locations: set[str] = set()
-            missing_data: list[str] = []
-            for request_order, original_identifier in enumerate(identifiers):
-                country_rows = grouped.get(request_order, [])
-                if not country_rows or country_rows[0]["COUNTRY"] is None:
-                    raise CountryNotFoundError(original_identifier)
-                first = country_rows[0]
-                location_key = first["LOCATION_KEY"]
-                if location_key in seen_locations:
-                    raise DomainValidationError(
-                        "Comparison identifiers resolve to the same country."
-                    )
-                seen_locations.add(location_key)
-                points = [
-                    MetricPoint(
-                        report_date=row["REPORT_DATE"],
-                        value=row["METRIC_VALUE"],
-                    )
-                    for row in country_rows
-                    if row["REPORT_DATE"] is not None
-                ]
-                if not points:
-                    missing_data.append(first["COUNTRY"])
-                series.append(
-                    ComparisonSeries(
-                        **self._identity(first),
-                        points=points,
-                    )
-                )
-
-            return CountryComparison(
-                metric=metric,
-                start_date=start_date,
-                end_date=end_date,
-                series=series,
-                countries_without_data=missing_data,
-            )
+        normalized = self._normalize_comparison_identifiers(identifiers)
+        compute = partial(
+            self._load_comparison,
+            identifiers,
+            normalized,
+            metric,
+            start_date,
+            end_date,
+        )
 
         return self.cache.get_or_compute(
             endpoint="compare",
@@ -365,68 +499,14 @@ class CovidService:
         end_date: date,
     ) -> tuple[DashboardComparison, CacheStatus]:
         self._validate_dates(start_date, end_date)
-        if not 2 <= len(identifiers) <= 10:
-            raise DomainValidationError("Comparison requires 2 to 10 countries.")
-
-        normalized = [self._identifier(value) for value in identifiers]
-        if len(set(normalized)) != len(normalized):
-            raise DomainValidationError("Comparison countries must be unique.")
-
-        def compute() -> DashboardComparison:
-            rows = self.repository.fetch_dashboard_comparison(
-                normalized,
-                start_date,
-                end_date,
-            )
-            grouped: dict[int, list[dict[str, Any]]] = defaultdict(list)
-            for row in rows:
-                grouped[row["REQUEST_ORDER"]].append(row)
-
-            result_series: list[DashboardComparisonSeries] = []
-            seen_locations: set[str] = set()
-            missing_data: list[str] = []
-            for request_order, original_identifier in enumerate(identifiers):
-                country_rows = grouped.get(request_order, [])
-                if not country_rows or country_rows[0]["COUNTRY"] is None:
-                    raise CountryNotFoundError(original_identifier)
-
-                first = country_rows[0]
-                location_key = first["LOCATION_KEY"]
-                if location_key in seen_locations:
-                    raise DomainValidationError(
-                        "Comparison identifiers resolve to the same country."
-                    )
-                seen_locations.add(location_key)
-
-                if not any(row["REPORT_DATE"] is not None for row in country_rows):
-                    missing_data.append(first["COUNTRY"])
-                result_series.append(
-                    DashboardComparisonSeries(
-                        **self._identity(first),
-                        cases_per_100k=MetricSeries(
-                            metric=Metric.CASES_PER_100K,
-                            points=self._points(country_rows, "CASES_PER_100K"),
-                        ),
-                        deaths_per_100k=MetricSeries(
-                            metric=Metric.DEATHS_PER_100K,
-                            points=self._points(country_rows, "DEATHS_PER_100K"),
-                        ),
-                        mortality=MetricSeries(
-                            metric=Metric.MORTALITY_RATE_PERCENT,
-                            points=self._points(
-                                country_rows,
-                                "MORTALITY_RATE_PERCENT",
-                            ),
-                        ),
-                    )
-                )
-
-            return DashboardComparison(
-                start_date=start_date,
-                end_date=end_date,
-                series=result_series,
-                countries_without_data=missing_data,
-            )
+        normalized = self._normalize_comparison_identifiers(identifiers)
+        compute = partial(
+            self._load_dashboard_comparison,
+            identifiers,
+            normalized,
+            start_date,
+            end_date,
+        )
 
         return self.cache.get_or_compute(
             endpoint="comparison-page",

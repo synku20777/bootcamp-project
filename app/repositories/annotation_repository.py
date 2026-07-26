@@ -9,6 +9,7 @@ from pymongo.errors import CollectionInvalid, PyMongoError
 
 from app.config import Settings
 from app.exceptions import DataSourceUnavailableError
+from app.logging_config import sanitized_exception_info
 from app.models.annotation import Annotation, AnnotationCreate, AnnotationTarget
 
 logger = logging.getLogger(__name__)
@@ -47,9 +48,10 @@ class AnnotationRepository:
                 ),
             ]
         except PyMongoError as exc:
-            logger.error(
+            logger.exception(
                 "annotation_index_setup_failed",
                 extra={"mongo_error_type": type(exc).__name__},
+                exc_info=sanitized_exception_info(exc),
             )
             raise DataSourceUnavailableError("MongoDB") from exc
 
@@ -98,9 +100,10 @@ class AnnotationRepository:
         try:
             result = self.collection.insert_one(document)
         except PyMongoError as exc:
-            logger.error(
+            logger.exception(
                 "annotation_create_failed",
                 extra={"mongo_error_type": type(exc).__name__},
+                exc_info=sanitized_exception_info(exc),
             )
             raise DataSourceUnavailableError("MongoDB") from exc
         document["_id"] = result.inserted_id
@@ -132,9 +135,10 @@ class AnnotationRepository:
                 )
             )
         except PyMongoError as exc:
-            logger.error(
+            logger.exception(
                 "annotation_read_failed",
                 extra={"mongo_error_type": type(exc).__name__},
+                exc_info=sanitized_exception_info(exc),
             )
             raise DataSourceUnavailableError("MongoDB") from exc
         return [self._serialize(document) for document in documents]

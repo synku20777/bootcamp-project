@@ -4,12 +4,22 @@ import json
 import logging
 from contextvars import ContextVar
 from datetime import UTC, datetime
+from types import TracebackType
 from typing import Any
 
 request_id_context: ContextVar[str | None] = ContextVar(
     "request_id",
     default=None,
 )
+
+
+def sanitized_exception_info(
+    exc: BaseException,
+) -> tuple[type[BaseException], BaseException, TracebackType | None]:
+    """Keep the traceback while omitting potentially sensitive exception text."""
+
+    sanitized = RuntimeError(f"{type(exc).__name__}: details redacted")
+    return RuntimeError, sanitized, exc.__traceback__
 
 
 class JsonFormatter(logging.Formatter):

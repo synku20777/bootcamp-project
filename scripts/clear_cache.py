@@ -6,7 +6,7 @@ from redis import Redis
 from redis.exceptions import RedisError
 
 from app.config import get_settings
-from app.logging_config import configure_logging
+from app.logging_config import configure_logging, sanitized_exception_info
 
 logger = logging.getLogger(__name__)
 
@@ -31,9 +31,10 @@ def main() -> None:
             if cursor == 0:
                 break
     except RedisError as exc:
-        logger.error(
+        logger.exception(
             "cache_clear_failed",
             extra={"redis_error_type": type(exc).__name__},
+            exc_info=sanitized_exception_info(exc),
         )
         raise SystemExit(1) from exc
     finally:

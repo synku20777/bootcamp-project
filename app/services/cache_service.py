@@ -15,9 +15,11 @@ from redis.exceptions import RedisError
 
 from app.config import Settings
 from app.exceptions import CacheFillInProgressError, DataSourceUnavailableError
+from app.logging_config import sanitized_exception_info
 
 logger = logging.getLogger(__name__)
 ModelT = TypeVar("ModelT", bound=BaseModel)
+REDIS_CACHE_SOURCE = "Redis cache"
 
 
 class CacheStatus(StrEnum):
@@ -50,6 +52,186 @@ class CacheService:
     def _decode(model_type: type[ModelT], raw_value: str) -> ModelT:
         return model_type.model_validate_json(raw_value)
 
+    def _read_cached_value(
+        self,
+        *,
+        key: str,
+        endpoint: str,
+        key_hash: str,
+        model_type: type[ModelT],
+    ) -> ModelT | None:
+        try:
+            raw_value = self.redis.get(key)
+        except RedisError as exc:
+            logger.exception(
+                "cache_read_failed",
+                extra={"endpoint": endpoint, "cache_key_hash": key_hash},
+                exc_info=sanitized_exception_info(exc),
+            )
+            raise DataSourceUnavailableError(REDIS_CACHE_SOURCE) from exc
+
+        if raw_value is None:
+            return None
+
+        try:
+            return self._decode(model_type, raw_value)
+        except (ValidationError, ValueError):
+            logger.warning(
+                "cache_value_invalid",
+                extra={"endpoint": endpoint, "cache_key_hash": key_hash},
+            )
+            self._delete_invalid_value(
+                key=key,
+                endpoint=endpoint,
+                key_hash=key_hash,
+            )
+            return None
+
+    def _delete_invalid_value(
+        self,
+        *,
+        key: str,
+        endpoint: str,
+        key_hash: str,
+    ) -> None:
+        try:
+            self.redis.delete(key)
+        except RedisError as exc:
+            logger.exception(
+                "cache_delete_failed",
+                extra={"endpoint": endpoint, "cache_key_hash": key_hash},
+                exc_info=sanitized_exception_info(exc),
+            )
+            raise DataSourceUnavailableError(REDIS_CACHE_SOURCE) from exc
+
+    def _acquire_lock(
+        self,
+        *,
+        lock_key: str,
+        lock_token: str,
+        endpoint: str,
+        key_hash: str,
+    ) -> bool:
+        try:
+            return bool(
+                self.redis.set(
+                    lock_key,
+                    lock_token,
+                    nx=True,
+                    ex=self.settings.cache_lock_seconds,
+                )
+            )
+        except RedisError as exc:
+            logger.exception(
+                "cache_lock_acquisition_failed",
+                extra={"endpoint": endpoint, "cache_key_hash": key_hash},
+                exc_info=sanitized_exception_info(exc),
+            )
+            raise DataSourceUnavailableError(REDIS_CACHE_SOURCE) from exc
+
+    def _wait_for_cached_value(
+        self,
+        *,
+        key: str,
+        endpoint: str,
+        key_hash: str,
+        model_type: type[ModelT],
+    ) -> ModelT:
+        deadline = time.monotonic() + self.settings.cache_lock_wait_seconds
+        while time.monotonic() < deadline:
+            time.sleep(self.settings.cache_lock_poll_seconds)
+            cached_value = self._read_cached_value(
+                key=key,
+                endpoint=endpoint,
+                key_hash=key_hash,
+                model_type=model_type,
+            )
+            if cached_value is not None:
+                logger.info(
+                    "cache_hit_after_wait",
+                    extra={"endpoint": endpoint, "cache_key_hash": key_hash},
+                )
+                return cached_value
+
+        logger.warning(
+            "cache_fill_wait_expired",
+            extra={"endpoint": endpoint, "cache_key_hash": key_hash},
+        )
+        raise CacheFillInProgressError()
+
+    def _write_cached_value(
+        self,
+        *,
+        key: str,
+        endpoint: str,
+        key_hash: str,
+        ttl_seconds: int,
+        value: BaseModel,
+    ) -> None:
+        try:
+            self.redis.setex(key, ttl_seconds, value.model_dump_json())
+        except RedisError as exc:
+            logger.exception(
+                "cache_write_failed",
+                extra={"endpoint": endpoint, "cache_key_hash": key_hash},
+                exc_info=sanitized_exception_info(exc),
+            )
+            raise DataSourceUnavailableError(REDIS_CACHE_SOURCE) from exc
+
+    def _release_lock(
+        self,
+        *,
+        lock_key: str,
+        lock_token: str,
+        endpoint: str,
+        key_hash: str,
+    ) -> None:
+        try:
+            self.redis.eval(
+                self._release_lock_script,
+                1,
+                lock_key,
+                lock_token,
+            )
+        except RedisError:
+            logger.warning(
+                "cache_lock_release_failed",
+                extra={"endpoint": endpoint, "cache_key_hash": key_hash},
+            )
+
+    def _compute_and_cache(
+        self,
+        *,
+        key: str,
+        lock_key: str,
+        lock_token: str,
+        endpoint: str,
+        key_hash: str,
+        ttl_seconds: int,
+        compute: Callable[[], ModelT],
+    ) -> ModelT:
+        try:
+            value = compute()
+            self._write_cached_value(
+                key=key,
+                endpoint=endpoint,
+                key_hash=key_hash,
+                ttl_seconds=ttl_seconds,
+                value=value,
+            )
+            logger.info(
+                "cache_miss_filled",
+                extra={"endpoint": endpoint, "cache_key_hash": key_hash},
+            )
+            return value
+        finally:
+            self._release_lock(
+                lock_key=lock_key,
+                lock_token=lock_token,
+                endpoint=endpoint,
+                key_hash=key_hash,
+            )
+
     def get_or_compute(
         self,
         *,
@@ -65,94 +247,43 @@ class CacheService:
         key, key_hash = self._key(endpoint, key_payload)
         lock_key = f"{key}:lock"
 
-        try:
-            cached = self.redis.get(key)
-        except RedisError as exc:
-            logger.error(
-                "cache_read_failed",
+        cached_value = self._read_cached_value(
+            key=key,
+            endpoint=endpoint,
+            key_hash=key_hash,
+            model_type=model_type,
+        )
+        if cached_value is not None:
+            logger.info(
+                "cache_hit",
                 extra={"endpoint": endpoint, "cache_key_hash": key_hash},
             )
-            raise DataSourceUnavailableError("Redis cache") from exc
-
-        if cached is not None:
-            try:
-                value = self._decode(model_type, cached)
-            except (ValidationError, ValueError):
-                logger.warning(
-                    "cache_value_invalid",
-                    extra={"endpoint": endpoint, "cache_key_hash": key_hash},
-                )
-                try:
-                    self.redis.delete(key)
-                except RedisError as exc:
-                    raise DataSourceUnavailableError("Redis cache") from exc
-            else:
-                logger.info(
-                    "cache_hit",
-                    extra={"endpoint": endpoint, "cache_key_hash": key_hash},
-                )
-                return value, CacheStatus.HIT
+            return cached_value, CacheStatus.HIT
 
         lock_token = uuid4().hex
-        try:
-            lock_acquired = bool(
-                self.redis.set(
-                    lock_key,
-                    lock_token,
-                    nx=True,
-                    ex=self.settings.cache_lock_seconds,
-                )
-            )
-        except RedisError as exc:
-            raise DataSourceUnavailableError("Redis cache") from exc
+        lock_acquired = self._acquire_lock(
+            lock_key=lock_key,
+            lock_token=lock_token,
+            endpoint=endpoint,
+            key_hash=key_hash,
+        )
 
         if not lock_acquired:
-            deadline = time.monotonic() + self.settings.cache_lock_wait_seconds
-            while time.monotonic() < deadline:
-                time.sleep(self.settings.cache_lock_poll_seconds)
-                try:
-                    cached = self.redis.get(key)
-                except RedisError as exc:
-                    raise DataSourceUnavailableError("Redis cache") from exc
-                if cached is not None:
-                    try:
-                        return self._decode(model_type, cached), CacheStatus.HIT
-                    except (ValidationError, ValueError):
-                        break
-
-            logger.warning(
-                "cache_fill_wait_expired",
-                extra={"endpoint": endpoint, "cache_key_hash": key_hash},
+            cached_value = self._wait_for_cached_value(
+                key=key,
+                endpoint=endpoint,
+                key_hash=key_hash,
+                model_type=model_type,
             )
-            raise CacheFillInProgressError()
+            return cached_value, CacheStatus.HIT
 
-        try:
-            value = compute()
-            serialized = value.model_dump_json()
-            try:
-                self.redis.setex(key, ttl_seconds, serialized)
-            except RedisError as exc:
-                logger.error(
-                    "cache_write_failed",
-                    extra={"endpoint": endpoint, "cache_key_hash": key_hash},
-                )
-                raise DataSourceUnavailableError("Redis cache") from exc
-
-            logger.info(
-                "cache_miss_filled",
-                extra={"endpoint": endpoint, "cache_key_hash": key_hash},
-            )
-            return value, CacheStatus.MISS
-        finally:
-            try:
-                self.redis.eval(
-                    self._release_lock_script,
-                    1,
-                    lock_key,
-                    lock_token,
-                )
-            except RedisError:
-                logger.warning(
-                    "cache_lock_release_failed",
-                    extra={"endpoint": endpoint, "cache_key_hash": key_hash},
-                )
+        value = self._compute_and_cache(
+            key=key,
+            lock_key=lock_key,
+            lock_token=lock_token,
+            endpoint=endpoint,
+            key_hash=key_hash,
+            ttl_seconds=ttl_seconds,
+            compute=compute,
+        )
+        return value, CacheStatus.MISS
