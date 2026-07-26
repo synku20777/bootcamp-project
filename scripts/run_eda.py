@@ -1,11 +1,16 @@
 from __future__ import annotations
 
+import logging
 import os
 from pathlib import Path
 
 import pandas as pd
 import snowflake.connector
 from dotenv import load_dotenv
+
+from app.logging_config import configure_logging
+
+logger = logging.getLogger(__name__)
 
 
 def connect_to_snowflake() -> snowflake.connector.SnowflakeConnection:
@@ -35,6 +40,7 @@ def run_query(
 
 def main() -> None:
     load_dotenv()
+    configure_logging("covid-eda", os.getenv("LOG_LEVEL", "INFO"))
 
     output_directory = Path("outputs/eda")
     output_directory.mkdir(parents=True, exist_ok=True)
@@ -102,7 +108,13 @@ def main() -> None:
             output_path = output_directory / f"{report_name}.csv"
             dataframe.to_csv(output_path, index=False)
 
-            print(f"Created {output_path} " f"with {len(dataframe)} rows.")
+            logger.info(
+                "eda_report_created",
+                extra={
+                    "output_path": str(output_path),
+                    "row_count": len(dataframe),
+                },
+            )
     finally:
         connection.close()
 

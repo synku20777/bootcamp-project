@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import logging
 import os
 from pathlib import Path
 from typing import Any
@@ -10,8 +11,11 @@ import snowflake.connector
 from dotenv import load_dotenv
 from snowflake.connector.pandas_tools import write_pandas
 
+from app.logging_config import configure_logging
+
 WORLD_BANK_BASE_URL = "https://api.worldbank.org/v2"
 POPULATION_YEAR = 2020
+logger = logging.getLogger(__name__)
 
 
 def request_world_bank_data(
@@ -113,10 +117,7 @@ def connect_to_snowflake() -> snowflake.connector.SnowflakeConnection:
     if missing:
         raise RuntimeError(f"Missing environment variables: {', '.join(missing)}")
 
-    print(
-        "Connecting to Snowflake account:",
-        os.environ["SNOWFLAKE_ACCOUNT"],
-    )
+    logger.info("snowflake_connection_started")
 
     return snowflake.connector.connect(
         account=os.environ["SNOWFLAKE_ACCOUNT"],
@@ -131,6 +132,7 @@ def connect_to_snowflake() -> snowflake.connector.SnowflakeConnection:
 
 def main() -> None:
     load_dotenv()
+    configure_logging("population-loader", os.getenv("LOG_LEVEL", "INFO"))
 
     dataframe = build_population_dataframe()
 
@@ -140,8 +142,10 @@ def main() -> None:
     csv_path = output_directory / "world_bank_population_2020.csv"
     dataframe.to_csv(csv_path, index=False)
 
-    print(f"Created local file: {csv_path}")
-    print(f"Downloaded rows: {len(dataframe)}")
+    logger.info(
+        "population_file_created",
+        extra={"output_path": str(csv_path), "row_count": len(dataframe)},
+    )
 
     connection = connect_to_snowflake()
 
@@ -172,7 +176,10 @@ def main() -> None:
         if not success:
             raise RuntimeError("write_pandas reported an unsuccessful load.")
 
-        print(f"Loaded {rows} rows into Snowflake " f"using {chunks} upload chunk(s).")
+        logger.info(
+            "population_rows_loaded",
+            extra={"row_count": rows, "chunk_count": chunks},
+        )
 
     finally:
         connection.close()

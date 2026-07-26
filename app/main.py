@@ -1,63 +1,70 @@
 from __future__ import annotations
 
-import os
+from collections.abc import AsyncIterator
+from contextlib import asynccontextmanager
 
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI
 from pymongo import MongoClient
 from redis import Redis
 
-app = FastAPI(
-    title="COVID-19 Analytics API",
-    description="API for the COVID-19 data engineering project.",
-    version="0.1.0",
-)
+from app.api.routes_annotations import router as annotations_router
+from app.api.routes_covid import router as covid_router
+from app.api.routes_health import router as health_router
+from app.config import get_settings
+from app.error_handlers import register_error_handlers
+from app.logging_config import configure_logging
+from app.middleware import register_request_middleware
 
 
-mongo_client = MongoClient(
-    os.environ["MONGODB_URI"],
-    serverSelectionTimeoutMS=3000,
-)
-
-redis_client = Redis.from_url(
-    os.environ["REDIS_URL"],
-    decode_responses=True,
-    socket_connect_timeout=3,
-)
-
-
-@app.get("/")
-def root() -> dict[str, str]:
-    """Return basic API information."""
-    return {
-        "service": "COVID-19 Analytics API",
-        "status": "running",
-    }
-
-
-@app.get("/health")
-def health() -> dict[str, str]:
-    """Check MongoDB and Redis connectivity."""
-    service_status: dict[str, str] = {}
+@asynccontextmanager
+async def lifespan(app: FastAPI) -> AsyncIterator[None]:
+    settings = get_settings()
+    app.state.settings = settings
+    app.state.mongo_client = MongoClient(
+        settings.mongodb_uri,
+        connect=False,
+        tz_aware=True,
+        serverSelectionTimeoutMS=3000,
+    )
+    app.state.redis_client = Redis.from_url(
+        settings.redis_url,
+        decode_responses=True,
+        socket_connect_timeout=3,
+        socket_timeout=3,
+    )
 
     try:
-        mongo_client.admin.command("ping")
-        service_status["mongodb"] = "ok"
-    except Exception as exc:
-        service_status["mongodb"] = f"error: {type(exc).__name__}"
+        yield
+    finally:
+        app.state.mongo_client.close()
+        app.state.redis_client.close()
 
-    try:
-        redis_client.ping()
-        service_status["redis"] = "ok"
-    except Exception as exc:
-        service_status["redis"] = f"error: {type(exc).__name__}"
 
-    if any(value != "ok" for value in service_status.values()):
-        raise HTTPException(
-            status_code=503,
-            detail=service_status,
-        )
+def create_app() -> FastAPI:
+    settings = get_settings()
+    configure_logging(settings.service_name, settings.log_level)
 
-    return {
-        "status": "ok",
-        **service_status,
-    }
+    application = FastAPI(
+        title="COVID-19 Analytics API",
+        description="Cached analytical API for the COVID-19 data platform.",
+        version="0.3.0",
+        lifespan=lifespan,
+    )
+    register_request_middleware(application)
+    register_error_handlers(application)
+    application.include_router(health_router)
+    application.include_router(covid_router)
+    application.include_router(annotations_router)
+
+    @application.get("/")
+    def root() -> dict[str, str]:
+        return {
+            "service": "COVID-19 Analytics API",
+            "status": "running",
+            "docs": "/docs",
+        }
+
+    return application
+
+
+app = create_app()

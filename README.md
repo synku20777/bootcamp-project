@@ -2,9 +2,10 @@
 
 A bootcamp data-engineering project that combines World Bank population data,
 Snowflake analytics, a FastAPI service, MongoDB, and Redis. The repository
-currently provides a reproducible development and container environment,
-Snowflake setup and transformations, population ingestion, automated
-exploratory-data-analysis exports, and API dependency health checks.
+provides a reproducible development and container environment, Snowflake setup
+and transformations, population ingestion, cached analytical APIs, automated
+exploratory-data-analysis exports, and a responsive analytical dashboard with
+MongoDB annotations.
 
 ## Current capabilities
 
@@ -19,14 +20,22 @@ exploratory-data-analysis exports, and API dependency health checks.
   locally, and loads it into Snowflake.
 - Runs analytical queries against the included Snowflake mart and exports EDA
   results as CSV files.
-- Runs FastAPI together with MongoDB and Redis through Docker Compose.
-- Exposes API status and MongoDB/Redis health endpoints.
+- Runs FastAPI, a multi-page Dash interface, MongoDB, and Redis through Compose.
+- Exposes cheap liveness/readiness routes and an explicit Snowflake check.
+- Serves country, summary, time-series, comparison, and overview data from the
+  Snowflake MARTS layer using `COVID_APP_ROLE`.
+- Serves combined country and comparison page payloads so charts do not issue
+  independent Snowflake-backed requests.
+- Caches successful analytical responses in Redis for 24 hours and prevents
+  concurrent cache misses from duplicating Snowflake queries.
+- Stores canonical country/date annotations in MongoDB with indexed filtering.
+- Emits structured JSON logs with request IDs and contains no native Python
+  `print()` calls.
 - Locks Python dependencies with uv and runs Ruff, isort, and Black locally and
   in GitHub Actions.
 
-The API does not yet expose COVID-19 analytical queries, store application data
-in MongoDB, or cache responses in Redis. Dashboarding, forecasting, and the
-API-facing Snowflake views are also outside the current implementation.
+Forecasting, clustering, authentication, and user preferences are intentionally
+out of scope for this delivery.
 
 ## Architecture
 
@@ -42,9 +51,11 @@ flowchart LR
     Marts --> EDA[EDA script]
     EDA --> Reports[(CSV reports)]
 
-    Client[API client] --> API[FastAPI]
+    Browser[Dash analytical UI] --> API[FastAPI]
+    Client[API client] --> API
+    API --> Redis
+    Redis -->|Cache miss only| Marts
     API --> Mongo[(MongoDB)]
-    API --> Redis[(Redis)]
 ```
 
 ## Technology stack
@@ -52,6 +63,7 @@ flowchart LR
 | Area                  | Technology                                     |
 | --------------------- | ---------------------------------------------- |
 | API                   | FastAPI, Uvicorn                               |
+| Web interface         | Plotly Dash and Plotly                         |
 | Analytics             | Snowflake SQL, pandas, Snowflake Connector      |
 | External data         | World Bank API                                 |
 | Operational data      | MongoDB 7.0                                    |
@@ -64,8 +76,8 @@ flowchart LR
 ## Run the project (step by step)
 
 The easiest way to run this repository is with Docker. This starts the API,
-MongoDB, and Redis together, so you do not need to install Python or the
-project's Python packages on your computer.
+status interface, MongoDB, and Redis together, so you do not need to install
+Python or the project's Python packages on your computer.
 
 ### 1. Install the required tools
 
@@ -129,9 +141,10 @@ MONGO_DATABASE=covid_app
 Use letters and numbers for the password. Special characters must be URL
 encoded because Compose places the password inside a MongoDB connection URL.
 
-The Snowflake values can remain as placeholders when you only want to run the
-API. They are needed later only for the optional population and EDA scripts.
-Do not commit `.env`, because it contains credentials.
+Snowflake values can remain placeholders only for `/health/live` and the UI's
+initial **Not checked** state. The Snowflake status check and analytical routes
+require valid credentials plus `COVID_APP_ROLE`. Do not commit `.env`, because
+it contains credentials.
 
 ### 5. Build and start the application
 
@@ -152,35 +165,50 @@ Run:
 docker compose ps
 ```
 
-The `api`, `mongo`, and `redis` services should show as running; MongoDB and
-Redis should also show as healthy. If a service does not start, view its logs:
+The `api`, `dashboard`, `mongo`, and `redis` services should show as running or
+healthy. If a service does not start, view its logs:
 
 ```bash
-docker compose logs api mongo redis
+docker compose logs api dashboard mongo redis
 ```
 
-### 7. Test the API
+### 7. Create the MongoDB annotation indexes
+
+Run the idempotent setup script after the services are healthy:
+
+```bash
+docker compose exec api python -m scripts.setup_mongodb
+```
+
+It creates the `annotations` collection when needed and applies the two
+non-unique country/date and country/metric indexes. It is safe to run again.
+
+### 8. Test the API and dashboard
 
 Open these addresses in a browser:
 
 - <http://localhost:8000/> - basic API status
-- <http://localhost:8000/health> - MongoDB and Redis health
+- <http://localhost:8000/health/live> - process-only liveness
+- <http://localhost:8000/health/ready> - MongoDB and Redis readiness
 - <http://localhost:8000/docs> - interactive Swagger API documentation
+- <http://localhost:8050> - backend status interface
+- <http://localhost:8050/overview> - global analytical overview
+- <http://localhost:8050/country> - Country Explorer
+- <http://localhost:8050/compare> - country comparison
+- <http://localhost:8050/annotations> - MongoDB annotations
 
 A successful health check returns:
 
 ```json
 {
-  "status": "ok",
-  "mongodb": "ok",
-  "redis": "ok"
+  "status": "ok"
 }
 ```
 
-At this point, the repository is running. Snowflake is not required for these
-API endpoints.
+The status interface does not contact Snowflake automatically. Selecting
+**Check Snowflake** performs one explicit live check that may resume `COVID_WH`.
 
-### 8. Stop the application
+### 9. Stop the application
 
 When you are finished, stop and remove the containers:
 
@@ -202,6 +230,7 @@ configuration before exposing the service publicly.
 | Service | Container     | Host access             | Purpose                |
 | ------- | ------------- | ----------------------- | ---------------------- |
 | `api`   | `covid_api`   | <http://localhost:8000> | FastAPI application    |
+| `dashboard` | `covid_dashboard` | <http://localhost:8050> | Dash analytical UI |
 | `mongo` | `covid_mongo` | `127.0.0.1:27017`       | Application data store |
 | `redis` | `covid_redis` | Internal only           | API cache dependency   |
 
@@ -216,12 +245,93 @@ docker compose exec api python --version
 
 ## API endpoints
 
-| Method | Path            | Description                                 | Success                                    |
-| ------ | --------------- | ------------------------------------------- | ------------------------------------------ |
-| `GET`  | `/`             | Returns the service name and running status | `200`                                      |
-| `GET`  | `/health`       | Pings MongoDB and Redis                     | `200`, or `503` if either dependency fails |
-| `GET`  | `/docs`         | Swagger UI generated by FastAPI             | `200`                                      |
-| `GET`  | `/openapi.json` | OpenAPI schema                              | `200`                                      |
+| Method | Path                              | Description                                      |
+| ------ | --------------------------------- | ------------------------------------------------ |
+| `GET`  | `/health`, `/health/live`         | Process liveness; no dependency calls            |
+| `GET`  | `/health/ready`                   | MongoDB and Redis readiness                       |
+| `GET`  | `/health/snowflake`               | Explicit uncached Snowflake and MARTS check       |
+| `GET`  | `/dashboard/overview`             | Latest global and per-location analytical values |
+| `GET`  | `/dashboard/countries/{identifier}` | Combined Country Explorer payload               |
+| `GET`  | `/dashboard/compare`              | Combined three-metric comparison payload          |
+| `GET`  | `/countries`                      | Canonical country and ISO identities              |
+| `GET`  | `/countries/{identifier}/summary` | Latest stored country metrics                     |
+| `GET`  | `/countries/{identifier}/timeseries` | Filtered metric points                         |
+| `GET`  | `/compare`                        | Two-to-ten-country metric comparison              |
+| `POST` | `/annotations`                    | Validate and create a MongoDB annotation           |
+| `GET`  | `/annotations`                    | Filter chronological MongoDB annotations           |
+| `GET`  | `/docs`                           | Swagger UI                                        |
+
+Analytical responses include `X-Cache: MISS`, `HIT`, or `BYPASS`. Redis is a
+budget-protection dependency: if Redis is unavailable while caching is enabled,
+analytical routes return `503` without opening a Snowflake connection.
+
+Example acceptance requests:
+
+```bash
+curl -i http://localhost:8000/health/live
+curl -i http://localhost:8000/health/ready
+curl -i http://localhost:8000/health/snowflake
+curl -i http://localhost:8000/dashboard/overview
+curl -i http://localhost:8000/dashboard/overview
+curl -i "http://localhost:8000/dashboard/countries/LV?metric=cases_per_100k&start_date=2020-03-01&end_date=2020-12-14"
+curl -i "http://localhost:8000/dashboard/compare?country=LV&country=EE&start_date=2020-03-01&end_date=2020-12-14"
+curl -i http://localhost:8000/countries/LV/summary
+curl -i "http://localhost:8000/compare?country=LV&country=EE&metric=cases_per_100k&start_date=2020-03-01&end_date=2020-12-14"
+```
+
+The first overview call should be `MISS`; the second should be `HIT` and should
+not query Snowflake.
+
+### Cache invalidation and query budget
+
+Successful analytical responses are cached for 24 hours. Change
+`CACHE_NAMESPACE` when a deployment changes response semantics, or clear only
+the current project prefix after refreshing the marts:
+
+```bash
+docker compose exec api python -m scripts.clear_cache
+```
+
+The script uses incremental Redis `SCAN` calls and never flushes unrelated
+Redis data. Redis failures are fail-closed by design: spending Snowflake credits
+is not used as an automatic cache fallback.
+
+The Country Explorer loads its complete page response once into:
+
+```python
+dcc.Store(id="country-page-data", storage_type="memory")
+```
+
+KPI and chart callbacks consume that stored JSON and never make independent API
+calls. The comparison and overview pages use the same page-level pattern. The
+country catalog and Snowflake status use session stores because they are small
+and reused across navigation.
+
+### Annotation workflow
+
+Create or verify the MongoDB indexes:
+
+```bash
+docker compose exec api python -m scripts.setup_mongodb
+```
+
+Create an annotation through Swagger or curl:
+
+```bash
+curl -i -X POST http://localhost:8000/annotations \
+  -H "Content-Type: application/json" \
+  -d '{"country":"LV","report_date":"2020-03-15","metric":"new_cases","comment":"Reporting delay.","created_by":"Student"}'
+```
+
+Read it back:
+
+```bash
+curl -i "http://localhost:8000/annotations?country=LV&metric=new_cases&start_date=2020-03-01&end_date=2020-03-31"
+```
+
+Creation validates that the country and report date exist in the Snowflake
+mart. Successful validation is cached for 24 hours. Annotation lists are read
+directly from MongoDB and are never response-cached.
 
 ## Local development
 
@@ -272,15 +382,24 @@ Copy `.env.example` to `.env` and configure these values:
 | `SNOWFLAKE_USER`      | Snowflake scripts | Snowflake username                                              |
 | `SNOWFLAKE_PASSWORD`  | Snowflake scripts | Snowflake password                                              |
 | `SNOWFLAKE_ROLE`      | Snowflake scripts | Project role; defaults to `COVID_PROJECT_ADMIN` in code         |
+| `SNOWFLAKE_API_ROLE`  | FastAPI            | Least-privilege runtime role; use `COVID_APP_ROLE`              |
 | `SNOWFLAKE_WAREHOUSE` | Snowflake scripts | Compute warehouse                                               |
 | `SNOWFLAKE_DATABASE`  | Population loader | Connection database; use `COVID_ANALYTICS` with the current SQL |
 | `SNOWFLAKE_SCHEMA`    | Population loader | Connection schema; use `RAW` with the current SQL               |
-| `MONGO_ROOT_USERNAME` | Docker Compose    | MongoDB root username                                           |
-| `MONGO_ROOT_PASSWORD` | Docker Compose    | MongoDB root password                                           |
-| `MONGO_DATABASE`      | Docker Compose    | Application database name                                       |
+| `SNOWFLAKE_API_SCHEMA` | FastAPI           | Analytical schema; use `MARTS`                                  |
+| `MONGO_ROOT_USERNAME` | Docker Compose     | MongoDB root username                                           |
+| `MONGO_ROOT_PASSWORD` | Docker Compose     | MongoDB root password                                           |
+| `MONGO_DATABASE`      | Docker Compose     | Application database name                                       |
+| `MONGODB_URI`         | Local FastAPI      | Local MongoDB connection URI                                    |
+| `REDIS_URL`           | API/cache scripts  | Redis connection URI                                            |
+| `CACHE_NAMESPACE`     | FastAPI            | Versioned prefix; current default is `covid-api:v2`              |
+| `CACHE_TTL_*`         | FastAPI            | Endpoint cache durations; defaults are 86400 seconds            |
+| `DASHBOARD_API_BASE_URL` | Dash             | FastAPI base URL used by the status interface                   |
+| `DASHBOARD_PUBLIC_API_BASE_URL` | Browser      | Host-visible FastAPI URL used by the Swagger link               |
 
-Compose generates `MONGODB_URI` and `REDIS_URL` for the API container. Never
-commit `.env`; it is excluded by `.gitignore` and `.dockerignore`.
+Compose overrides `MONGODB_URI`, `REDIS_URL`, and the dashboard API URL for
+container networking. Never commit `.env`; it is excluded by `.gitignore` and
+`.dockerignore`.
 
 ## Snowflake pipeline (step by step)
 
@@ -307,6 +426,7 @@ Run [`sql/00_project_setup.sql`](sql/00_project_setup.sql). It creates:
 - An `XSMALL` warehouse named `COVID_WH`
 - The `COVID_ANALYTICS` database
 - A least-privilege project role named `COVID_PROJECT_ADMIN`
+- A read-only API runtime role named `COVID_APP_ROLE`
 - `RAW`, `STAGING`, `MARTS`, and `APP` schemas
 
 The monitor notifies at 50%, suspends the warehouse at 80%, and suspends it
@@ -321,7 +441,12 @@ following after replacing the username:
 
 ```sql
 GRANT ROLE COVID_PROJECT_ADMIN TO USER YOUR_SNOWFLAKE_USERNAME;
+GRANT ROLE COVID_APP_ROLE TO USER YOUR_SNOWFLAKE_USERNAME;
 ```
+
+FastAPI connects only as `COVID_APP_ROLE`. That role can use `COVID_WH` and
+read current and future MARTS tables/views, but it cannot create or replace
+project objects.
 
 ### 2. Explore and validate the Marketplace data
 
@@ -501,6 +626,7 @@ Individual CI-equivalent commands are:
 uv run isort --check-only --diff .
 uv run black --check --diff .
 uv run ruff check .
+uv run python -m unittest discover -s tests -v
 ```
 
 The GitHub Actions workflow runs the locked Python environment and all three
@@ -511,12 +637,21 @@ checks on every push and pull request.
 ```text
 .
 |-- app/
-|   `-- main.py                         # FastAPI application
+|   |-- api/                            # Health, analytical, annotation routes
+|   |-- dashboard/                      # Multi-page Dash interface
+|   |-- models/                         # Pydantic response contracts
+|   |-- repositories/                   # Snowflake and MongoDB access
+|   |-- services/                       # Cache, analytics, annotations
+|   |-- config.py                       # Typed environment settings
+|   |-- logging_config.py               # Structured JSON logging
+|   `-- main.py                         # FastAPI factory and lifespan
 |-- data/external/
 |   `-- world_bank_population_2020.csv  # Population snapshot
 |-- scripts/
+|   |-- clear_cache.py                   # Prefix-scoped Redis invalidation
 |   |-- load_population.py              # World Bank -> CSV/Snowflake
-|   `-- run_eda.py                       # Snowflake mart -> CSV reports
+|   |-- run_eda.py                       # Snowflake mart -> CSV reports
+|   `-- setup_mongodb.py                 # Annotation collection and indexes
 |-- sql/
 |   |-- 00_project_setup.sql             # Monitor, warehouse, DB, schemas
 |   |-- 01_data_exploration.sql          # Marketplace source checks
@@ -529,7 +664,8 @@ checks on every push and pull request.
 |-- .env.example                        # Configuration template
 |-- .pre-commit-config.yaml             # Local Git hooks
 |-- .python-version                     # Exact local/CI Python pin
-|-- compose.yaml                         # API, MongoDB, and Redis services
+|-- tests/                              # Focused API, cache, repository tests
+|-- compose.yaml                         # API, dashboard, MongoDB, Redis
 |-- dockerfile                          # API image
 |-- pyproject.toml                       # Project metadata and dependencies
 `-- uv.lock                              # Resolved dependency lockfile
