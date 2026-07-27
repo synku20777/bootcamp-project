@@ -73,9 +73,120 @@ flowchart LR
 | Containers            | Docker Compose                                 |
 | Code quality          | Ruff, isort, Black, pre-commit, GitHub Actions |
 
-## Run the complete project from a blank computer
+## Recommended automated setup
 
-This section is the **single beginner setup path**. Follow the steps in order.
+The setup automation creates the project-owned Snowflake objects, refreshes the
+population table safely, starts the containers, creates MongoDB indexes, and
+checks the finished application. It stops on the first failed postcondition and
+can resume without repeating completed work.
+
+Before running it, complete these one-time prerequisites:
+
+1. Create the Snowflake account and add the Marketplace database named
+   `COVID19_EPIDEMIOLOGICAL_DATA` as described below.
+2. Install Git, Docker Desktop, and uv.
+3. Clone this repository and open a terminal in its root directory.
+4. Start Docker Desktop and wait until its engine is ready.
+
+### First-time setup on Windows
+
+Open PowerShell in the repository and run:
+
+```powershell
+.\setup.ps1
+```
+
+### First-time setup on macOS, Linux, or Git Bash
+
+```bash
+./setup.sh
+```
+
+The wrapper verifies the locked environment, then starts the guided setup. It
+asks for missing Snowflake settings without echoing passwords. The generated
+MongoDB password is random. Existing `.env` files are backed up before an
+atomic replacement, and secrets are never written to the audit log.
+
+The Snowflake bootstrap connection intentionally uses `ACCOUNTADMIN` only for
+account-level object creation and granting `COVID_PROJECT_ADMIN` and
+`COVID_APP_ROLE` to the configured user. All remaining deployment work uses the
+least-privilege project role.
+
+If setup stops, read the short terminal error and the referenced JSONL audit
+file under `outputs/setup/`. Fix the reported cause, then continue with:
+
+```powershell
+.\setup.ps1 --resume
+```
+
+or:
+
+```bash
+./setup.sh --resume
+```
+
+Completed steps are skipped only when their input checksum, setup context, and
+live postcondition still match. Interrupting with Ctrl+C leaves containers and
+volumes unchanged and exits with status `130`.
+
+For unattended execution, prepare a complete `.env` first and run:
+
+```bash
+uv run --locked python -m scripts.bootstrap setup --resume --non-interactive
+```
+
+The command lists missing variable names but never their values. Useful
+diagnostic and verification commands are:
+
+```bash
+uv run --locked python -m scripts.bootstrap doctor --local
+uv run --locked python -m scripts.bootstrap doctor --configured
+uv run --locked python -m scripts.bootstrap verify
+```
+
+`doctor --local` checks uv, Docker, repository permissions, ignored secret/state
+files, and whether required ports belong to this Compose project.
+`doctor --configured` authenticates with the bootstrap role and confirms the
+Marketplace database is accessible. `verify` checks the live Snowflake objects,
+containers, MongoDB/Redis readiness, and bounded HTTP smoke tests; it can resume
+the Snowflake warehouse and should be run deliberately on a trial account.
+
+### Daily start and stop
+
+After first-time setup, start the existing services without redeploying data:
+
+```powershell
+.\start.ps1
+```
+
+or:
+
+```bash
+./start.sh
+```
+
+Stop services while preserving MongoDB and Redis volumes:
+
+```powershell
+.\stop.ps1
+```
+
+or:
+
+```bash
+./stop.sh
+```
+
+Optional exploration is separate from required setup:
+
+```bash
+uv run --locked python -m scripts.bootstrap analyze
+```
+
+## Manual setup from a blank computer
+
+This section is the detailed fallback when you prefer to execute each operation
+yourself. Follow the steps in order.
 Do not start Docker before finishing the Snowflake setup, because the analytical
 API and dashboard need the Snowflake tables and views created in Steps 7–13.
 

@@ -3,134 +3,116 @@ from __future__ import annotations
 from datetime import date
 from typing import Any
 
-from dash import dcc, html
+import dash_mantine_components as dmc
+from dash import html
+from dash_iconify import DashIconify
 
+from app.dashboard.components import (
+    create_alert,
+    create_loading_state,
+    create_page_header,
+)
 from app.models.covid import Metric
 
 DEFAULT_START_DATE = date(2020, 3, 1)
 DEFAULT_END_DATE = date(2020, 12, 14)
-DATE_DISPLAY_FORMAT = "YYYY-MM-DD"
 ERROR_STATE = "error"
 NEUTRAL_STATE = "neutral"
-LOADING_TYPE = "circle"
-CONTROL_CLASS = "control"
-WIDE_CONTROL_CLASS = "control control--wide"
-CONTROL_PANEL_CLASS = "control-panel"
-CONTROL_BUTTON_CLASS = "secondary-button control-button"
 RETRY_DATA_LABEL = "Retry data"
 
 
-def status_badge(label: str, state: str, detail: str) -> html.Div:
-    return html.Div(
-        [
-            html.Span(className=f"status-dot status-dot--{state}"),
-            html.Div(
-                [
-                    html.Strong(label),
-                    html.Span(detail, className="status-detail"),
-                ]
-            ),
-        ],
-        className=f"status-badge status-badge--{state}",
-        role="status",
-        **{"aria-live": "polite"},
-    )
-
-
-def alert(message: str, state: str = ERROR_STATE) -> html.Div:
-    return html.Div(
-        message,
-        className=f"alert alert--{state}",
-        role="alert" if state == ERROR_STATE else "status",
-    )
-
-
-def page_heading(eyebrow: str, title: str, description: str) -> html.Header:
-    return html.Header(
-        [
-            html.P(eyebrow, className="eyebrow"),
-            html.H1(title),
-            html.P(description, className="subtitle"),
-        ],
-        className="page-heading",
-    )
-
-
-def loading_panel(component_id: str) -> dcc.Loading:
-    return dcc.Loading(
-        html.Div(
-            status_badge("Loading", NEUTRAL_STATE, "Waiting for page data"),
-            id=component_id,
-            **{"aria-live": "polite"},
-        ),
-        type=LOADING_TYPE,
+def status_badge(label: str, state: str, detail: str) -> dmc.Alert:
+    color_map = {"error": "red", "success": "teal", "neutral": "gray"}
+    icon_map = {
+        "error": "tabler:alert-circle",
+        "success": "tabler:check",
+        "neutral": "tabler:clock",
+    }
+    return dmc.Alert(
+        detail,
+        title=label,
+        color=color_map.get(state, "gray"),
+        icon=DashIconify(icon=icon_map.get(state, "tabler:info-circle"), width=20),
+        variant="light",
     )
 
 
 def status_page(public_api_base_url: str) -> html.Div:
     return html.Div(
         [
-            page_heading(
-                "COVID-19 ANALYTICS PLATFORM",
+            create_page_header(
                 "Backend foundation status",
-                "Cheap process checks are automatic. Snowflake is checked only "
-                "when you request it.",
+                "Cheap process checks are automatic. Snowflake is checked only when you request it.",
             ),
-            html.Section(
-                [
-                    html.Article(
-                        [
-                            html.H2("FastAPI"),
-                            dcc.Loading(
-                                html.Div(
-                                    status_badge(
-                                        "Checking",
-                                        NEUTRAL_STATE,
-                                        "Confirming process liveness",
+            dmc.Grid(
+                children=[
+                    dmc.GridCol(
+                        span={"base": 12, "md": 6},
+                        children=dmc.Paper(
+                            p="md",
+                            radius="md",
+                            withBorder=True,
+                            children=[
+                                dmc.Text("FastAPI", fw=600, mb="sm"),
+                                create_loading_state(
+                                    html.Div(
+                                        status_badge(
+                                            "Checking",
+                                            NEUTRAL_STATE,
+                                            "Confirming process liveness",
+                                        ),
+                                        id="api-live-status",
                                     ),
-                                    id="api-live-status",
+                                    loading_id="api-live-loading",
                                 ),
-                                type=LOADING_TYPE,
-                            ),
-                            html.A(
-                                "Open Swagger documentation",
-                                href=f"{public_api_base_url}/docs",
-                                target="_blank",
-                                className="link-button",
-                            ),
-                        ],
-                        className="status-card",
+                                dmc.Anchor(
+                                    "Open Swagger documentation",
+                                    href=f"{public_api_base_url}/docs",
+                                    target="_blank",
+                                    size="sm",
+                                    mt="md",
+                                    display="block",
+                                ),
+                            ],
+                        ),
                     ),
-                    html.Article(
-                        [
-                            html.H2("Snowflake"),
-                            dcc.Loading(
-                                html.Div(
-                                    status_badge(
-                                        "Not checked",
-                                        NEUTRAL_STATE,
-                                        "No warehouse query made",
+                    dmc.GridCol(
+                        span={"base": 12, "md": 6},
+                        children=dmc.Paper(
+                            p="md",
+                            radius="md",
+                            withBorder=True,
+                            children=[
+                                dmc.Text("Snowflake", fw=600, mb="sm"),
+                                create_loading_state(
+                                    html.Div(
+                                        status_badge(
+                                            "Not checked",
+                                            NEUTRAL_STATE,
+                                            "No warehouse query made",
+                                        ),
+                                        id="snowflake-status-view",
                                     ),
-                                    id="snowflake-status-view",
+                                    loading_id="snowflake-loading",
                                 ),
-                                type=LOADING_TYPE,
-                            ),
-                            html.Button(
-                                "Check Snowflake",
-                                id="check-snowflake",
-                                n_clicks=0,
-                                className="primary-button",
-                            ),
-                            html.P(
-                                "This explicit check may resume COVID_WH. The "
-                                "result is kept for this browser session.",
-                                className="cost-note",
-                            ),
-                        ],
-                        className="status-card",
+                                dmc.Button(
+                                    "Check Snowflake",
+                                    id="check-snowflake",
+                                    n_clicks=0,
+                                    variant="light",
+                                    color="teal",
+                                    mt="md",
+                                ),
+                                dmc.Text(
+                                    "This explicit check may resume COVID_WH. The result is kept for this browser session.",
+                                    size="xs",
+                                    c="dimmed",
+                                    mt="xs",
+                                ),
+                            ],
+                        ),
                     ),
-                ],
-                className="status-grid",
+                ]
             ),
         ]
     )
@@ -139,18 +121,27 @@ def status_page(public_api_base_url: str) -> html.Div:
 def overview_page() -> html.Div:
     return html.Div(
         [
-            page_heading(
-                "GLOBAL OVERVIEW",
-                "The pandemic at a glance",
-                "Latest cumulative outcomes and population-normalized impact.",
+            dmc.Group(
+                justify="space-between",
+                align="flex-start",
+                children=[
+                    create_page_header(
+                        "The pandemic at a glance",
+                        "Latest cumulative outcomes and population-normalized impact.",
+                    ),
+                    dmc.Button(
+                        RETRY_DATA_LABEL,
+                        id="overview-retry",
+                        n_clicks=0,
+                        variant="light",
+                        leftSection=DashIconify(icon="tabler:refresh", width=16),
+                    ),
+                ],
             ),
-            html.Button(
-                RETRY_DATA_LABEL,
-                id="overview-retry",
-                n_clicks=0,
-                className="secondary-button",
+            create_loading_state(
+                html.Div(id="overview-content"),
+                loading_id="overview-loading",
             ),
-            loading_panel("overview-content"),
         ]
     )
 
@@ -174,15 +165,17 @@ def _catalog_error(catalog_state: dict[str, Any] | None) -> html.Div | None:
         return None
     return html.Div(
         [
-            alert(catalog_state["message"]),
-            html.Button(
+            create_alert(catalog_state["message"], "error"),
+            dmc.Button(
                 "Retry countries",
                 id="retry-catalog",
                 n_clicks=0,
-                className="secondary-button",
+                variant="light",
+                color="red",
+                mt="md",
             ),
         ],
-        className="state-panel",
+        style={"marginBottom": "16px"},
     )
 
 
@@ -198,67 +191,74 @@ def country_page(catalog_state: dict[str, Any] | None) -> html.Div:
     catalog_error = _catalog_error(catalog_state)
     return html.Div(
         [
-            page_heading(
-                "COUNTRY EXPLORER",
-                "One country, one shared payload",
+            create_page_header(
+                "Country Explorer",
                 "Every KPI and chart below is rendered from one page-level store.",
             ),
             catalog_error,
-            html.Section(
-                [
-                    html.Label(
-                        [
-                            html.Span("Country"),
-                            dcc.Dropdown(
-                                id="country-select",
-                                options=options,
-                                value=_default_country(options, "LV"),
-                                clearable=False,
-                                disabled=not options,
-                            ),
-                        ],
-                        className=CONTROL_CLASS,
-                    ),
-                    html.Label(
-                        [
-                            html.Span("Metric"),
-                            dcc.Dropdown(
-                                id="country-metric",
-                                options=[
-                                    {
-                                        "label": metric.value.replace("_", " ").title(),
-                                        "value": metric.value,
-                                    }
-                                    for metric in Metric
-                                ],
-                                value=Metric.CASES_PER_100K.value,
-                                clearable=False,
-                            ),
-                        ],
-                        className=CONTROL_CLASS,
-                    ),
-                    html.Label(
-                        [
-                            html.Span("Date range"),
-                            dcc.DatePickerRange(
-                                id="country-date-range",
-                                start_date=DEFAULT_START_DATE,
-                                end_date=DEFAULT_END_DATE,
-                                display_format=DATE_DISPLAY_FORMAT,
-                            ),
-                        ],
-                        className=WIDE_CONTROL_CLASS,
-                    ),
-                    html.Button(
-                        RETRY_DATA_LABEL,
-                        id="country-retry",
-                        n_clicks=0,
-                        className=CONTROL_BUTTON_CLASS,
-                    ),
-                ],
-                className=CONTROL_PANEL_CLASS,
+            dmc.Paper(
+                p="md",
+                radius="md",
+                withBorder=True,
+                mb="lg",
+                children=dmc.Group(
+                    align="flex-end",
+                    children=[
+                        dmc.Select(
+                            id="country-select",
+                            label="Country",
+                            data=options,
+                            value=_default_country(options, "LV"),
+                            clearable=False,
+                            disabled=not options,
+                            w=200,
+                        ),
+                        dmc.Select(
+                            id="country-metric",
+                            label="Metric",
+                            data=[
+                                {
+                                    "label": metric.value.replace("_", " ").title(),
+                                    "value": metric.value,
+                                }
+                                for metric in Metric
+                            ],
+                            value=Metric.CASES_PER_100K.value,
+                            clearable=False,
+                            w=200,
+                        ),
+                        dmc.DateInput(
+                            id="country-start-date",
+                            label="Start Date",
+                            value=DEFAULT_START_DATE,
+                            valueFormat="YYYY-MM-DD",
+                            minDate=DEFAULT_START_DATE,
+                            maxDate=DEFAULT_END_DATE,
+                            w=150,
+                        ),
+                        dmc.DateInput(
+                            id="country-end-date",
+                            label="End Date",
+                            value=DEFAULT_END_DATE,
+                            valueFormat="YYYY-MM-DD",
+                            minDate=DEFAULT_START_DATE,
+                            maxDate=DEFAULT_END_DATE,
+                            w=150,
+                        ),
+                        dmc.Button(
+                            RETRY_DATA_LABEL,
+                            id="country-retry",
+                            n_clicks=0,
+                            variant="light",
+                            leftSection=DashIconify(icon="tabler:refresh", width=16),
+                        ),
+                    ],
+                ),
             ),
-            loading_panel("country-content"),
+            create_loading_state(
+                html.Div(id="country-content"),
+                loading_id="country-loading",
+            ),
         ]
     )
 
@@ -275,49 +275,60 @@ def comparison_page(catalog_state: dict[str, Any] | None) -> html.Div:
         defaults = [item["value"] for item in options[:2]]
     return html.Div(
         [
-            page_heading(
-                "COUNTRY COMPARISON",
-                "Compare normalized outcomes",
+            create_page_header(
+                "Country Comparison",
                 "Three analytical views share one ordered comparison payload.",
             ),
             catalog_error,
-            html.Section(
-                [
-                    html.Label(
-                        [
-                            html.Span("Countries (2–10)"),
-                            dcc.Dropdown(
-                                id="comparison-countries",
-                                options=options,
-                                value=defaults,
-                                multi=True,
-                                disabled=not options,
-                            ),
-                        ],
-                        className=WIDE_CONTROL_CLASS,
-                    ),
-                    html.Label(
-                        [
-                            html.Span("Date range"),
-                            dcc.DatePickerRange(
-                                id="comparison-date-range",
-                                start_date=DEFAULT_START_DATE,
-                                end_date=DEFAULT_END_DATE,
-                                display_format=DATE_DISPLAY_FORMAT,
-                            ),
-                        ],
-                        className=WIDE_CONTROL_CLASS,
-                    ),
-                    html.Button(
-                        RETRY_DATA_LABEL,
-                        id="comparison-retry",
-                        n_clicks=0,
-                        className=CONTROL_BUTTON_CLASS,
-                    ),
-                ],
-                className=CONTROL_PANEL_CLASS,
+            dmc.Paper(
+                p="md",
+                radius="md",
+                withBorder=True,
+                mb="lg",
+                children=dmc.Group(
+                    align="flex-end",
+                    children=[
+                        dmc.MultiSelect(
+                            id="comparison-countries",
+                            label="Countries (2-10)",
+                            data=options,
+                            value=defaults,
+                            disabled=not options,
+                            w=300,
+                            maxValues=10,
+                        ),
+                        dmc.DateInput(
+                            id="compare-start-date",
+                            label="Start Date",
+                            value=DEFAULT_START_DATE,
+                            valueFormat="YYYY-MM-DD",
+                            minDate=DEFAULT_START_DATE,
+                            maxDate=DEFAULT_END_DATE,
+                            w=150,
+                        ),
+                        dmc.DateInput(
+                            id="compare-end-date",
+                            label="End Date",
+                            value=DEFAULT_END_DATE,
+                            valueFormat="YYYY-MM-DD",
+                            minDate=DEFAULT_START_DATE,
+                            maxDate=DEFAULT_END_DATE,
+                            w=150,
+                        ),
+                        dmc.Button(
+                            RETRY_DATA_LABEL,
+                            id="comparison-retry",
+                            n_clicks=0,
+                            variant="light",
+                            leftSection=DashIconify(icon="tabler:refresh", width=16),
+                        ),
+                    ],
+                ),
             ),
-            loading_panel("comparison-content"),
+            create_loading_state(
+                html.Div(id="comparison-content"),
+                loading_id="comparison-loading",
+            ),
         ]
     )
 
@@ -335,128 +346,123 @@ def annotation_page(catalog_state: dict[str, Any] | None) -> html.Div:
     ]
     return html.Div(
         [
-            page_heading(
-                "ANNOTATIONS",
-                "Add context to the data",
+            create_page_header(
+                "Annotations",
                 "Comments are validated against a real country and reporting date.",
             ),
             catalog_error,
-            html.Section(
-                [
-                    html.Label(
-                        [
-                            html.Span("Country"),
-                            dcc.Dropdown(
-                                id="annotation-country",
-                                options=options,
-                                value=default_country,
-                                clearable=False,
-                                disabled=not options,
-                            ),
-                        ],
-                        className=CONTROL_CLASS,
-                    ),
-                    html.Label(
-                        [
-                            html.Span("Filter metric"),
-                            dcc.Dropdown(
-                                id="annotation-filter-metric",
-                                options=[{"label": "All metrics", "value": ""}]
-                                + metric_options,
-                                value="",
-                                clearable=False,
-                            ),
-                        ],
-                        className=CONTROL_CLASS,
-                    ),
-                    html.Label(
-                        [
-                            html.Span("Filter dates"),
-                            dcc.DatePickerRange(
-                                id="annotation-filter-dates",
-                                start_date=DEFAULT_START_DATE,
-                                end_date=DEFAULT_END_DATE,
-                                display_format=DATE_DISPLAY_FORMAT,
-                                clearable=True,
-                            ),
-                        ],
-                        className=WIDE_CONTROL_CLASS,
-                    ),
-                    html.Button(
-                        "Retry list",
-                        id="annotation-retry",
-                        n_clicks=0,
-                        className=CONTROL_BUTTON_CLASS,
-                    ),
-                ],
-                className=CONTROL_PANEL_CLASS,
+            dmc.Paper(
+                p="md",
+                radius="md",
+                withBorder=True,
+                mb="lg",
+                children=dmc.Group(
+                    align="flex-end",
+                    children=[
+                        dmc.Select(
+                            id="annotation-country",
+                            label="Country",
+                            data=options,
+                            value=default_country,
+                            clearable=False,
+                            disabled=not options,
+                            w=200,
+                        ),
+                        dmc.Select(
+                            id="annotation-filter-metric",
+                            label="Filter metric",
+                            data=[{"label": "All metrics", "value": ""}]
+                            + metric_options,
+                            value="",
+                            clearable=False,
+                            w=200,
+                        ),
+                        dmc.DateInput(
+                            id="annotation-filter-start-date",
+                            label="Filter Start Date",
+                            value=DEFAULT_START_DATE,
+                            valueFormat="YYYY-MM-DD",
+                            minDate=DEFAULT_START_DATE,
+                            maxDate=DEFAULT_END_DATE,
+                            w=150,
+                            clearable=True,
+                        ),
+                        dmc.DateInput(
+                            id="annotation-filter-end-date",
+                            label="Filter End Date",
+                            value=DEFAULT_END_DATE,
+                            valueFormat="YYYY-MM-DD",
+                            minDate=DEFAULT_START_DATE,
+                            maxDate=DEFAULT_END_DATE,
+                            w=150,
+                            clearable=True,
+                        ),
+                        dmc.Button(
+                            "Retry list",
+                            id="annotation-retry",
+                            n_clicks=0,
+                            variant="light",
+                            leftSection=DashIconify(icon="tabler:refresh", width=16),
+                        ),
+                    ],
+                ),
             ),
-            html.Section(
-                [
-                    html.H2("Add an annotation"),
-                    html.Div(
-                        [
-                            html.Label(
-                                [
-                                    html.Span("Report date"),
-                                    dcc.DatePickerSingle(
-                                        id="annotation-report-date",
-                                        date=DEFAULT_END_DATE,
-                                        display_format=DATE_DISPLAY_FORMAT,
-                                    ),
-                                ],
-                                className=CONTROL_CLASS,
-                            ),
-                            html.Label(
-                                [
-                                    html.Span("Metric"),
-                                    dcc.Dropdown(
-                                        id="annotation-metric",
-                                        options=metric_options,
-                                        value=Metric.NEW_CASES.value,
-                                        clearable=False,
-                                    ),
-                                ],
-                                className=CONTROL_CLASS,
-                            ),
-                            html.Label(
-                                [
-                                    html.Span("Display name"),
-                                    dcc.Input(
-                                        id="annotation-created-by",
-                                        type="text",
-                                        minLength=1,
-                                        maxLength=80,
-                                        placeholder="Your name",
-                                    ),
-                                ],
-                                className=CONTROL_CLASS,
-                            ),
-                        ],
-                        className="annotation-form-grid",
-                    ),
-                    html.Label(
-                        [
-                            html.Span("Comment"),
-                            dcc.Textarea(
-                                id="annotation-comment",
-                                minLength=1,
-                                maxLength=1_000,
-                                placeholder="Add context for this data point…",
-                            ),
-                        ],
-                        className="control annotation-comment",
-                    ),
-                    html.Button(
-                        "Save annotation",
-                        id="annotation-submit",
-                        n_clicks=0,
-                        className="primary-button",
-                    ),
-                ],
-                className="form-card",
+            dmc.Paper(
+                p="md",
+                radius="md",
+                withBorder=True,
+                mb="lg",
+                children=dmc.Stack(
+                    [
+                        dmc.Title("Add an annotation", order=3),
+                        dmc.Group(
+                            [
+                                dmc.DateInput(
+                                    id="annotation-report-date",
+                                    label="Report date",
+                                    value=DEFAULT_END_DATE,
+                                    valueFormat="YYYY-MM-DD",
+                                    minDate=DEFAULT_START_DATE,
+                                    maxDate=DEFAULT_END_DATE,
+                                    w=150,
+                                ),
+                                dmc.Select(
+                                    id="annotation-metric",
+                                    label="Metric",
+                                    data=metric_options,
+                                    value=Metric.NEW_CASES.value,
+                                    clearable=False,
+                                    w=200,
+                                ),
+                                dmc.TextInput(
+                                    id="annotation-created-by",
+                                    label="Display name",
+                                    placeholder="Your name",
+                                    inputProps={"minLength": 1, "maxLength": 80},
+                                    w=200,
+                                ),
+                            ]
+                        ),
+                        dmc.Textarea(
+                            id="annotation-comment",
+                            label="Comment",
+                            placeholder="Add context for this data point...",
+                            inputProps={"minLength": 1, "maxLength": 1000},
+                            autosize=True,
+                            minRows=2,
+                        ),
+                        dmc.Button(
+                            "Save annotation",
+                            id="annotation-submit",
+                            n_clicks=0,
+                        ),
+                    ]
+                ),
             ),
-            loading_panel("annotation-content"),
+            create_loading_state(
+                html.Div(id="annotation-content"),
+                loading_id="annotation-loading",
+            ),
         ]
     )
 
@@ -464,24 +470,9 @@ def annotation_page(catalog_state: dict[str, Any] | None) -> html.Div:
 def not_found_page() -> html.Div:
     return html.Div(
         [
-            page_heading(
-                "404",
-                "Page not found",
+            create_page_header(
+                "404 - Page not found",
                 "Use the navigation to return to an available dashboard page.",
             )
         ]
-    )
-
-
-def kpi(label: str, value: str) -> html.Article:
-    return html.Article(
-        [html.Span(label, className="kpi-label"), html.Strong(value)],
-        className="kpi-card",
-    )
-
-
-def chart_card(figure: Any) -> html.Article:
-    return html.Article(
-        dcc.Graph(figure=figure, config={"displayModeBar": False}, responsive=True),
-        className="chart-card",
     )

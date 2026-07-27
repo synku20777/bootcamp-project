@@ -2,9 +2,22 @@ from __future__ import annotations
 
 from typing import Any
 
+import dash_mantine_components as dmc
 import plotly.graph_objects as go
 
+dmc.add_figure_templates(default="mantine_dark")
+
 COLORS = ["#315fd4", "#0f8a68", "#d26a3f", "#805ad5", "#c13f66"]
+
+GRAPH_CONFIG = {
+    "displaylogo": False,
+    "responsive": True,
+    "scrollZoom": False,
+    "modeBarButtonsToRemove": [
+        "lasso2d",
+        "select2d",
+    ],
+}
 
 
 def empty_figure(message: str) -> go.Figure:
@@ -20,22 +33,17 @@ def empty_figure(message: str) -> go.Figure:
     )
     figure.update_xaxes(visible=False)
     figure.update_yaxes(visible=False)
-    return style_figure(figure)
+    return apply_dashboard_chart_layout(figure)
 
 
-def style_figure(figure: go.Figure) -> go.Figure:
-    figure.update_layout(
-        template="plotly_white",
-        margin={"l": 45, "r": 20, "t": 55, "b": 45},
-        paper_bgcolor="rgba(0,0,0,0)",
-        plot_bgcolor="rgba(0,0,0,0)",
-        font={"family": "Inter, system-ui, sans-serif", "color": "#172033"},
+def apply_dashboard_chart_layout(figure: go.Figure, *, height: int = 380) -> go.Figure:
+    return figure.update_layout(
+        height=height,
+        margin={"l": 24, "r": 16, "t": 48, "b": 32},
+        font={"family": "Poppins, Inter, system-ui, sans-serif"},
         hovermode="x unified",
         legend={"orientation": "h", "y": 1.08, "x": 0},
     )
-    figure.update_xaxes(gridcolor="#edf0f5")
-    figure.update_yaxes(gridcolor="#edf0f5")
-    return figure
 
 
 def overview_bar(
@@ -60,7 +68,7 @@ def overview_bar(
         )
     )
     figure.update_layout(title=title)
-    return style_figure(figure)
+    return apply_dashboard_chart_layout(figure)
 
 
 def overview_map(locations: list[dict[str, Any]]) -> go.Figure:
@@ -85,7 +93,7 @@ def overview_map(locations: list[dict[str, Any]]) -> go.Figure:
             "projection_type": "natural earth",
         },
     )
-    return style_figure(figure)
+    return apply_dashboard_chart_layout(figure)
 
 
 def metric_figure(
@@ -109,7 +117,7 @@ def metric_figure(
         trace_options.update({"mode": "lines", "line": {"color": color, "width": 2}})
     figure = go.Figure(trace_type(**trace_options))
     figure.update_layout(title=title, showlegend=False)
-    return style_figure(figure)
+    return apply_dashboard_chart_layout(figure)
 
 
 def comparison_figure(
@@ -132,4 +140,4 @@ def comparison_figure(
     if not any(country[series_key]["points"] for country in series):
         return empty_figure("No observations in this date range")
     figure.update_layout(title=title)
-    return style_figure(figure)
+    return apply_dashboard_chart_layout(figure)

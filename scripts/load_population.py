@@ -1,7 +1,13 @@
 from __future__ import annotations
 
+import hashlib
+import json
 import logging
 import os
+import secrets
+import string
+import sys
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
@@ -11,49 +17,52 @@ import snowflake.connector
 from dotenv import load_dotenv
 from snowflake.connector.pandas_tools import write_pandas
 
-from app.logging_config import configure_logging
+REPOSITORY_ROOT = Path(__file__).resolve().parents[1]
+if str(REPOSITORY_ROOT) not in sys.path:
+    sys.path.insert(0, str(REPOSITORY_ROOT))
+
+from app.logging_config import configure_logging, sanitized_exception_info  # noqa: E402
 
 WORLD_BANK_BASE_URL = "https://api.worldbank.org/v2"
 POPULATION_YEAR = 2020
+TARGET_DATABASE = "COVID_ANALYTICS"
+TARGET_SCHEMA = "RAW"
+TARGET_TABLE = "WORLD_BANK_POPULATION_2020"
+DEFAULT_CSV_PATH = Path("data/external/world_bank_population_2020.csv")
+DEFAULT_MANIFEST_PATH = Path("outputs/setup/population-manifest.json")
 logger = logging.getLogger(__name__)
+
+
+class PopulationValidationError(RuntimeError):
+    """Downloaded or loaded population data violates the publication contract."""
 
 
 def request_world_bank_data(
     endpoint: str,
     params: dict[str, Any],
 ) -> list[dict[str, Any]]:
-    """Request a World Bank API endpoint and return its data records."""
     response = requests.get(
         f"{WORLD_BANK_BASE_URL}/{endpoint}",
         params=params,
         timeout=60,
     )
     response.raise_for_status()
-
     payload = response.json()
-
     if not isinstance(payload, list) or len(payload) < 2:
-        raise RuntimeError(f"Unexpected World Bank response for endpoint: {endpoint}")
-
+        raise RuntimeError("World Bank returned an unexpected response shape.")
     return payload[1] or []
 
 
 def build_population_dataframe() -> pd.DataFrame:
-    """Download country metadata and 2020 population values."""
     country_metadata = request_world_bank_data(
         "country",
-        {
-            "format": "json",
-            "per_page": 400,
-        },
+        {"format": "json", "per_page": 400},
     )
-
     valid_countries = {
         country["iso2Code"]: country
         for country in country_metadata
         if country.get("iso2Code") and country.get("region", {}).get("id") != "NA"
     }
-
     population_records = request_world_bank_data(
         "country/all/indicator/SP.POP.TOTL",
         {
@@ -62,21 +71,13 @@ def build_population_dataframe() -> pd.DataFrame:
             "per_page": 400,
         },
     )
-
     rows: list[dict[str, Any]] = []
-
     for record in population_records:
         iso2_code = record.get("country", {}).get("id")
         population = record.get("value")
-
-        if iso2_code not in valid_countries:
+        if iso2_code not in valid_countries or population is None:
             continue
-
-        if population is None:
-            continue
-
         metadata = valid_countries[iso2_code]
-
         rows.append(
             {
                 "COUNTRY_CODE_ISO2": iso2_code,
@@ -86,23 +87,41 @@ def build_population_dataframe() -> pd.DataFrame:
                 "POPULATION_YEAR": POPULATION_YEAR,
             }
         )
-
     dataframe = pd.DataFrame(rows)
-
     if dataframe.empty:
-        raise RuntimeError("No population records were downloaded.")
+        raise PopulationValidationError("No population records were downloaded.")
+    return dataframe.sort_values("COUNTRY_NAME").reset_index(drop=True)
 
-    dataframe = (
-        dataframe.drop_duplicates(subset=["COUNTRY_CODE_ISO2"])
-        .sort_values("COUNTRY_NAME")
-        .reset_index(drop=True)
-    )
 
-    return dataframe
+def validate_population_dataframe(dataframe: pd.DataFrame) -> None:
+    required = {
+        "COUNTRY_CODE_ISO2",
+        "COUNTRY_CODE_ISO3",
+        "COUNTRY_NAME",
+        "POPULATION",
+        "POPULATION_YEAR",
+    }
+    if set(dataframe.columns) != required:
+        raise PopulationValidationError("Population columns do not match the contract.")
+    if dataframe.empty:
+        raise PopulationValidationError("Population data is empty.")
+    if dataframe[list(required)].isnull().any().any():
+        raise PopulationValidationError(
+            "Population data contains required null values."
+        )
+    if dataframe["COUNTRY_CODE_ISO2"].duplicated().any():
+        raise PopulationValidationError("Population ISO-2 keys are not unique.")
+    if not dataframe["COUNTRY_CODE_ISO2"].astype(str).str.len().eq(2).all():
+        raise PopulationValidationError("Population ISO-2 keys have invalid lengths.")
+    if not dataframe["COUNTRY_CODE_ISO3"].astype(str).str.len().eq(3).all():
+        raise PopulationValidationError("Population ISO-3 keys have invalid lengths.")
+    if not dataframe["POPULATION"].gt(0).all():
+        raise PopulationValidationError("Population values must be positive.")
+    if set(dataframe["POPULATION_YEAR"].astype(int)) != {POPULATION_YEAR}:
+        raise PopulationValidationError("Population year must be 2020.")
 
 
 def connect_to_snowflake() -> snowflake.connector.SnowflakeConnection:
-    """Create a Snowflake connection using environment variables."""
     required_variables = [
         "SNOWFLAKE_ACCOUNT",
         "SNOWFLAKE_USER",
@@ -111,14 +130,10 @@ def connect_to_snowflake() -> snowflake.connector.SnowflakeConnection:
         "SNOWFLAKE_DATABASE",
         "SNOWFLAKE_SCHEMA",
     ]
-
     missing = [variable for variable in required_variables if not os.getenv(variable)]
-
     if missing:
         raise RuntimeError(f"Missing environment variables: {', '.join(missing)}")
-
     logger.info("snowflake_connection_started")
-
     return snowflake.connector.connect(
         account=os.environ["SNOWFLAKE_ACCOUNT"],
         user=os.environ["SNOWFLAKE_USER"],
@@ -130,31 +145,83 @@ def connect_to_snowflake() -> snowflake.connector.SnowflakeConnection:
     )
 
 
-def main() -> None:
-    load_dotenv()
-    configure_logging("population-loader", os.getenv("LOG_LEVEL", "INFO"))
+def _staging_table_name() -> str:
+    alphabet = string.ascii_uppercase + string.digits
+    suffix = "".join(secrets.choice(alphabet) for _ in range(12))
+    return f"{TARGET_TABLE}_STAGING_{suffix}"
 
-    dataframe = build_population_dataframe()
 
-    output_directory = Path("data/external")
-    output_directory.mkdir(parents=True, exist_ok=True)
-
-    csv_path = output_directory / "world_bank_population_2020.csv"
-    dataframe.to_csv(csv_path, index=False)
-
-    logger.info(
-        "population_file_created",
-        extra={"output_path": str(csv_path), "row_count": len(dataframe)},
+def _table_exists(cursor: Any, table_name: str) -> bool:
+    cursor.execute(
+        f"SHOW TABLES LIKE '{table_name}' IN SCHEMA {TARGET_DATABASE}.{TARGET_SCHEMA}"
     )
+    return cursor.fetchone() is not None
 
-    connection = connect_to_snowflake()
 
+def _validate_loaded_table(cursor: Any, table_name: str, expected_rows: int) -> None:
+    cursor.execute(
+        f"""
+        SELECT
+            COUNT(*) AS ROW_COUNT,
+            COUNT(DISTINCT COUNTRY_CODE_ISO2) AS UNIQUE_ISO2,
+            COUNT_IF(COUNTRY_CODE_ISO2 IS NULL
+                     OR COUNTRY_CODE_ISO3 IS NULL
+                     OR COUNTRY_NAME IS NULL
+                     OR POPULATION IS NULL
+                     OR POPULATION_YEAR IS NULL) AS REQUIRED_NULLS,
+            COUNT_IF(POPULATION <= 0) AS NON_POSITIVE_POPULATION,
+            COUNT_IF(POPULATION_YEAR <> %s) AS INVALID_YEAR
+        FROM {TARGET_DATABASE}.{TARGET_SCHEMA}.{table_name}
+        """,
+        (POPULATION_YEAR,),
+    )
+    row_count, unique_iso2, required_nulls, non_positive, invalid_year = (
+        cursor.fetchone()
+    )
+    if (
+        int(row_count) != expected_rows
+        or int(unique_iso2) != expected_rows
+        or int(required_nulls) != 0
+        or int(non_positive) != 0
+        or int(invalid_year) != 0
+    ):
+        raise PopulationValidationError(
+            "Snowflake staging-table validation did not pass."
+        )
+
+
+def _atomic_write(path: Path, content: str) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    staging = path.parent / f".{path.name}.{secrets.token_hex(6)}.tmp"
     try:
-        cursor = connection.cursor()
+        staging.write_text(content, encoding="utf-8")
+        staging.replace(path)
+    finally:
+        staging.unlink(missing_ok=True)
 
-        cursor.execute("""
-            CREATE OR REPLACE TABLE
-                COVID_ANALYTICS.RAW.WORLD_BANK_POPULATION_2020
+
+def _dataframe_csv(dataframe: pd.DataFrame) -> str:
+    return dataframe.to_csv(index=False, lineterminator="\n")
+
+
+def refresh_population(
+    *,
+    connection: snowflake.connector.SnowflakeConnection | None = None,
+    csv_path: Path = DEFAULT_CSV_PATH,
+    manifest_path: Path = DEFAULT_MANIFEST_PATH,
+) -> dict[str, Any]:
+    dataframe = build_population_dataframe()
+    validate_population_dataframe(dataframe)
+    csv_content = _dataframe_csv(dataframe)
+    _atomic_write(csv_path, csv_content)
+    owns_connection = connection is None
+    active_connection = connection or connect_to_snowflake()
+    staging_table = _staging_table_name()
+    cursor = active_connection.cursor()
+    loaded_rows = 0
+    try:
+        cursor.execute(f"""
+            CREATE TABLE {TARGET_DATABASE}.{TARGET_SCHEMA}.{staging_table}
             (
                 COUNTRY_CODE_ISO2 VARCHAR,
                 COUNTRY_CODE_ISO3 VARCHAR,
@@ -163,26 +230,83 @@ def main() -> None:
                 POPULATION_YEAR NUMBER(4, 0)
             )
             """)
-
-        success, chunks, rows, _ = write_pandas(
-            connection,
+        success, chunks, loaded_rows, _ = write_pandas(
+            active_connection,
             dataframe,
-            table_name="WORLD_BANK_POPULATION_2020",
-            database="COVID_ANALYTICS",
-            schema="RAW",
+            table_name=staging_table,
+            database=TARGET_DATABASE,
+            schema=TARGET_SCHEMA,
             quote_identifiers=False,
         )
-
-        if not success:
-            raise RuntimeError("write_pandas reported an unsuccessful load.")
-
-        logger.info(
-            "population_rows_loaded",
-            extra={"row_count": rows, "chunk_count": chunks},
+        if not success or int(loaded_rows) != len(dataframe):
+            raise PopulationValidationError("Population staging load was incomplete.")
+        _validate_loaded_table(cursor, staging_table, len(dataframe))
+        if _table_exists(cursor, TARGET_TABLE):
+            cursor.execute(
+                f"ALTER TABLE {TARGET_DATABASE}.{TARGET_SCHEMA}.{staging_table} "
+                f"SWAP WITH {TARGET_DATABASE}.{TARGET_SCHEMA}.{TARGET_TABLE}"
+            )
+            cursor.execute(
+                f"DROP TABLE {TARGET_DATABASE}.{TARGET_SCHEMA}.{staging_table}"
+            )
+        else:
+            cursor.execute(
+                f"ALTER TABLE {TARGET_DATABASE}.{TARGET_SCHEMA}.{staging_table} "
+                f"RENAME TO {TARGET_DATABASE}.{TARGET_SCHEMA}.{TARGET_TABLE}"
+            )
+        manifest = {
+            "source": "world_bank",
+            "population_year": POPULATION_YEAR,
+            "downloaded_rows": len(dataframe),
+            "loaded_rows": int(loaded_rows),
+            "unique_iso2_codes": int(dataframe["COUNTRY_CODE_ISO2"].nunique()),
+            "generated_at": datetime.now(UTC).isoformat(),
+            "data_sha256": hashlib.sha256(csv_content.encode("utf-8")).hexdigest(),
+        }
+        _atomic_write(
+            manifest_path,
+            json.dumps(manifest, indent=2, sort_keys=True),
         )
-
+        logger.info(
+            "population_refresh_completed",
+            extra={
+                "loaded_rows": loaded_rows,
+                "chunk_count": chunks,
+                "population_year": POPULATION_YEAR,
+            },
+        )
+        return manifest
+    except Exception:
+        try:
+            cursor.execute(
+                f"DROP TABLE IF EXISTS {TARGET_DATABASE}.{TARGET_SCHEMA}.{staging_table}"
+            )
+        except Exception as cleanup_exc:
+            logger.exception(
+                "population_staging_cleanup_failed",
+                exc_info=sanitized_exception_info(cleanup_exc),
+            )
+        raise
     finally:
-        connection.close()
+        cursor.close()
+        if owns_connection:
+            active_connection.close()
+
+
+def main() -> None:
+    load_dotenv()
+    configure_logging("population-loader", os.getenv("LOG_LEVEL", "INFO"))
+    for external_logger in ("snowflake.connector", "urllib3"):
+        logging.getLogger(external_logger).setLevel(logging.CRITICAL)
+    try:
+        refresh_population()
+    except Exception as exc:
+        logger.exception(
+            "population_refresh_failed",
+            extra={"error_type": type(exc).__name__},
+            exc_info=sanitized_exception_info(exc),
+        )
+        raise SystemExit(1) from exc
 
 
 if __name__ == "__main__":
