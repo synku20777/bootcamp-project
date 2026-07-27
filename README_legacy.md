@@ -73,471 +73,80 @@ flowchart LR
 | Containers            | Docker Compose                                 |
 | Code quality          | Ruff, isort, Black, pre-commit, GitHub Actions |
 
-## Run the complete project from a blank computer
+## Run the project (step by step)
 
-This section is the **single beginner setup path**. Follow the steps in order.
-Do not start Docker before finishing the Snowflake setup, because the analytical
-API and dashboard need the Snowflake tables and views created in Steps 7–13.
+The easiest way to run this repository is with Docker. This starts the API,
+status interface, MongoDB, and Redis together, so you do not need to install
+Python or the project's Python packages on your computer.
 
-You will set up four things:
+### 1. Install the required tools
 
-1. A Snowflake trial account and the free COVID-19 Marketplace dataset.
-2. The project files on your computer.
-3. The Snowflake analytical pipeline and World Bank population data.
-4. The Docker services: FastAPI, Dash, MongoDB, and Redis.
+Install:
 
-### Before you begin
+- [Git](https://git-scm.com/downloads)
+- [Docker Desktop](https://www.docker.com/products/docker-desktop/) (Windows or
+  macOS), or Docker Engine with the Compose plugin (Linux)
 
-You need:
-
-- A computer with Windows, macOS, or Linux.
-- An internet connection.
-- An email address for the Snowflake trial account.
-- Permission to install applications on the computer.
-- Enough free disk space for Docker images and project data.
-
-A **terminal** is a window where you type commands. On Windows, use
-**PowerShell**:
-
-1. Select the Windows **Start** button.
-2. Type `PowerShell`.
-3. Open **Windows PowerShell** or **PowerShell**.
-
-Copy one command block at a time, paste it into the terminal, and press
-**Enter**. Wait for the command to finish before continuing.
-
-### Step 1 — Create the Snowflake trial account
-
-1. Open the [Snowflake trial sign-up page](https://signup.snowflake.com/) in a
-   web browser.
-2. Create a free trial account.
-3. When Snowflake asks for the cloud platform and region, choose:
-
-   ```text
-   Cloud provider: Amazon Web Services (AWS)
-   Region: Europe — Stockholm
-   ```
-
-4. Save your Snowflake username and password in a password manager.
-5. Sign in to Snowflake. The Snowflake web interface is called **Snowsight**.
-
-After signing in, create a SQL worksheet and run:
-
-```sql
-SELECT CURRENT_REGION() AS REGION;
-```
-
-The result should identify the AWS Stockholm region, normally:
-
-```text
-AWS_EU_NORTH_1
-```
-
-Stop here if the account is in a different region. The assignment requires AWS
-Stockholm.
-
-### Step 2 — Add the free COVID-19 Marketplace dataset
-
-In Snowsight:
-
-1. Make sure the current role is `ACCOUNTADMIN`.
-2. Open **Marketplace** or **Data Products → Marketplace**. The exact menu name
-   can vary slightly between Snowsight versions.
-3. Search for:
-
-   ```text
-   COVID-19 Epidemiological Data
-   ```
-
-4. Open the free listing and select **Get**, **Install**, or the equivalent
-   access button.
-5. Use this exact database name when Snowflake asks for one:
-
-   ```text
-   COVID19_EPIDEMIOLOGICAL_DATA
-   ```
-
-6. Wait until Snowflake finishes adding the data.
-
-Verify the database in a worksheet:
-
-```sql
-SHOW DATABASES LIKE 'COVID19_EPIDEMIOLOGICAL_DATA';
-```
-
-The result must contain one database named
-`COVID19_EPIDEMIOLOGICAL_DATA`.
-
-### Step 3 — Install Git, Docker, and uv
-
-Install these tools:
-
-- [Git](https://git-scm.com/downloads) — downloads the project from GitHub.
-- [Docker Desktop](https://www.docker.com/products/docker-desktop/) — runs the
-  API, dashboard, MongoDB, and Redis.
-- [uv](https://docs.astral.sh/uv/getting-started/installation/) — installs the
-  pinned Python version and the exact dependencies from `uv.lock`.
-
-#### Windows
-
-Install Git and Docker Desktop using their installers. Keep the default options.
-When Docker asks about a backend, use the recommended WSL 2 option. Restart the
-computer if an installer asks you to do so.
-
-Install uv by opening PowerShell and running:
-
-```powershell
-powershell -ExecutionPolicy ByPass -c "irm https://astral.sh/uv/install.ps1 | iex"
-```
-
-Close PowerShell and open it again after the installation.
-
-#### macOS or Linux
-
-Install Git and Docker using the official instructions for your operating
-system. Install uv with:
-
-```bash
-curl -LsSf https://astral.sh/uv/install.sh | sh
-```
-
-Close the terminal and open it again after the installation.
-
-#### Verify the installations
-
-Start Docker Desktop and wait until it reports that Docker is running. Then run:
+Start Docker, then open a terminal and confirm that it is ready:
 
 ```bash
 git --version
 docker --version
 docker compose version
-uv --version
 ```
 
-Each command must print a version number. Do not continue while one of these
-commands reports that it is unknown, missing, or unable to connect.
+Each command should print a version number. If a Docker command fails, make
+sure Docker Desktop or the Docker service is running before continuing.
 
-### Step 4 — Download the project from GitHub
+### 2. Open the repository folder
 
-Open the project repository on GitHub, select **Code**, select **HTTPS**, and
-copy the repository URL.
-
-In PowerShell, macOS Terminal, or a Linux terminal, move to a place where you
-want to keep the project. For example:
+In a terminal, move into the folder that contains this `README.md` file. For
+example:
 
 ```bash
-cd ~/Documents
+cd path/to/bootcamp-project
 ```
 
-Clone the repository. Replace `PASTE_REPOSITORY_URL_HERE` with the URL copied
-from GitHub:
+All commands below should be run from this folder.
+
+### 3. Create your environment file
+
+Create `.env` from the included template. Use the command for your terminal:
+
+macOS, Linux, or Git Bash:
 
 ```bash
-git clone PASTE_REPOSITORY_URL_HERE
+cp .env.example .env
 ```
-
-Enter the downloaded project directory. If GitHub created a folder with a
-different name, use that folder name instead:
-
-```bash
-cd bootcamp-project
-```
-
-Confirm that you are in the correct directory:
-
-```bash
-ls
-```
-
-On Windows PowerShell, `dir` can be used instead:
-
-```powershell
-dir
-```
-
-You should see at least:
-
-```text
-README.md
-compose.yaml
-pyproject.toml
-uv.lock
-sql
-scripts
-app
-```
-
-All remaining terminal commands must be run from this project directory unless
-a step explicitly says otherwise.
-
-> If you received the project as a ZIP file instead of cloning it, extract the
-> ZIP, open a terminal in the extracted folder, and confirm that `compose.yaml`
-> is visible before continuing.
-
-### Step 5 — Install the locked Python environment
-
-Run:
-
-```bash
-uv sync --locked
-```
-
-uv reads `.python-version`, installs the pinned Python version when necessary,
-creates the isolated `.venv` directory, and installs the exact dependency
-versions recorded in `uv.lock`.
-
-Verify the environment:
-
-```bash
-uv run python --version
-```
-
-The result should show Python `3.12.13` for the current project version.
-
-You do not need to activate `.venv`. Commands beginning with `uv run` use the
-isolated project environment automatically.
-
-### Step 6 — Learn how to run the Snowflake SQL files
-
-The SQL files are in the local `sql/` folder, but they must be executed in the
-Snowflake website. **Do not paste Snowflake SQL into PowerShell or another
-computer terminal.**
-
-For every SQL file in the following steps:
-
-1. Open the file on your computer in a text editor such as Visual Studio Code,
-   Notepad, or another plain-text editor.
-2. Select all text and copy it.
-3. In Snowsight, open **Projects → Workspaces** or a new SQL worksheet.
-4. Paste the copied SQL into the worksheet.
-5. Confirm that the role shown at the top matches the role required by the
-   step.
-6. Execute all statements in the file. If the interface executes only the
-   statement containing the cursor, highlight the complete file before
-   selecting **Run**.
-7. Read the result messages. Do not continue past a red error message.
-
-The file numbers define the required execution order.
-
-### Step 7 — Create the Snowflake warehouse, monitor, roles, and schemas
-
-In Snowsight, select the `ACCOUNTADMIN` role and run:
-
-```text
-sql/00_project_setup.sql
-```
-
-This file creates:
-
-```text
-COVID_PROJECT_MONITOR
-COVID_WH
-COVID_ANALYTICS
-COVID_PROJECT_ADMIN
-COVID_APP_ROLE
-COVID_ANALYTICS.RAW
-COVID_ANALYTICS.STAGING
-COVID_ANALYTICS.MARTS
-COVID_ANALYTICS.APP
-```
-
-The final result also includes `PYTHON_ACCOUNT_IDENTIFIER`. Copy that value; it
-will look similar to:
-
-```text
-MYORGANIZATION-MYACCOUNT
-```
-
-Do not use only the short account locator.
-
-If your Snowflake user cannot select `COVID_PROJECT_ADMIN` or `COVID_APP_ROLE`,
-run this as `ACCOUNTADMIN`, replacing the placeholder with your real Snowflake
-username:
-
-```sql
-GRANT ROLE COVID_PROJECT_ADMIN TO USER YOUR_SNOWFLAKE_USERNAME;
-GRANT ROLE COVID_APP_ROLE TO USER YOUR_SNOWFLAKE_USERNAME;
-```
-
-You can find the current username with:
-
-```sql
-SELECT CURRENT_USER();
-```
-
-### Step 8 — Explore the source and create the staging layer
-
-Run these files in this exact order:
-
-```text
-sql/01_data_exploration.sql
-sql/02_create_country_mapping.sql
-sql/03_create_staging_view.sql
-```
-
-Use `COVID_PROJECT_ADMIN` unless the SQL file explicitly changes the role.
-
-After Step 8, verify the staging view:
-
-```sql
-SELECT COUNT(*) AS ROW_COUNT
-FROM COVID_ANALYTICS.STAGING.COVID_COUNTRY_DAILY;
-```
-
-The query should return a positive row count, not zero.
-
-### Step 9 — Create the local `.env` configuration file
-
-The project includes `.env.example`, which lists every required setting. Copy it
-to a new file named `.env`.
 
 Windows PowerShell:
 
 ```powershell
 Copy-Item .env.example .env
-notepad .env
 ```
 
-macOS or Linux:
+Skip this step if you already have a configured `.env` file.
 
-```bash
-cp .env.example .env
-nano .env
-```
+### 4. Set the local credentials
 
-When using `nano`, save with **Ctrl+O**, press **Enter**, and exit with
-**Ctrl+X**. You can also open `.env` in any other plain-text editor.
-
-Replace the placeholder values with your own values. The important section must
-look like this:
+Open `.env` in a text editor. To run the API, the three MongoDB settings must
+have values:
 
 ```dotenv
-SNOWFLAKE_ACCOUNT=MYORGANIZATION-MYACCOUNT
-SNOWFLAKE_USER=YOUR_SNOWFLAKE_USERNAME
-SNOWFLAKE_PASSWORD=YOUR_SNOWFLAKE_PASSWORD
-SNOWFLAKE_ROLE=COVID_PROJECT_ADMIN
-SNOWFLAKE_API_ROLE=COVID_APP_ROLE
-SNOWFLAKE_WAREHOUSE=COVID_WH
-SNOWFLAKE_DATABASE=COVID_ANALYTICS
-SNOWFLAKE_SCHEMA=RAW
-SNOWFLAKE_API_SCHEMA=MARTS
-
 MONGO_ROOT_USERNAME=covid_admin
-MONGO_ROOT_PASSWORD=ChooseANewPassword123
+MONGO_ROOT_PASSWORD=choose_a_new_alphanumeric_password
 MONGO_DATABASE=covid_app
 ```
 
-Replace:
+Use letters and numbers for the password. Special characters must be URL
+encoded because Compose places the password inside a MongoDB connection URL.
 
-- `MYORGANIZATION-MYACCOUNT` with the `PYTHON_ACCOUNT_IDENTIFIER` copied in
-  Step 7.
-- `YOUR_SNOWFLAKE_USERNAME` with your Snowflake username.
-- `YOUR_SNOWFLAKE_PASSWORD` with your Snowflake password.
-- `ChooseANewPassword123` with a new local MongoDB password.
+Snowflake values can remain placeholders only for `/health/live` and the UI's
+initial **Not checked** state. The Snowflake status check and analytical routes
+require valid credentials plus `COVID_APP_ROLE`. Do not commit `.env`, because
+it contains credentials.
 
-Use only letters and numbers in the MongoDB password for the beginner setup.
-This avoids URL-encoding problems.
-
-Save and close `.env`.
-
-> **Security:** `.env` contains passwords. Never upload it, email it, paste it
-> into screenshots, or commit it to Git. The repository is configured to ignore
-> it.
-
-### Step 10 — Load the World Bank population data
-
-From the project directory in the terminal, run:
-
-```bash
-uv run python scripts/load_population.py
-```
-
-A successful run should report that it downloaded and loaded approximately 217
-rows. The exact wording may differ because the application uses structured JSON
-logging.
-
-If the command reports `404 Not Found` for a Snowflake login request, check
-`SNOWFLAKE_ACCOUNT`. It must be the full `organization-account` identifier from
-Step 7.
-
-### Step 11 — Verify the population data
-
-In Snowsight, run:
-
-```text
-sql/04_verify_population_data.sql
-```
-
-Then run this direct check:
-
-```sql
-SELECT COUNT(*) AS POPULATION_ROWS
-FROM COVID_ANALYTICS.RAW.WORLD_BANK_POPULATION_2020;
-```
-
-The current source normally produces 217 rows.
-
-### Step 12 — Create the enriched analytical mart
-
-In Snowsight, run:
-
-```text
-sql/05_create_enriched_view.sql
-```
-
-Verify it:
-
-```sql
-SELECT COUNT(*) AS MART_ROWS
-FROM COVID_ANALYTICS.MARTS.COVID_ENRICHED;
-```
-
-The result must be greater than zero.
-
-### Step 13 — Create the reporting objects and run final SQL checks
-
-In Snowsight, run:
-
-```text
-sql/06_create_reporting_objects.sql
-sql/07_analysis_queries.sql
-```
-
-Verify the API reporting snapshot:
-
-```sql
-SELECT COUNT(*) AS COUNTRY_COUNT
-FROM COVID_ANALYTICS.MARTS.COUNTRY_LATEST_METRICS;
-```
-
-The result must be greater than zero.
-
-Optionally generate the local EDA CSV files:
-
-```bash
-uv run python scripts/run_eda.py
-```
-
-The files will be created under:
-
-```text
-outputs/eda/
-```
-
-At this point, the Snowflake data pipeline is ready.
-
-### Step 14 — Start Docker Desktop
-
-Open Docker Desktop and wait until it says that the Docker engine is running.
-Test it from the project directory:
-
-```bash
-docker version
-```
-
-The output must include both a **Client** section and a **Server** section.
-
-### Step 15 — Build and start the application services
+### 5. Build and start the application
 
 Run:
 
@@ -545,141 +154,92 @@ Run:
 docker compose up --build -d
 ```
 
-The first build can take several minutes. Docker downloads the required images,
-builds the project image, and starts:
+The first start can take a few minutes while Docker downloads images and builds
+the API. The `-d` option keeps the services running in the background.
 
-```text
-api
-dashboard
-mongo
-redis
-```
+### 6. Confirm that all services are running
 
-Check the status:
+Run:
 
 ```bash
 docker compose ps
 ```
 
-Wait until the services show as running or healthy. If one fails, inspect the
-logs:
+The `api`, `dashboard`, `mongo`, and `redis` services should show as running or
+healthy. If a service does not start, view its logs:
 
 ```bash
 docker compose logs api dashboard mongo redis
 ```
 
-### Step 16 — Create the MongoDB annotation collection and indexes
+### 7. Create the MongoDB annotation indexes
 
-Run:
+Run the idempotent setup script after the services are healthy:
 
 ```bash
 docker compose exec api python -m scripts.setup_mongodb
 ```
 
-This command is safe to run more than once. It creates the `annotations`
-collection when needed and creates the indexes used by the annotation API.
+It creates the `annotations` collection when needed and applies the two
+non-unique country/date and country/metric indexes. It is safe to run again.
 
-### Step 17 — Verify the complete application
+### 8. Test the API and dashboard
 
-Open these addresses in a web browser, in this order:
+Open these addresses in a browser:
 
-1. <http://localhost:8000/health/live> — the API process should return
-   `{"status":"ok"}`.
-2. <http://localhost:8000/health/ready> — MongoDB and Redis should be ready.
-3. <http://localhost:8000/health/snowflake> — Snowflake and the required MARTS
-   objects should be accessible.
-4. <http://localhost:8000/docs> — interactive FastAPI documentation.
-5. <http://localhost:8050/overview> — global dashboard.
-6. <http://localhost:8050/country> — Country Explorer.
-7. <http://localhost:8050/compare> — country comparison.
-8. <http://localhost:8050/annotations> — MongoDB annotations.
+- <http://localhost:8000/> - basic API status
+- <http://localhost:8000/health/live> - process-only liveness
+- <http://localhost:8000/health/ready> - MongoDB and Redis readiness
+- <http://localhost:8000/docs> - interactive Swagger API documentation
+- <http://localhost:8050> - backend status interface
+- <http://localhost:8050/overview> - global analytical overview
+- <http://localhost:8050/country> - Country Explorer
+- <http://localhost:8050/compare> - country comparison
+- <http://localhost:8050/annotations> - MongoDB annotations
 
-The Snowflake check is explicit because it can resume `COVID_WH` and consume
-trial credits. The dashboard does not repeatedly poll Snowflake in the
-background.
+A successful health check returns:
 
-To verify caching, open or request the overview twice. The first successful
-response should contain:
-
-```text
-X-Cache: MISS
+```json
+{
+  "status": "ok"
+}
 ```
 
-The second identical response should contain:
+The status interface does not contact Snowflake automatically. Selecting
+**Check Snowflake** performs one explicit live check that may resume `COVID_WH`.
 
-```text
-X-Cache: HIT
-```
+### 9. Stop the application
 
-You can inspect these headers in Swagger at <http://localhost:8000/docs> or from
-a terminal. On Windows PowerShell, run:
-
-```powershell
-curl.exe -i http://localhost:8000/dashboard/overview
-curl.exe -i http://localhost:8000/dashboard/overview
-```
-
-On macOS or Linux, run:
-
-```bash
-curl -i http://localhost:8000/dashboard/overview
-curl -i http://localhost:8000/dashboard/overview
-```
-
-### Step 18 — Stop and restart the project
-
-Stop the application without deleting MongoDB or Redis data:
+When you are finished, stop and remove the containers:
 
 ```bash
 docker compose down
 ```
 
-Start it again later:
+MongoDB and Redis data remain in Docker volumes and will be available the next
+time you start the project. To also delete that local data, run
+`docker compose down -v`. This second command permanently removes the project's
+local MongoDB and Redis volumes.
 
-```bash
-docker compose up -d
-```
-
-Do **not** use the following command unless you intentionally want to delete all
-local MongoDB annotations and Redis data:
-
-```bash
-docker compose down -v
-```
-
-### Blank-slate completion checklist
-
-The setup is complete only when every item below is true:
-
-- [ ] Snowflake is in AWS Stockholm.
-- [ ] `COVID19_EPIDEMIOLOGICAL_DATA` exists.
-- [ ] `COVID_WH` and `COVID_PROJECT_MONITOR` exist.
-- [ ] `COVID_ANALYTICS.STAGING.COVID_COUNTRY_DAILY` contains rows.
-- [ ] `COVID_ANALYTICS.RAW.WORLD_BANK_POPULATION_2020` contains population rows.
-- [ ] `COVID_ANALYTICS.MARTS.COVID_ENRICHED` contains rows.
-- [ ] `COVID_ANALYTICS.MARTS.COUNTRY_LATEST_METRICS` contains rows.
-- [ ] `docker compose ps` shows the four application services running.
-- [ ] `/health/live`, `/health/ready`, and `/health/snowflake` succeed.
-- [ ] The Overview, Country Explorer, Comparison, and Annotations pages open.
-- [ ] Two identical overview requests produce `MISS` followed by `HIT`.
+The Compose configuration is intended for development: it bind-mounts the
+repository and starts Uvicorn with automatic reload. Use a separate production
+configuration before exposing the service publicly.
 
 ### Docker services
 
-| Service | Container | Address | Purpose |
-| ------- | --------- | ------- | ------- |
-| `api` | `covid_api` | <http://localhost:8000> | FastAPI application |
+| Service | Container     | Host access             | Purpose                |
+| ------- | ------------- | ----------------------- | ---------------------- |
+| `api`   | `covid_api`   | <http://localhost:8000> | FastAPI application    |
 | `dashboard` | `covid_dashboard` | <http://localhost:8050> | Dash analytical UI |
-| `mongo` | `covid_mongo` | `127.0.0.1:27017` | Annotation data store |
-| `redis` | `covid_redis` | Internal Docker network only | API cache |
+| `mongo` | `covid_mongo` | `127.0.0.1:27017`       | Application data store |
+| `redis` | `covid_redis` | Internal only           | API cache dependency   |
 
-Useful commands:
+Useful operational commands:
 
 ```bash
-docker compose ps
 docker compose logs -f api
-docker compose logs -f dashboard
 docker compose restart api
-docker compose restart dashboard
+docker compose build api
 docker compose exec api python --version
 ```
 
@@ -841,15 +401,10 @@ Compose overrides `MONGODB_URI`, `REDIS_URL`, and the dashboard API URL for
 container networking. Never commit `.env`; it is excluded by `.gitignore` and
 `.dockerignore`.
 
-## Snowflake pipeline reference
+## Snowflake pipeline (step by step)
 
-This section explains the Snowflake pipeline in more technical detail. If you
-already completed Steps 7–13 in **Run the complete project from a blank
-computer**, the required objects already exist and you do not need to repeat
-these steps unless you are rebuilding or troubleshooting the pipeline.
-
-The pipeline is optional for process-only API health endpoints, but it is
-required for the analytical API and dashboard. You need:
+This workflow is optional for running the API health endpoints, but it is
+required for the complete analytics pipeline. You need:
 
 - Access to a Snowflake account
 - Permission to use `ACCOUNTADMIN` for the initial setup, or help from a
