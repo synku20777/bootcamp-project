@@ -8,6 +8,7 @@ from redis.exceptions import RedisError
 
 from app.dependencies import (
     get_covid_service,
+    get_mongo_client,
     get_redis_client,
     get_snowflake_repository,
 )
@@ -167,7 +168,10 @@ class HealthySnowflakeRepository:
 
 class UnavailableSnowflakeRepository:
     def check_health(self):
-        raise DataSourceUnavailableError("Snowflake")
+        raise DataSourceUnavailableError(
+            "Snowflake",
+            code="snowflake_unavailable",
+        )
 
 
 class UnavailableRedis:
@@ -196,6 +200,8 @@ class ApiTests(unittest.TestCase):
             raise AssertionError("Snowflake dependency was initialized")
 
         app.dependency_overrides[get_snowflake_repository] = dependency_must_not_run
+        app.dependency_overrides[get_mongo_client] = dependency_must_not_run
+        app.dependency_overrides[get_redis_client] = dependency_must_not_run
         with TestClient(app) as client:
             response = client.get("/health/live")
 
@@ -213,13 +219,21 @@ class ApiTests(unittest.TestCase):
         self.assertEqual(success.json()["status"], "connected")
         self.assertEqual(repository.calls, 1)
 
-        app.dependency_overrides[get_snowflake_repository] = (
-            lambda: UnavailableSnowflakeRepository()
+        app.dependency_overrides[get_snowflake_repository] = lambda: (
+            UnavailableSnowflakeRepository()
         )
         with TestClient(app) as client:
             failure = client.get("/health/snowflake")
 
         self.assertEqual(failure.status_code, 503)
+        self.assertEqual(
+            failure.json()["error"]["code"],
+            "snowflake_unavailable",
+        )
+        self.assertEqual(
+            failure.json()["error"]["request_id"],
+            failure.headers["X-Request-ID"],
+        )
         self.assertNotIn("connector", failure.text.lower())
         self.assertNotIn("sql", failure.text.lower())
 
@@ -291,6 +305,7 @@ class ApiTests(unittest.TestCase):
             )
 
         self.assertEqual(response.status_code, 503)
+        self.assertEqual(response.json()["error"]["code"], "cache_unavailable")
         self.assertEqual(repository.calls, 0)
 
     def test_invalid_comparison_is_422(self) -> None:
@@ -317,6 +332,7 @@ class ApiTests(unittest.TestCase):
             response = client.get("/countries/LV/summary")
 
         self.assertEqual(response.status_code, 503)
+        self.assertEqual(response.json()["error"]["code"], "cache_unavailable")
         self.assertEqual(repository.calls, 0)
         self.assertNotIn("private infrastructure detail", response.text)
 

@@ -16,9 +16,14 @@ logger = logging.getLogger(__name__)
 
 
 def _payload(request: Request, code: str, message: str) -> dict[str, object]:
+    request_id = getattr(request.state, "request_id", None)
     return {
-        "error": {"code": code, "message": message},
-        "request_id": getattr(request.state, "request_id", None),
+        "error": {
+            "code": code,
+            "message": message,
+            "request_id": request_id,
+        },
+        "request_id": request_id,
     }
 
 
@@ -50,11 +55,11 @@ def register_error_handlers(app: FastAPI) -> None:
     ) -> JSONResponse:
         logger.warning(
             "data_source_unavailable",
-            extra={"source": exc.source},
+            extra={"source": exc.source, "error_code": exc.code},
         )
         return JSONResponse(
             status_code=503,
-            content=_payload(request, "data_source_unavailable", str(exc)),
+            content=_payload(request, exc.code, str(exc)),
         )
 
     @app.exception_handler(Exception)

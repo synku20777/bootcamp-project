@@ -19,17 +19,41 @@ STATUS_CODE_FIELD = "status_code"
 class DashboardApiError(Exception):
     """A safe API error suitable for display in the dashboard."""
 
+    def __init__(
+        self,
+        message: str,
+        *,
+        code: str = "api_unavailable",
+        request_id: str | None = None,
+    ) -> None:
+        super().__init__(message)
+        self.code = code
+        self.request_id = request_id
 
-def _detail(response: requests.Response) -> str:
+
+def _response_error(response: requests.Response) -> DashboardApiError:
     try:
         payload = response.json()
     except ValueError:
-        return API_UNREADABLE_RESPONSE_MESSAGE
+        return DashboardApiError(
+            API_UNREADABLE_RESPONSE_MESSAGE,
+            code="api_response_invalid",
+            request_id=response.headers.get("X-Request-ID"),
+        )
     detail = payload.get("detail") if isinstance(payload, dict) else None
+    code = "api_request_failed"
+    request_id = response.headers.get("X-Request-ID")
     if not isinstance(detail, str) and isinstance(payload, dict):
         error = payload.get("error")
-        detail = error.get("message") if isinstance(error, dict) else None
-    return detail if isinstance(detail, str) else "The API request failed."
+        if isinstance(error, dict):
+            detail = error.get("message")
+            code = str(error.get("code") or code)
+            request_id = str(error.get("request_id") or request_id or "") or None
+    return DashboardApiError(
+        detail if isinstance(detail, str) else "The API request failed.",
+        code=code,
+        request_id=request_id,
+    )
 
 
 def get_json(
@@ -53,11 +77,16 @@ def get_json(
         raise DashboardApiError(API_UNAVAILABLE_MESSAGE) from exc
 
     if not response.ok:
+        error = _response_error(response)
         logger.warning(
             RESPONSE_FAILED_EVENT,
-            extra={STATUS_CODE_FIELD: response.status_code},
+            extra={
+                STATUS_CODE_FIELD: response.status_code,
+                "error_code": error.code,
+                "upstream_request_id": error.request_id,
+            },
         )
-        raise DashboardApiError(_detail(response))
+        raise error
 
     try:
         return response.json()
@@ -87,11 +116,16 @@ def post_json(
         raise DashboardApiError(API_UNAVAILABLE_MESSAGE) from exc
 
     if not response.ok:
+        error = _response_error(response)
         logger.warning(
             RESPONSE_FAILED_EVENT,
-            extra={STATUS_CODE_FIELD: response.status_code},
+            extra={
+                STATUS_CODE_FIELD: response.status_code,
+                "error_code": error.code,
+                "upstream_request_id": error.request_id,
+            },
         )
-        raise DashboardApiError(_detail(response))
+        raise error
 
     try:
         return response.json()

@@ -8,7 +8,7 @@ from pymongo import ASCENDING, MongoClient
 from pymongo.errors import CollectionInvalid, PyMongoError
 
 from app.config import Settings
-from app.exceptions import DataSourceUnavailableError
+from app.exceptions import mongodb_unavailable_error
 from app.logging_config import sanitized_exception_info
 from app.models.annotation import Annotation, AnnotationCreate, AnnotationTarget
 
@@ -53,7 +53,7 @@ class AnnotationRepository:
                 extra={"mongo_error_type": type(exc).__name__},
                 exc_info=sanitized_exception_info(exc),
             )
-            raise DataSourceUnavailableError("MongoDB") from exc
+            raise mongodb_unavailable_error() from exc
 
     @staticmethod
     def _at_midnight(value: date) -> datetime:
@@ -105,7 +105,7 @@ class AnnotationRepository:
                 extra={"mongo_error_type": type(exc).__name__},
                 exc_info=sanitized_exception_info(exc),
             )
-            raise DataSourceUnavailableError("MongoDB") from exc
+            raise mongodb_unavailable_error() from exc
         document["_id"] = result.inserted_id
         return self._serialize(document)
 
@@ -140,5 +140,5 @@ class AnnotationRepository:
                 extra={"mongo_error_type": type(exc).__name__},
                 exc_info=sanitized_exception_info(exc),
             )
-            raise DataSourceUnavailableError("MongoDB") from exc
+            raise mongodb_unavailable_error() from exc
         return [self._serialize(document) for document in documents]

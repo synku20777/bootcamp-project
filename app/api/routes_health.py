@@ -12,7 +12,7 @@ from app.dependencies import (
     RedisDependency,
     SnowflakeRepositoryDependency,
 )
-from app.exceptions import DataSourceUnavailableError
+from app.exceptions import cache_unavailable_error, mongodb_unavailable_error
 from app.models.health import LiveStatus, ReadyStatus, SnowflakeStatus
 
 router = APIRouter(tags=["health"])
@@ -36,12 +36,12 @@ def ready(
     try:
         mongo_client.admin.command("ping")
     except PyMongoError as exc:
-        raise DataSourceUnavailableError("MongoDB") from exc
+        raise mongodb_unavailable_error() from exc
 
     try:
         redis_client.ping()
     except RedisError as exc:
-        raise DataSourceUnavailableError("Redis cache") from exc
+        raise cache_unavailable_error() from exc
 
     return ReadyStatus()
 

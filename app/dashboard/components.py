@@ -50,7 +50,7 @@ def create_chart_card(figure: Any) -> dmc.Paper:
     )
 
 
-def create_alert(message: str, state: str = "error") -> dmc.Alert:
+def create_alert(message: Any, state: str = "error") -> dmc.Alert:
     """Centralizes alert states for validation and API errors."""
     color_map = {"error": "red", "warning": "yellow", "success": "teal", "info": "blue"}
     icon_map = {

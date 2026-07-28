@@ -14,6 +14,8 @@ from app.models.covid import Metric
 
 logger = logging.getLogger(__name__)
 
+SNOWFLAKE_SOURCE = "Snowflake"
+
 
 METRIC_COLUMNS: dict[Metric, str] = {
     Metric.NEW_CASES: "NEW_CASES_RAW",
@@ -34,33 +36,155 @@ class SnowflakeRepository:
     def __init__(self, settings: Settings) -> None:
         self.settings = settings
 
-    def _connect(self) -> SnowflakeConnection:
-        required = {
-            "account": self.settings.snowflake_account,
-            "user": self.settings.snowflake_user,
-            "password": self.settings.snowflake_password.get_secret_value(),
+    def _configuration(self) -> dict[str, str]:
+        values = {
+            "SNOWFLAKE_ACCOUNT": self.settings.snowflake_account.strip(),
+            "SNOWFLAKE_USER": self.settings.snowflake_user.strip(),
+            "SNOWFLAKE_PASSWORD": self.settings.snowflake_password.get_secret_value(),
+            "SNOWFLAKE_API_ROLE": self.settings.snowflake_api_role.strip(),
+            "SNOWFLAKE_WAREHOUSE": self.settings.snowflake_warehouse.strip(),
+            "SNOWFLAKE_DATABASE": self.settings.snowflake_database.strip(),
+            "SNOWFLAKE_API_SCHEMA": self.settings.snowflake_api_schema.strip(),
         }
-        if any(not value for value in required.values()):
-            raise DataSourceUnavailableError("Snowflake")
+        missing = sorted(name for name, value in values.items() if not value)
+        if missing:
+            logger.error(
+                "snowflake_configuration_invalid",
+                extra={"missing_settings": missing},
+            )
+            raise DataSourceUnavailableError(
+                SNOWFLAKE_SOURCE,
+                code="snowflake_configuration_invalid",
+                message="Snowflake configuration is incomplete.",
+            )
+
+        account = values["SNOWFLAKE_ACCOUNT"].lower()
+        if (
+            account.startswith(("http://", "https://"))
+            or "snowflakecomputing.com" in account
+        ):
+            logger.error("snowflake_account_identifier_invalid")
+            raise DataSourceUnavailableError(
+                SNOWFLAKE_SOURCE,
+                code="snowflake_account_invalid",
+                message="The Snowflake account identifier is invalid.",
+            )
+        return values
+
+    def _connector_log_fields(
+        self,
+        exc: snowflake.connector.Error,
+        *,
+        operation: str,
+    ) -> dict[str, Any]:
+        return {
+            "operation": operation,
+            "exception_type": type(exc).__name__,
+            "error_code": getattr(exc, "errno", None),
+            "sqlstate": getattr(exc, "sqlstate", None),
+            "role": self.settings.snowflake_api_role,
+            "warehouse": self.settings.snowflake_warehouse,
+        }
+
+    @staticmethod
+    def _classified_connector_error(
+        exc: snowflake.connector.Error,
+        *,
+        operation: str,
+    ) -> DataSourceUnavailableError:
+        message = str(getattr(exc, "msg", "") or exc).lower()
+        sqlstate = str(getattr(exc, "sqlstate", "") or "")
+
+        if sqlstate == "28000" or any(
+            marker in message
+            for marker in ("incorrect username or password", "authentication failed")
+        ):
+            return DataSourceUnavailableError(
+                SNOWFLAKE_SOURCE,
+                code="snowflake_authentication_failed",
+                message="Snowflake authentication failed.",
+            )
+        if "role" in message and any(
+            marker in message
+            for marker in ("not granted", "not authorized", "does not exist")
+        ):
+            return DataSourceUnavailableError(
+                SNOWFLAKE_SOURCE,
+                code="snowflake_role_unauthorized",
+                message="The configured Snowflake role is unavailable to this user.",
+            )
+        if "warehouse" in message and any(
+            marker in message
+            for marker in ("not authorized", "does not exist", "insufficient privilege")
+        ):
+            return DataSourceUnavailableError(
+                SNOWFLAKE_SOURCE,
+                code="snowflake_warehouse_unavailable",
+                message="The configured Snowflake warehouse is unavailable.",
+            )
+        if any(
+            object_name in message
+            for object_name in ("covid_enriched", "country_latest_metrics")
+        ):
+            if "insufficient privilege" in message:
+                return DataSourceUnavailableError(
+                    SNOWFLAKE_SOURCE,
+                    code="snowflake_permission_denied",
+                    message="The Snowflake application role cannot read the analytics mart.",
+                )
+            return DataSourceUnavailableError(
+                SNOWFLAKE_SOURCE,
+                code="analytics_objects_missing",
+                message="Required Snowflake analytics objects are missing or inaccessible.",
+            )
+        if any(
+            marker in message
+            for marker in ("account identifier", "unknown host", "404 not found")
+        ):
+            return DataSourceUnavailableError(
+                SNOWFLAKE_SOURCE,
+                code="snowflake_account_invalid",
+                message="The Snowflake account identifier is invalid.",
+            )
+        if sqlstate.startswith("08"):
+            return DataSourceUnavailableError(
+                SNOWFLAKE_SOURCE,
+                code="snowflake_network_unavailable",
+                message="Snowflake could not be reached from the API.",
+            )
+        if "insufficient privilege" in message or "not authorized" in message:
+            return DataSourceUnavailableError(
+                SNOWFLAKE_SOURCE,
+                code="snowflake_permission_denied",
+                message="The Snowflake application role lacks a required permission.",
+            )
+        return DataSourceUnavailableError(
+            SNOWFLAKE_SOURCE,
+            code="snowflake_unavailable",
+            message="Snowflake is temporarily unavailable.",
+        )
+
+    def _connect(self) -> SnowflakeConnection:
+        configuration = self._configuration()
 
         try:
             return snowflake.connector.connect(
-                account=required["account"],
-                user=required["user"],
-                password=required["password"],
-                role=self.settings.snowflake_api_role,
-                warehouse=self.settings.snowflake_warehouse,
-                database=self.settings.snowflake_database,
-                schema=self.settings.snowflake_api_schema,
+                account=configuration["SNOWFLAKE_ACCOUNT"],
+                user=configuration["SNOWFLAKE_USER"],
+                password=configuration["SNOWFLAKE_PASSWORD"],
+                role=configuration["SNOWFLAKE_API_ROLE"],
+                warehouse=configuration["SNOWFLAKE_WAREHOUSE"],
+                database=configuration["SNOWFLAKE_DATABASE"],
+                schema=configuration["SNOWFLAKE_API_SCHEMA"],
                 application="COVID_ANALYTICS_API",
             )
         except snowflake.connector.Error as exc:
             logger.exception(
                 "snowflake_connection_failed",
-                extra={"connector_error_type": type(exc).__name__},
+                extra=self._connector_log_fields(exc, operation="connect"),
                 exc_info=sanitized_exception_info(exc),
             )
-            raise DataSourceUnavailableError("Snowflake") from exc
+            raise self._classified_connector_error(exc, operation="connect") from exc
 
     def _execute(
         self,
@@ -89,13 +213,10 @@ class SnowflakeRepository:
         except snowflake.connector.Error as exc:
             logger.exception(
                 "snowflake_query_failed",
-                extra={
-                    "operation": operation,
-                    "connector_error_type": type(exc).__name__,
-                },
+                extra=self._connector_log_fields(exc, operation=operation),
                 exc_info=sanitized_exception_info(exc),
             )
-            raise DataSourceUnavailableError("Snowflake") from exc
+            raise self._classified_connector_error(exc, operation=operation) from exc
         finally:
             if cursor is not None:
                 cursor.close()

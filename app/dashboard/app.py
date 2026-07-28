@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import logging
-from datetime import date
+from datetime import UTC, date, datetime
 from pathlib import Path
 from typing import Any
 
@@ -264,8 +264,13 @@ def _success(payload: Any) -> dict[str, Any]:
     return {"state": "success", "payload": payload}
 
 
-def _error(exc: DashboardApiError) -> dict[str, str]:
-    return {"state": "error", "message": str(exc)}
+def _error(exc: DashboardApiError) -> dict[str, str | None]:
+    return {
+        "state": "error",
+        "message": str(exc),
+        "code": exc.code,
+        "request_id": exc.request_id,
+    }
 
 
 def _parse_dashboard_date(value: str | date | None) -> date | None:
@@ -636,6 +641,7 @@ def render_country_content(state: dict[str, Any] | None) -> html.Div:
     Input("compare-start-date", "value", allow_optional=True),
     Input("compare-end-date", "value", allow_optional=True),
     Input("comparison-retry", "n_clicks", allow_optional=True),
+    State("country-catalog", "data"),
     prevent_initial_call=True,
     running=[(Output("comparison-loading", "visible"), True, False)],
 )
@@ -644,8 +650,22 @@ def load_comparison_page(
     start_date: str | date | None,
     end_date: str | date | None,
     _retry_clicks: int | None,
+    catalog_state: dict[str, Any] | None,
 ) -> dict[str, Any]:
-    if not countries or not 2 <= len(countries) <= 10:
+    if not catalog_state:
+        return {"state": "catalog_loading"}
+    if catalog_state.get("state") == "error":
+        return {
+            "state": "upstream_error",
+            "message": catalog_state.get("message"),
+            "code": catalog_state.get("code"),
+            "request_id": catalog_state.get("request_id"),
+        }
+    if not catalog_state.get("payload"):
+        return {"state": "empty_catalog"}
+    if not countries:
+        return {"state": "neutral"}
+    if not 2 <= len(countries) <= 10:
         return {"state": "error", "message": "Choose between 2 and 10 countries."}
     normalized_start, normalized_end, validation_error = _normalized_date_range(
         start_date,
@@ -674,8 +694,16 @@ def load_comparison_page(
     Input("comparison-page-data", "data"),
 )
 def render_comparison_content(state: dict[str, Any] | None) -> html.Div:
-    if not state:
+    if not state or state.get("state") in {"neutral", "catalog_loading"}:
         return status_badge("Waiting", "neutral", "Choose comparison filters")
+    if state.get("state") == "upstream_error":
+        return html.Div()
+    if state.get("state") == "empty_catalog":
+        return status_badge(
+            "Setup incomplete",
+            "error",
+            "No countries are available. Complete the Snowflake setup and retry.",
+        )
     if state.get("state") == "error":
         return create_alert(state["message"])
 
@@ -962,6 +990,28 @@ def check_api_liveness(pathname: str | None) -> html.Div | Any:
 
 
 @callback(
+    Output("api-ready-status", "children"),
+    Input("page-location", "pathname"),
+    running=[(Output("api-ready-loading", "visible"), True, False)],
+)
+def check_api_readiness(pathname: str | None) -> html.Div | Any:
+    if pathname != "/":
+        raise PreventUpdate
+    try:
+        get_json(
+            settings.dashboard_api_base_url,
+            "/health/ready",
+            timeout=5,
+        )
+    except DashboardApiError as exc:
+        detail = str(exc)
+        if exc.request_id:
+            detail += f" Request ID: {exc.request_id}"
+        return status_badge("Dependency unavailable", "error", detail)
+    return status_badge("Ready", "success", "Redis and MongoDB are available")
+
+
+@callback(
     Output("snowflake-status", "data"),
     Input("check-snowflake", "n_clicks", allow_optional=True),
     prevent_initial_call=True,
@@ -989,7 +1039,19 @@ def retrieve_snowflake_status(_n_clicks: int) -> dict[str, Any]:
             "dashboard_snowflake_check_failed",
             extra={"request_error_type": type(exc).__name__},
         )
-        return {"state": "error"}
+        result: dict[str, Any] = {
+            "state": "error",
+            "checked_at": datetime.now(UTC).isoformat(),
+        }
+        if isinstance(exc, DashboardApiError):
+            result.update(
+                {
+                    "message": str(exc),
+                    "code": exc.code,
+                    "request_id": exc.request_id,
+                }
+            )
+        return result
 
 
 @callback(
@@ -1002,7 +1064,22 @@ def render_snowflake_status(data: dict[str, Any] | None) -> html.Div:
     if data.get("state") == "success":
         detail = f"{data['latency_ms']} ms · {data['checked_at']}"
         return status_badge("Connected", "success", detail)
-    return status_badge("Unavailable", "error", "Check API logs for details")
+    code = data.get("code")
+    setup_codes = {
+        "snowflake_configuration_invalid",
+        "snowflake_account_invalid",
+        "snowflake_role_unauthorized",
+        "snowflake_warehouse_unavailable",
+        "snowflake_permission_denied",
+        "analytics_objects_missing",
+    }
+    label = "Setup incomplete" if code in setup_codes else "Dependency unavailable"
+    detail = data.get("message", "Snowflake could not be checked.")
+    if data.get("request_id"):
+        detail += f" Request ID: {data['request_id']}"
+    if data.get("checked_at"):
+        detail += f" Last checked: {data['checked_at']}"
+    return status_badge(label, "error", detail)
 
 
 if __name__ == "__main__":

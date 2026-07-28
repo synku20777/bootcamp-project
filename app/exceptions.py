@@ -20,11 +20,38 @@ class InvalidMetricError(DomainValidationError):
 
 
 class DataSourceUnavailableError(ApplicationError):
-    def __init__(self, source: str) -> None:
-        super().__init__(f"{source} is temporarily unavailable.")
+    def __init__(
+        self,
+        source: str,
+        *,
+        code: str = "dependency_unavailable",
+        message: str | None = None,
+    ) -> None:
+        super().__init__(message or f"{source} is temporarily unavailable.")
         self.source = source
+        self.code = code
 
 
 class CacheFillInProgressError(DataSourceUnavailableError):
     def __init__(self) -> None:
-        super().__init__("Analytics cache")
+        super().__init__(
+            "Analytics cache",
+            code="cache_fill_in_progress",
+            message="Analytics data is being prepared. Try again shortly.",
+        )
+
+
+def cache_unavailable_error() -> DataSourceUnavailableError:
+    return DataSourceUnavailableError(
+        "Redis cache",
+        code="cache_unavailable",
+        message="The analytics cache is temporarily unavailable.",
+    )
+
+
+def mongodb_unavailable_error() -> DataSourceUnavailableError:
+    return DataSourceUnavailableError(
+        "MongoDB",
+        code="mongodb_unavailable",
+        message="MongoDB is temporarily unavailable.",
+    )

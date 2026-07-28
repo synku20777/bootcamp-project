@@ -280,7 +280,11 @@ class CovidService:
         def compute() -> DashboardOverview:
             rows = self.repository.fetch_overview()
             if not rows:
-                raise DataSourceUnavailableError("Snowflake analytics")
+                raise DataSourceUnavailableError(
+                    "Snowflake analytics",
+                    code="analytics_objects_missing",
+                    message="Required Snowflake analytics data has not been published.",
+                )
 
             first = rows[0]
             totals = OverviewTotals(

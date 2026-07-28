@@ -14,7 +14,7 @@ from redis import Redis
 from redis.exceptions import RedisError
 
 from app.config import Settings
-from app.exceptions import CacheFillInProgressError, DataSourceUnavailableError
+from app.exceptions import CacheFillInProgressError, cache_unavailable_error
 from app.logging_config import sanitized_exception_info
 
 logger = logging.getLogger(__name__)
@@ -68,7 +68,7 @@ class CacheService:
                 extra={"endpoint": endpoint, "cache_key_hash": key_hash},
                 exc_info=sanitized_exception_info(exc),
             )
-            raise DataSourceUnavailableError(REDIS_CACHE_SOURCE) from exc
+            raise cache_unavailable_error() from exc
 
         if raw_value is None:
             return None
@@ -102,7 +102,7 @@ class CacheService:
                 extra={"endpoint": endpoint, "cache_key_hash": key_hash},
                 exc_info=sanitized_exception_info(exc),
             )
-            raise DataSourceUnavailableError(REDIS_CACHE_SOURCE) from exc
+            raise cache_unavailable_error() from exc
 
     def _acquire_lock(
         self,
@@ -127,7 +127,7 @@ class CacheService:
                 extra={"endpoint": endpoint, "cache_key_hash": key_hash},
                 exc_info=sanitized_exception_info(exc),
             )
-            raise DataSourceUnavailableError(REDIS_CACHE_SOURCE) from exc
+            raise cache_unavailable_error() from exc
 
     def _wait_for_cached_value(
         self,
@@ -176,7 +176,7 @@ class CacheService:
                 extra={"endpoint": endpoint, "cache_key_hash": key_hash},
                 exc_info=sanitized_exception_info(exc),
             )
-            raise DataSourceUnavailableError(REDIS_CACHE_SOURCE) from exc
+            raise cache_unavailable_error() from exc
 
     def _release_lock(
         self,

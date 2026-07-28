@@ -8,9 +8,11 @@ from dash.exceptions import PreventUpdate
 from app.dashboard.app import (
     app,
     load_comparison_page,
+    load_country_catalog,
     load_country_page,
     notify_annotation_saved,
     render_annotation_content,
+    render_comparison_content,
     render_country_content,
     render_snowflake_status,
     retrieve_snowflake_status,
@@ -176,10 +178,79 @@ class DashboardSmokeTests(unittest.TestCase):
             "2020-12-14",
             "2020-03-01",
             0,
+            self._catalog_state(),
         )
 
         self.assertIn("Start date", state["message"])
         get_json.assert_not_called()
+
+    @patch("app.dashboard.app.get_json")
+    def test_comparison_catalog_failure_suppresses_selection_validation(
+        self,
+        get_json,
+    ) -> None:
+        catalog_error = {
+            "state": "error",
+            "message": "Snowflake is temporarily unavailable.",
+            "code": "snowflake_unavailable",
+            "request_id": "request-123",
+        }
+        page = comparison_page(catalog_error)
+        selector = component_by_id(page, "comparison-countries")
+        comparison_retry = component_by_id(page, "comparison-retry")
+
+        state = load_comparison_page(
+            [],
+            "2020-03-01",
+            "2020-12-14",
+            0,
+            catalog_error,
+        )
+        rendered = render_comparison_content(state)
+
+        self.assertTrue(selector.disabled)
+        self.assertTrue(comparison_retry.disabled)
+        self.assertEqual(state["state"], "upstream_error")
+        self.assertNotIn("Choose between 2 and 10", str(page))
+        self.assertNotIn("Choose between 2 and 10", str(rendered))
+        self.assertIn("request-123", str(page))
+        get_json.assert_not_called()
+
+    @patch("app.dashboard.app.get_json")
+    def test_empty_initial_comparison_selection_is_neutral(self, get_json) -> None:
+        state = load_comparison_page(
+            [],
+            "2020-03-01",
+            "2020-12-14",
+            0,
+            self._catalog_state(),
+        )
+
+        self.assertEqual(state, {"state": "neutral"})
+        self.assertNotIn(
+            "Choose between 2 and 10", str(render_comparison_content(state))
+        )
+        get_json.assert_not_called()
+
+    @patch("app.dashboard.app.ctx")
+    @patch("app.dashboard.app.get_json")
+    def test_catalog_retry_recovers_after_api_failure(
+        self,
+        get_json,
+        callback_context,
+    ) -> None:
+        callback_context.triggered_id = "retry-catalog"
+        get_json.return_value = self._catalog_state()["payload"]
+
+        state = load_country_catalog(
+            "/compare",
+            1,
+            {"state": "error", "message": "Unavailable"},
+        )
+
+        self.assertEqual(state["state"], "success")
+        self.assertEqual(len(state["payload"]), 2)
+        get_json.assert_called_once()
 
     @patch("app.dashboard.app.get_json")
     def test_country_loader_makes_one_request_and_renderer_makes_none(

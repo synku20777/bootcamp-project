@@ -47,7 +47,7 @@ def status_page(public_api_base_url: str) -> html.Div:
             dmc.Grid(
                 children=[
                     dmc.GridCol(
-                        span={"base": 12, "md": 6},
+                        span={"base": 12, "md": 4},
                         children=dmc.Paper(
                             p="md",
                             radius="md",
@@ -77,7 +77,35 @@ def status_page(public_api_base_url: str) -> html.Div:
                         ),
                     ),
                     dmc.GridCol(
-                        span={"base": 12, "md": 6},
+                        span={"base": 12, "md": 4},
+                        children=dmc.Paper(
+                            p="md",
+                            radius="md",
+                            withBorder=True,
+                            children=[
+                                dmc.Text("Local dependencies", fw=600, mb="sm"),
+                                create_loading_state(
+                                    html.Div(
+                                        status_badge(
+                                            "Checking",
+                                            NEUTRAL_STATE,
+                                            "Waiting for Redis and MongoDB",
+                                        ),
+                                        id="api-ready-status",
+                                    ),
+                                    loading_id="api-ready-loading",
+                                ),
+                                dmc.Text(
+                                    "Readiness does not connect to Snowflake.",
+                                    size="xs",
+                                    c="dimmed",
+                                    mt="md",
+                                ),
+                            ],
+                        ),
+                    ),
+                    dmc.GridCol(
+                        span={"base": 12, "md": 4},
                         children=dmc.Paper(
                             p="md",
                             radius="md",
@@ -161,11 +189,30 @@ def _catalog_options(catalog_state: dict[str, Any] | None) -> list[dict[str, str
 
 
 def _catalog_error(catalog_state: dict[str, Any] | None) -> html.Div | None:
-    if not catalog_state or catalog_state.get("state") != "error":
+    if not catalog_state:
+        return html.Div(
+            status_badge(
+                "Loading countries",
+                NEUTRAL_STATE,
+                "Connecting to the analytics API",
+            ),
+            style={"marginBottom": "16px"},
+        )
+    if catalog_state.get("state") == "success" and catalog_state.get("payload"):
         return None
+    is_error = catalog_state.get("state") == "error"
+    message = (
+        catalog_state.get("message", "The country catalogue is unavailable.")
+        if is_error
+        else "The API returned an empty country catalogue. Complete setup and retry."
+    )
+    request_id = catalog_state.get("request_id")
+    alert_children: list[Any] = [dmc.Text(message)]
+    if request_id:
+        alert_children.append(dmc.Text(f"Request ID: {request_id}", size="xs", mt="xs"))
     return html.Div(
         [
-            create_alert(catalog_state["message"], "error"),
+            create_alert(dmc.Stack(alert_children, gap=0), "error"),
             dmc.Button(
                 "Retry countries",
                 id="retry-catalog",
@@ -319,6 +366,7 @@ def comparison_page(catalog_state: dict[str, Any] | None) -> html.Div:
                             RETRY_DATA_LABEL,
                             id="comparison-retry",
                             n_clicks=0,
+                            disabled=not options,
                             variant="light",
                             leftSection=DashIconify(icon="tabler:refresh", width=16),
                         ),

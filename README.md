@@ -177,6 +177,48 @@ or:
 ./stop.sh
 ```
 
+The three commands have deliberately different responsibilities:
+
+- `setup` is the one-time initialization. It validates `.env`, creates the
+  project-owned Snowflake roles and objects, loads population data, builds the
+  containers, creates MongoDB indexes, and verifies the finished system.
+- `start` is the normal daily command. It starts existing services without
+  recreating Snowflake objects or reloading population data.
+- `stop` stops the containers without deleting MongoDB or Redis volumes.
+
+### What success looks like
+
+After `start` completes, run:
+
+```bash
+docker compose ps
+```
+
+The `api`, `dashboard`, `mongo`, and `redis` services should all be running and
+healthy. Verify the cheap checks first:
+
+```bash
+curl -i http://localhost:8000/health/live
+curl -i http://localhost:8000/health/ready
+```
+
+Both should return `200`. The Snowflake check is manual because it may resume
+`COVID_WH`:
+
+```bash
+curl -i http://localhost:8000/health/snowflake
+```
+
+With a completed setup it returns `200`, and `GET /countries` returns a
+non-empty JSON list. Open:
+
+- Dashboard overview: <http://localhost:8050/overview>
+- Comparison: <http://localhost:8050/compare>
+- API documentation: <http://localhost:8000/docs>
+- API liveness: <http://localhost:8000/health/live>
+- Dependency readiness: <http://localhost:8000/health/ready>
+- Explicit Snowflake check: <http://localhost:8000/health/snowflake>
+
 Optional exploration is separate from required setup:
 
 ```bash
@@ -1344,16 +1386,74 @@ it with `docker version`, which should show both Client and Server sections.
 
 ### The API health endpoint returns `503`
 
-Inspect dependency health and API logs:
+Start with the response's `error.code` and `request_id`; the API intentionally
+keeps connector messages and credentials out of HTTP responses. Inspect the
+matching structured API log by request ID:
 
 ```bash
 docker compose ps
 docker compose logs mongo redis api
 ```
 
-Confirm the MongoDB credentials in `.env`, then recreate the stack if they were
-changed. Existing MongoDB volumes retain the credentials used at first
-initialization.
+Use this code-to-action guide:
+
+| Error code | Meaning and next action |
+| ---------- | ----------------------- |
+| `cache_unavailable` | Redis is unavailable. Check `docker compose ps redis` and Redis logs. Analytical routes remain fail-closed to protect Snowflake credits. |
+| `mongodb_unavailable` | MongoDB readiness failed. Check MongoDB logs and whether the volume was created with different credentials. |
+| `snowflake_configuration_invalid` | One or more required `SNOWFLAKE_*` variables are missing. Compare `.env` with `.env.example`; errors list names, never values. |
+| `snowflake_account_invalid` | `SNOWFLAKE_ACCOUNT` is not the connector identifier. Use `organization-account`, not a Snowsight URL or `snowflakecomputing.com` hostname. |
+| `snowflake_authentication_failed` | The configured Snowflake username or password was rejected. |
+| `snowflake_role_unauthorized` | Grant `COVID_APP_ROLE` to the configured API user, then restart `api`. |
+| `snowflake_warehouse_unavailable` | Confirm `COVID_WH` exists and `COVID_APP_ROLE` has warehouse `USAGE`. |
+| `snowflake_permission_denied` | Re-run the grants in `sql/00_project_setup.sql`. |
+| `analytics_objects_missing` | Complete or resume setup so `COVID_ENRICHED` and `COUNTRY_LATEST_METRICS` exist and are readable. |
+| `snowflake_network_unavailable` | The API container could not reach Snowflake. Check internet, DNS, proxy, and firewall settings. |
+
+Confirm the API received configuration without displaying secret values:
+
+```bash
+uv run --locked python -m scripts.bootstrap doctor --configured
+```
+
+If first-time setup did not finish, resume it instead of starting only Docker:
+
+```powershell
+.\setup.ps1 --resume
+```
+
+or:
+
+```bash
+./setup.sh --resume
+```
+
+### Dashboard cannot reach the API
+
+The dashboard container must use `http://api:8000`; `localhost` inside the
+dashboard container refers to the dashboard itself. `compose.yaml` sets the
+internal and browser-visible URLs separately. Verify the bridge request with:
+
+```bash
+docker compose exec -T dashboard python -c "import sys, urllib.request; sys.stdout.write(urllib.request.urlopen('http://api:8000/health/live').read().decode())"
+```
+
+### Existing MongoDB volume uses old credentials
+
+MongoDB applies root credentials only when its data directory is first created.
+Prefer restoring the credentials originally used by the volume. Delete the
+volume only if you intentionally accept losing local annotations; `stop.ps1`
+and `stop.sh` never delete it.
+
+### Required ports are already occupied
+
+The API, dashboard, and host MongoDB binding require ports `8000`, `8050`, and
+`27017`. Run the local doctor before setup; it distinguishes this Compose
+project from unrelated processes:
+
+```bash
+uv run --locked python -m scripts.bootstrap doctor --local
+```
 
 ### A pre-commit hook modifies files
 
