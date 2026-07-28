@@ -6,7 +6,7 @@ import shutil
 import subprocess
 import unittest
 from pathlib import Path
-from unittest.mock import patch
+from unittest.mock import MagicMock, patch
 from uuid import uuid4
 
 from dotenv import dotenv_values
@@ -121,6 +121,86 @@ class BootstrapTests(unittest.TestCase):
         self.assertEqual(
             run.call_args.kwargs["env"]["COMPOSE_PROJECT_NAME"], "covid-platform"
         )
+
+    def test_local_doctor_distinguishes_stopped_docker_engine(self) -> None:
+        unavailable = subprocess.CompletedProcess([], 1, stdout="", stderr="redacted")
+        with (
+            patch("scripts.bootstrap.shutil.which", return_value="installed"),
+            patch("scripts.bootstrap._run_command", return_value=unavailable),
+        ):
+            with self.assertRaises(bootstrap.BootstrapError) as raised:
+                bootstrap.doctor_local()
+
+        self.assertIn("engine is not responding", str(raised.exception))
+        self.assertIn("Docker Desktop", raised.exception.fixes[0])
+        self.assertNotIn("redacted", str(raised.exception))
+
+    def test_configured_doctor_validates_marketplace_table(self) -> None:
+        connection = MagicMock()
+        cursor = connection.cursor.return_value
+        cursor.fetchone.side_effect = [
+            ("BOOTCAMP_USER", "ACCOUNTADMIN"),
+            ("COVID19_EPIDEMIOLOGICAL_DATA",),
+            (1,),
+        ]
+        values = {
+            "SNOWFLAKE_BOOTSTRAP_ROLE": "ACCOUNTADMIN",
+        }
+        with patch("scripts.bootstrap.connect_snowflake", return_value=connection):
+            bootstrap.doctor_configured(values)
+
+        executed_sql = [call.args[0] for call in cursor.execute.call_args_list]
+        self.assertTrue(
+            any(
+                "COVID19_EPIDEMIOLOGICAL_DATA.PUBLIC.ECDC_GLOBAL" in statement
+                for statement in executed_sql
+            )
+        )
+        cursor.close.assert_called_once()
+        connection.close.assert_called_once()
+
+    def test_api_failure_uses_stable_code_and_request_id(self) -> None:
+        failure = bootstrap._api_failure(
+            "http://localhost:8000/health/snowflake",
+            503,
+            {
+                "error": {
+                    "code": "snowflake_role_unauthorized",
+                    "request_id": "request-123",
+                }
+            },
+        )
+
+        self.assertIn("COVID_APP_ROLE", failure.likely_cause)
+        self.assertIn("request-123", failure.technical_reference or "")
+        self.assertNotIn("password", str(failure).lower())
+
+    def test_failure_banner_contains_actionable_sections(self) -> None:
+        messages: list[str] = []
+        failure = bootstrap.BootstrapError(
+            "Docker is unavailable.",
+            likely_cause="The engine is stopped.",
+            fixes=("Start Docker Desktop.",),
+            retry="docker info",
+            technical_reference="audit.jsonl",
+        )
+        with patch(
+            "scripts.bootstrap.console",
+            side_effect=lambda message, **_: messages.append(message),
+        ):
+            bootstrap._show_failure(
+                failure,
+                audit_path=Path("fallback.jsonl"),
+                default_retry="setup --resume",
+            )
+
+        output = "\n".join(messages)
+        self.assertIn("SETUP COULD NOT CONTINUE", output)
+        self.assertIn("What happened:", output)
+        self.assertIn("Likely cause:", output)
+        self.assertIn("How to fix:", output)
+        self.assertIn("Then run: docker info", output)
+        self.assertIn("Technical reference: audit.jsonl", output)
 
     def test_non_interactive_configuration_lists_missing_values(self) -> None:
         root = self._temporary_root()

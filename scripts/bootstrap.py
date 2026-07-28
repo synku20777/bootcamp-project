@@ -43,6 +43,12 @@ SETUP_OUTPUT_ROOT = REPOSITORY_ROOT / "outputs" / "setup"
 POPULATION_MANIFEST_PATH = REPOSITORY_ROOT / DEFAULT_MANIFEST_PATH
 COMPOSE_PROJECT_NAME = "covid-platform"
 REQUIRED_PORTS = (8000, 8050, 27017)
+PORT_SERVICES = {
+    8000: "FastAPI",
+    8050: "Dash dashboard",
+    27017: "MongoDB",
+}
+SETUP_STEP_COUNT = 9
 REQUIRED_IGNORE_PATTERNS = (
     ".env",
     ".env.backup-*",
@@ -82,6 +88,21 @@ logger = logging.getLogger(__name__)
 class BootstrapError(RuntimeError):
     """A sanitized, user-actionable bootstrap failure."""
 
+    def __init__(
+        self,
+        message: str,
+        *,
+        likely_cause: str = "A required prerequisite or postcondition was not met.",
+        fixes: tuple[str, ...] = (),
+        retry: str | None = None,
+        technical_reference: str | None = None,
+    ) -> None:
+        super().__init__(message)
+        self.likely_cause = likely_cause
+        self.fixes = fixes
+        self.retry = retry
+        self.technical_reference = technical_reference
+
 
 class BootstrapAuditFilter(logging.Filter):
     """Keep third-party connector records out of the persistent audit file."""
@@ -98,6 +119,69 @@ def console(message: str, *, error: bool = False) -> None:
     stream = sys.stderr if error else sys.stdout
     stream.write(f"{message}\n")
     stream.flush()
+
+
+def _setup_command(*, resume: bool = False) -> str:
+    if os.name == "nt":
+        return ".\\setup.ps1 --resume" if resume else ".\\setup.ps1"
+    return "./setup.sh --resume" if resume else "./setup.sh"
+
+
+def _start_command() -> str:
+    return ".\\start.ps1" if os.name == "nt" else "./start.sh"
+
+
+def _stop_command() -> str:
+    return ".\\stop.ps1" if os.name == "nt" else "./stop.sh"
+
+
+def _setup_progress(number: int, title: str, explanation: str) -> None:
+    console(f"\nStep {number} of {SETUP_STEP_COUNT} -- {title}")
+    console(explanation)
+
+
+def _flush_log_handlers() -> None:
+    for handler in logging.getLogger().handlers:
+        try:
+            handler.flush()
+        except Exception as exc:
+            logger.exception(
+                "audit_log_flush_failed",
+                exc_info=sanitized_exception_info(exc),
+            )
+
+
+def _show_failure(
+    exc: BootstrapError,
+    *,
+    audit_path: Path,
+    default_retry: str,
+) -> None:
+    console("\nSETUP COULD NOT CONTINUE", error=True)
+    console("=" * 26, error=True)
+    console(f"What happened: {exc}", error=True)
+    console(f"Likely cause: {exc.likely_cause}", error=True)
+    console("How to fix:", error=True)
+    fixes = exc.fixes or (
+        "Review the nearby README troubleshooting entry and correct the reported prerequisite.",
+    )
+    for fix in fixes:
+        console(f"  - {fix}", error=True)
+    console(f"Then run: {exc.retry or default_retry}", error=True)
+    reference = exc.technical_reference or str(audit_path)
+    console(f"Technical reference: {reference}", error=True)
+    if reference != str(audit_path):
+        console(f"Setup audit log: {audit_path}", error=True)
+
+
+def _show_setup_success(audit_path: Path) -> None:
+    console("\nSETUP COMPLETED SUCCESSFULLY")
+    console("=" * 28)
+    console("The Snowflake objects, local services, and application checks are ready.")
+    _show_urls()
+    console(f"Start later with: {_start_command()}")
+    console(f"Stop safely with: {_stop_command()}")
+    console(f"Setup audit log: {audit_path}")
 
 
 def _utc_now() -> str:
@@ -141,6 +225,10 @@ def _input_checksum(*paths: Path, values: tuple[str, ...] = ()) -> str:
 
 def configure_audit_logging(command: str) -> Path:
     configure_logging("project-bootstrap", os.getenv("LOG_LEVEL", "INFO"))
+    root_logger = logging.getLogger()
+    for existing_handler in root_logger.handlers:
+        if not isinstance(existing_handler, logging.FileHandler):
+            existing_handler.setLevel(logging.CRITICAL + 1)
     for external_logger in ("snowflake.connector", "urllib3", "pymongo"):
         logging.getLogger(external_logger).setLevel(logging.CRITICAL)
     SETUP_OUTPUT_ROOT.mkdir(parents=True, exist_ok=True)
@@ -150,7 +238,7 @@ def configure_audit_logging(command: str) -> Path:
     handler.setFormatter(JsonFormatter())
     handler.addFilter(ServiceFilter("project-bootstrap"))
     handler.addFilter(BootstrapAuditFilter())
-    logging.getLogger().addHandler(handler)
+    root_logger.addHandler(handler)
     logger.info("bootstrap_audit_started", extra={"command": command})
     return path
 
@@ -246,24 +334,61 @@ def configure_environment(*, non_interactive: bool) -> dict[str, str]:
             )
         return values
 
-    prompt_keys = {
-        "SNOWFLAKE_ACCOUNT": "Snowflake account (organization-account): ",
-        "SNOWFLAKE_USER": "Snowflake username: ",
-    }
-    for key, prompt in prompt_keys.items():
-        if _is_placeholder(key, values.get(key)):
-            entered = input(prompt).strip()
-            if not entered:
-                raise BootstrapError(f"{key} is required.")
-            values[key] = entered
+    if _is_placeholder("SNOWFLAKE_ACCOUNT", values.get("SNOWFLAKE_ACCOUNT")):
+        console(
+            "Snowflake account identifier\n"
+            "  Find this in Snowsight under account details. Enter the connector form\n"
+            "  organization-account, for example acme-xy12345. Do not enter a URL,\n"
+            "  https:// prefix, region hostname, or password."
+        )
+        entered = input("SNOWFLAKE_ACCOUNT: ").strip()
+        if not entered:
+            raise BootstrapError(
+                "SNOWFLAKE_ACCOUNT is required.",
+                likely_cause="The Snowflake account identifier was left blank.",
+                fixes=(
+                    "Copy the organization-account identifier from Snowflake account details.",
+                    "Do not use the Snowsight browser URL or a hostname ending in snowflakecomputing.com.",
+                ),
+            )
+        values["SNOWFLAKE_ACCOUNT"] = entered
+    if _is_placeholder("SNOWFLAKE_USER", values.get("SNOWFLAKE_USER")):
+        console(
+            "Snowflake username\n"
+            "  Enter the login name created with your Snowflake account, for example\n"
+            "  BOOTCAMP_USER. This is not your organization name or email unless you\n"
+            "  deliberately chose your email as the username."
+        )
+        entered = input("SNOWFLAKE_USER: ").strip()
+        if not entered:
+            raise BootstrapError(
+                "SNOWFLAKE_USER is required.",
+                likely_cause="The Snowflake login name was left blank.",
+            )
+        values["SNOWFLAKE_USER"] = entered
     if _is_placeholder("SNOWFLAKE_PASSWORD", values.get("SNOWFLAKE_PASSWORD")):
-        password = getpass.getpass("Snowflake password: ")
+        console(
+            "Snowflake password\n"
+            "  Enter the password for the Snowflake username above. Input is hidden,\n"
+            "  is stored only in the ignored local .env file, and is never written to\n"
+            "  the structured setup audit log."
+        )
+        password = getpass.getpass("SNOWFLAKE_PASSWORD (hidden): ")
         if not password:
-            raise BootstrapError("SNOWFLAKE_PASSWORD is required.")
+            raise BootstrapError(
+                "SNOWFLAKE_PASSWORD is required.",
+                likely_cause="The hidden Snowflake password prompt was left blank.",
+            )
         values["SNOWFLAKE_PASSWORD"] = password
     if _is_placeholder("MONGO_ROOT_PASSWORD", values.get("MONGO_ROOT_PASSWORD")):
+        console(
+            "Local MongoDB root password\n"
+            "  This protects the project-owned local MongoDB container; it is unrelated\n"
+            "  to Snowflake. Leave the prompt blank to generate a strong value. The\n"
+            "  value is stored only in the ignored local .env file and is not logged."
+        )
         mongo_password = getpass.getpass(
-            "MongoDB root password (leave blank to generate one): "
+            "MONGO_ROOT_PASSWORD (hidden; blank generates one): "
         )
         values["MONGO_ROOT_PASSWORD"] = mongo_password or _generated_password()
     values.setdefault("SNOWFLAKE_BOOTSTRAP_ROLE", "ACCOUNTADMIN")
@@ -402,9 +527,36 @@ def doctor_local(*, offer_restart: bool = False, non_interactive: bool = False) 
     if shutil.which("uv") is None:
         raise BootstrapError("uv is not installed or is not available on PATH.")
     if shutil.which("docker") is None:
-        raise BootstrapError("Docker CLI is not installed or is not available on PATH.")
-    _run_command(["docker", "info"])
-    _run_command(["docker", "compose", "version"])
+        raise BootstrapError(
+            "Docker CLI is not installed or is not available on PATH.",
+            likely_cause="Docker Desktop or Docker Engine is not installed, or the terminal has not picked up its PATH change.",
+            fixes=(
+                "Install Docker Desktop on Windows/macOS, or Docker Engine plus the Compose plugin on Linux.",
+                "Close and reopen the terminal after installation, then run docker --version.",
+            ),
+        )
+    docker_info = _run_command(["docker", "info"], check=False)
+    if docker_info.returncode != 0:
+        raise BootstrapError(
+            "Docker is installed, but its engine is not responding.",
+            likely_cause="Docker Desktop is still starting, or the Docker daemon/service is stopped.",
+            fixes=(
+                "Start Docker Desktop and wait until it reports that the engine is running.",
+                "On Linux, start the Docker service and ensure your user may access the Docker socket.",
+                "Confirm both client and server sections appear when you run docker info.",
+            ),
+            retry="docker info, then " + _setup_command(resume=True),
+        )
+    compose_version = _run_command(["docker", "compose", "version"], check=False)
+    if compose_version.returncode != 0:
+        raise BootstrapError(
+            "The Docker Compose plugin is not available.",
+            likely_cause="Docker was installed without the Compose v2 plugin.",
+            fixes=(
+                "Install or enable Docker Compose v2.",
+                "Confirm docker compose version succeeds (with a space, not docker-compose).",
+            ),
+        )
     _verify_gitignore_contract()
     with tempfile.NamedTemporaryFile(dir=REPOSITORY_ROOT, delete=True):
         pass
@@ -412,9 +564,17 @@ def doctor_local(*, offer_restart: bool = False, non_interactive: bool = False) 
     project_ports = _compose_port_owners() if occupied else set()
     unrelated = occupied - project_ports
     if unrelated:
+        details = ", ".join(
+            f"{port} ({PORT_SERVICES[port]})" for port in sorted(unrelated)
+        )
         raise BootstrapError(
-            "Required ports are used by another process: "
-            + ", ".join(str(port) for port in sorted(unrelated))
+            "Required ports are used by another process: " + details,
+            likely_cause="Another application, or containers from a different Compose project, already own a required host port.",
+            fixes=(
+                "Windows: inspect an owner with Get-NetTCPConnection -LocalPort <port> and Get-Process -Id <OwningProcess>.",
+                "macOS/Linux: inspect an owner with lsof -i :<port> or ss -ltnp.",
+                "Stop or reconfigure only the process you recognize. Setup will never terminate it automatically.",
+            ),
         )
     if occupied and offer_restart and not non_interactive:
         answer = input(
@@ -448,8 +608,65 @@ def connect_snowflake(
                 "schema": values.get("SNOWFLAKE_SCHEMA"),
             }
         )
-    return snowflake.connector.connect(
-        **parameters,
+    try:
+        return snowflake.connector.connect(**parameters)
+    except snowflake.connector.Error as exc:
+        logger.exception(
+            "snowflake_connection_failed",
+            extra={"role": role, "error_type": type(exc).__name__},
+            exc_info=sanitized_exception_info(exc),
+        )
+        raise _snowflake_bootstrap_error(exc, role=role) from exc
+
+
+def _snowflake_bootstrap_error(
+    exc: snowflake.connector.Error,
+    *,
+    role: str,
+) -> BootstrapError:
+    message = str(exc).lower()
+    if any(
+        term in message for term in ("incorrect username", "password", "authentication")
+    ):
+        return BootstrapError(
+            "Snowflake rejected the configured username or password.",
+            likely_cause="SNOWFLAKE_USER or SNOWFLAKE_PASSWORD does not match the target Snowflake account.",
+            fixes=(
+                "Sign in to Snowsight with the same username to confirm the password.",
+                "Correct SNOWFLAKE_USER or SNOWFLAKE_PASSWORD in .env; do not paste credentials into commands or logs.",
+            ),
+        )
+    if "account" in message and any(
+        term in message
+        for term in ("invalid", "incorrect", "does not exist", "not found")
+    ):
+        return BootstrapError(
+            "Snowflake could not resolve the configured account identifier.",
+            likely_cause="SNOWFLAKE_ACCOUNT is not in connector form organization-account.",
+            fixes=(
+                "Copy the account identifier from Snowsight account details.",
+                "Use a value such as acme-xy12345, not a browser URL, region hostname, or https:// address.",
+            ),
+        )
+    if any(
+        term in message for term in ("role", "warehouse", "privilege", "not authorized")
+    ):
+        return BootstrapError(
+            f"Snowflake would not activate the required role or warehouse for {role}.",
+            likely_cause="The configured user lacks the role grant, warehouse privilege, or project objects from an earlier setup step.",
+            fixes=(
+                "For first setup, confirm SNOWFLAKE_BOOTSTRAP_ROLE=ACCOUNTADMIN and rerun setup with --resume.",
+                "For application access, confirm COVID_APP_ROLE is granted to the configured user and COVID_WH exists.",
+                "Do not replace the application role with ACCOUNTADMIN.",
+            ),
+        )
+    return BootstrapError(
+        "Snowflake could not be reached or did not accept the connection.",
+        likely_cause="The account identifier, network connection, authentication, or selected role is unavailable.",
+        fixes=(
+            "Confirm internet access and that you can sign in to the same Snowflake account in Snowsight.",
+            "Review SNOWFLAKE_ACCOUNT, SNOWFLAKE_USER, and the selected role in .env.",
+        ),
     )
 
 
@@ -475,8 +692,36 @@ def doctor_configured(values: dict[str, str]) -> None:
             cursor.execute("SHOW DATABASES LIKE 'COVID19_EPIDEMIOLOGICAL_DATA'")
             if cursor.fetchone() is None:
                 raise BootstrapError(
-                    "Snowflake Marketplace database COVID19_EPIDEMIOLOGICAL_DATA is missing."
+                    "Snowflake Marketplace database COVID19_EPIDEMIOLOGICAL_DATA is missing.",
+                    likely_cause="The free Marketplace listing was not added to this Snowflake account using the required database name.",
+                    fixes=(
+                        "In Snowsight, add the free COVID-19 Epidemiological Data listing.",
+                        "Name the installed database exactly COVID19_EPIDEMIOLOGICAL_DATA.",
+                    ),
                 )
+            try:
+                cursor.execute(
+                    "SELECT 1 FROM "
+                    "COVID19_EPIDEMIOLOGICAL_DATA.PUBLIC.ECDC_GLOBAL LIMIT 1"
+                )
+                if cursor.fetchone() is None:
+                    raise BootstrapError(
+                        "The Marketplace ECDC_GLOBAL source returned no accessible rows."
+                    )
+            except snowflake.connector.Error as exc:
+                logger.exception(
+                    "marketplace_source_validation_failed",
+                    extra={"error_type": type(exc).__name__},
+                    exc_info=sanitized_exception_info(exc),
+                )
+                raise BootstrapError(
+                    "The required Marketplace object PUBLIC.ECDC_GLOBAL is not accessible.",
+                    likely_cause="The listing is missing, was installed under a different database name, or the bootstrap role cannot use it.",
+                    fixes=(
+                        "Confirm the database is named COVID19_EPIDEMIOLOGICAL_DATA.",
+                        "In Snowsight, verify PUBLIC.ECDC_GLOBAL opens and contains data.",
+                    ),
+                ) from exc
         finally:
             cursor.close()
     finally:
@@ -617,11 +862,88 @@ def _compose_services_running() -> bool:
 
 def _http_request(url: str) -> tuple[int, Any]:
     request = urllib.request.Request(url, headers={"Accept": "application/json"})
-    with urllib.request.urlopen(request, timeout=5) as response:
-        content_type = response.headers.get("Content-Type", "")
-        body = response.read()
-        payload = json.loads(body) if "json" in content_type else body
-        return response.status, payload
+    try:
+        with urllib.request.urlopen(request, timeout=5) as response:
+            content_type = response.headers.get("Content-Type", "")
+            body = response.read()
+            payload = json.loads(body) if "json" in content_type else body
+            return response.status, payload
+    except urllib.error.HTTPError as exc:
+        content_type = exc.headers.get("Content-Type", "")
+        body = exc.read()
+        try:
+            payload = json.loads(body) if "json" in content_type else body
+        except json.JSONDecodeError:
+            payload = None
+        return exc.code, payload
+
+
+def _api_failure(url: str, status: int, payload: Any) -> BootstrapError:
+    error = payload.get("error", {}) if isinstance(payload, dict) else {}
+    code = str(error.get("code", "dependency_unavailable"))
+    request_id = error.get("request_id")
+    references = [f"HTTP {status} from {url}", f"error code: {code}"]
+    if request_id:
+        references.append(f"request ID: {request_id}")
+    guidance = {
+        "cache_unavailable": (
+            "Redis is unavailable, so the API blocked Snowflake queries to protect credits.",
+            (
+                "Run docker compose ps and confirm redis is healthy.",
+                "Restart the project services after Redis is healthy; do not bypass the cache protection.",
+            ),
+        ),
+        "mongodb_unavailable": (
+            "MongoDB is unavailable or its configured credentials no longer match the existing volume.",
+            (
+                "Run docker compose ps and confirm mongo is healthy.",
+                "If credentials changed after the volume was created, restore the old .env value or follow the README's explicit destructive reset option.",
+            ),
+        ),
+        "snowflake_authentication_failed": (
+            "Snowflake rejected the application's configured user credentials.",
+            ("Correct the Snowflake username/password in .env and restart the API.",),
+        ),
+        "snowflake_account_invalid": (
+            "The application's Snowflake account identifier is invalid.",
+            ("Use the organization-account connector value in SNOWFLAKE_ACCOUNT.",),
+        ),
+        "snowflake_role_unauthorized": (
+            "The configured API user cannot use COVID_APP_ROLE.",
+            ("Rerun setup with --resume so the secure role grant can be verified.",),
+        ),
+        "snowflake_warehouse_unavailable": (
+            "COVID_WH is missing, suspended without resume permission, or inaccessible to COVID_APP_ROLE.",
+            ("Rerun setup with --resume and preserve COVID_APP_ROLE as the API role.",),
+        ),
+        "analytics_objects_missing": (
+            "The required MARTS objects have not been created or granted to COVID_APP_ROLE.",
+            ("Rerun setup with --resume to create and verify the marts.",),
+        ),
+    }
+    likely_cause, fixes = guidance.get(
+        code,
+        (
+            "A required API dependency is not ready.",
+            (
+                "Run docker compose ps, then inspect only the affected service with docker compose logs <service>.",
+                "Use the request ID below to correlate the sanitized application logs.",
+            ),
+        ),
+    )
+    return BootstrapError(
+        "An application verification endpoint returned a dependency error.",
+        likely_cause=likely_cause,
+        fixes=fixes,
+        technical_reference="; ".join(references),
+    )
+
+
+def _is_structured_dependency_failure(status: int, payload: Any) -> bool:
+    if status != 503 or not isinstance(payload, dict):
+        return False
+    error = payload.get("error")
+    return isinstance(error, dict) and bool(error.get("code"))
 
 
 def poll_http_postconditions(
@@ -655,18 +977,34 @@ def poll_http_postconditions(
     checks.append(("http://localhost:8050/overview", lambda status, _: status == 200))
     deadline = time.monotonic() + timeout_seconds
     pending = {url: validator for url, validator in checks}
+    last_responses: dict[str, tuple[int, Any]] = {}
     while pending and time.monotonic() < deadline:
         for url, validator in list(pending.items()):
             try:
                 status, payload = _http_request(url)
+                last_responses[url] = (status, payload)
                 if validator(status, payload):
                     pending.pop(url)
+                elif _is_structured_dependency_failure(status, payload):
+                    raise _api_failure(url, status, payload)
             except (OSError, urllib.error.URLError, json.JSONDecodeError):
                 continue
         if pending:
             time.sleep(2)
     if pending:
-        raise BootstrapError("Timed out waiting for: " + ", ".join(sorted(pending)))
+        details = []
+        for url in sorted(pending):
+            status = last_responses.get(url, ("no response", None))[0]
+            details.append(f"{url} ({status})")
+        raise BootstrapError(
+            "Timed out waiting for: " + ", ".join(details),
+            likely_cause="A container is still starting, unhealthy, or cannot reach another Compose service.",
+            fixes=(
+                "Run docker compose ps to identify the unhealthy service.",
+                "Run docker compose logs api dashboard mongo redis and inspect the first dependency failure.",
+                "If only the dashboard fails, confirm its in-container API URL is http://api:8000, while the browser uses http://localhost:8000.",
+            ),
+        )
 
 
 def _http_postconditions_pass(*, include_snowflake: bool) -> bool:
@@ -682,7 +1020,7 @@ def _http_postconditions_pass(*, include_snowflake: bool) -> bool:
 
 
 def _initialize_mongodb() -> None:
-    _run_command(
+    result = _run_command(
         [
             "docker",
             "compose",
@@ -693,8 +1031,49 @@ def _initialize_mongodb() -> None:
             "-m",
             "scripts.setup_mongodb",
         ],
-        capture_output=False,
+        check=False,
     )
+    if result.returncode != 0:
+        raise BootstrapError(
+            "MongoDB index setup could not authenticate or complete.",
+            likely_cause="MongoDB is unhealthy, or the existing Docker volume was initialized with different root credentials.",
+            fixes=(
+                "Confirm mongo is healthy with docker compose ps.",
+                "If the password changed, restore the original MONGO_ROOT_PASSWORD and matching MONGODB_URI in .env.",
+                "Only if local MongoDB data may be permanently deleted, follow the README's explicit volume-reset command. Setup never deletes volumes automatically.",
+            ),
+        )
+
+
+def _verify_dashboard_api_bridge() -> None:
+    result = _run_command(
+        [
+            "docker",
+            "compose",
+            "exec",
+            "-T",
+            "dashboard",
+            "python",
+            "-c",
+            (
+                "import urllib.request; "
+                "response=urllib.request.urlopen("
+                "'http://api:8000/health/live', timeout=5); "
+                "raise SystemExit(0 if response.status == 200 else 1)"
+            ),
+        ],
+        check=False,
+    )
+    if result.returncode != 0:
+        raise BootstrapError(
+            "The dashboard container cannot reach the API container.",
+            likely_cause="The dashboard's internal API URL is incorrect, or the API service is unhealthy on the Compose network.",
+            fixes=(
+                "Keep DASHBOARD_API_BASE_URL=http://api:8000 for container-to-container traffic.",
+                "Use http://localhost:8000 only from the host browser or terminal.",
+                "Run docker compose ps and docker compose logs api dashboard.",
+            ),
+        )
 
 
 def _mongodb_indexes_ready(values: dict[str, str]) -> bool:
@@ -727,9 +1106,19 @@ def _mongodb_indexes_ready(values: dict[str, str]) -> bool:
         client.close()
 
 
-def setup(*, resume: bool, non_interactive: bool) -> None:
+def setup(*, resume: bool, non_interactive: bool, audit_path: Path) -> None:
     state = SetupState()
+    _setup_progress(
+        1,
+        "Validate local prerequisites",
+        "Checking uv, the Docker engine and Compose plugin, repository write access, secret ignores, and ports 8000/8050/27017.",
+    )
     doctor_local(offer_restart=True, non_interactive=non_interactive)
+    _setup_progress(
+        2,
+        "Configure and validate Snowflake access",
+        "Collecting only missing values, writing the ignored .env atomically, authenticating with ACCOUNTADMIN, and validating the Marketplace ECDC source.",
+    )
     values = configure_environment(non_interactive=non_interactive)
     doctor_configured(values)
     context = _setup_context(values)
@@ -749,6 +1138,12 @@ def setup(*, resume: bool, non_interactive: bool) -> None:
         include_project_context=False,
     )
     try:
+
+        _setup_progress(
+            3,
+            "Create account-level project objects",
+            "Creating the monitored warehouse and project roles, then granting COVID_PROJECT_ADMIN and COVID_APP_ROLE to the configured user.",
+        )
 
         def account_setup() -> None:
             execute_sql_file(bootstrap_connection, SQL_FILES["account_setup"])
@@ -790,12 +1185,33 @@ def setup(*, resume: bool, non_interactive: bool) -> None:
     admin_connection = connect_snowflake(values, role=values["SNOWFLAKE_ROLE"])
     try:
 
+        _setup_progress(
+            4,
+            "Verify Marketplace data and build staging",
+            "Confirming COVID19_EPIDEMIOLOGICAL_DATA.PUBLIC.ECDC_GLOBAL is accessible, then creating country mapping and daily staging objects.",
+        )
+
         def verify_marketplace_access() -> bool:
-            row = _query_one(
-                admin_connection,
-                "SELECT 1 FROM COVID19_EPIDEMIOLOGICAL_DATA.PUBLIC.ECDC_GLOBAL LIMIT 1",
-            )
-            return row is not None
+            try:
+                row = _query_one(
+                    admin_connection,
+                    "SELECT 1 FROM COVID19_EPIDEMIOLOGICAL_DATA.PUBLIC.ECDC_GLOBAL LIMIT 1",
+                )
+                return row is not None
+            except snowflake.connector.Error as exc:
+                logger.exception(
+                    "marketplace_access_failed",
+                    extra={"error_type": type(exc).__name__},
+                    exc_info=sanitized_exception_info(exc),
+                )
+                raise BootstrapError(
+                    "The Marketplace ECDC_GLOBAL source is not accessible to the project role.",
+                    likely_cause="The Marketplace database is missing, has a different name, or its imported privileges are unavailable.",
+                    fixes=(
+                        "Add the listing as COVID19_EPIDEMIOLOGICAL_DATA and verify PUBLIC.ECDC_GLOBAL in Snowsight.",
+                        "Then rerun setup with --resume; completed account-level work will be rechecked and skipped safely.",
+                    ),
+                ) from exc
 
         _run_step(
             state=state,
@@ -829,6 +1245,37 @@ def setup(*, resume: bool, non_interactive: bool) -> None:
             ),
             resume=resume,
         )
+        _setup_progress(
+            5,
+            "Refresh World Bank population data",
+            "Downloading and validating the 2020 population file before transactionally replacing the Snowflake RAW population table. Existing valid data is preserved on failure.",
+        )
+
+        def refresh_population_safely() -> None:
+            try:
+                refresh_population(
+                    connection=admin_connection,
+                    csv_path=REPOSITORY_ROOT
+                    / "data"
+                    / "external"
+                    / "world_bank_population_2020.csv",
+                    manifest_path=POPULATION_MANIFEST_PATH,
+                )
+            except Exception as exc:
+                logger.exception(
+                    "population_refresh_failed",
+                    extra={"error_type": type(exc).__name__},
+                    exc_info=sanitized_exception_info(exc),
+                )
+                raise BootstrapError(
+                    "World Bank population refresh failed validation or publication.",
+                    likely_cause="The World Bank API, network, downloaded schema, or Snowflake load operation was unavailable.",
+                    fixes=(
+                        "Confirm internet access and retry; existing valid population data was not replaced by an unvalidated download.",
+                        "If the failure repeats, use the audit reference to identify the failed validation stage.",
+                    ),
+                ) from exc
+
         _run_step(
             state=state,
             context=context,
@@ -837,16 +1284,15 @@ def setup(*, resume: bool, non_interactive: bool) -> None:
                 REPOSITORY_ROOT / "scripts" / "load_population.py",
                 values=("2020",),
             ),
-            action=lambda: refresh_population(
-                connection=admin_connection,
-                csv_path=REPOSITORY_ROOT
-                / "data"
-                / "external"
-                / "world_bank_population_2020.csv",
-                manifest_path=POPULATION_MANIFEST_PATH,
-            ),
+            action=refresh_population_safely,
             postcondition=lambda: _population_matches(admin_connection),
             resume=resume,
+        )
+
+        _setup_progress(
+            6,
+            "Create and verify analytical marts",
+            "Verifying population coverage, creating COVID_ENRICHED and reporting objects, and checking the API role's required data contract.",
         )
 
         def create_marts() -> None:
@@ -873,6 +1319,11 @@ def setup(*, resume: bool, non_interactive: bool) -> None:
     finally:
         admin_connection.close()
 
+    _setup_progress(
+        7,
+        "Build and start application services",
+        "Validating Compose configuration, then building and starting FastAPI, Dash, MongoDB, and Redis without deleting existing volumes.",
+    )
     _run_step(
         state=state,
         context=context,
@@ -888,6 +1339,11 @@ def setup(*, resume: bool, non_interactive: bool) -> None:
         postcondition=_compose_services_running,
         resume=resume,
     )
+    _setup_progress(
+        8,
+        "Create MongoDB indexes",
+        "Creating the annotations collection and its non-unique indexes idempotently with the configured local credentials.",
+    )
     _run_step(
         state=state,
         context=context,
@@ -897,6 +1353,11 @@ def setup(*, resume: bool, non_interactive: bool) -> None:
         postcondition=lambda: _mongodb_indexes_ready(values),
         resume=resume,
     )
+    _setup_progress(
+        9,
+        "Verify the finished application",
+        "Checking container networking, API liveness/readiness, explicit Snowflake access, analytical data, and the dashboard before reporting success.",
+    )
     _run_step(
         state=state,
         context=context,
@@ -904,12 +1365,14 @@ def setup(*, resume: bool, non_interactive: bool) -> None:
         checksum=_input_checksum(
             REPOSITORY_ROOT / "compose.yaml", values=("smoke-v1",)
         ),
-        action=lambda: poll_http_postconditions(include_snowflake=True),
+        action=lambda: (
+            _verify_dashboard_api_bridge(),
+            poll_http_postconditions(include_snowflake=True),
+        ),
         postcondition=lambda: _http_postconditions_pass(include_snowflake=True),
         resume=resume,
     )
-    console("Setup completed successfully.")
-    _show_urls()
+    _show_setup_success(audit_path)
 
 
 def verify() -> None:
@@ -924,14 +1387,26 @@ def verify() -> None:
     finally:
         connection.close()
     if not _compose_services_running():
-        raise BootstrapError("Required Docker services are not running.")
+        raise BootstrapError(
+            "Required Docker services are not running.",
+            likely_cause="The application has not been started, or one of api, dashboard, mongo, or redis stopped.",
+            fixes=(
+                f"Start the existing services with {_start_command()}.",
+                "Run docker compose ps to identify any unhealthy service.",
+            ),
+        )
+    _verify_dashboard_api_bridge()
     poll_http_postconditions(include_snowflake=True)
     console("Verification passed.")
+    _show_urls()
 
 
 def _show_urls() -> None:
+    console("Dashboard overview: http://localhost:8050/overview")
+    console("Country explorer: http://localhost:8050/country")
+    console("Country comparison: http://localhost:8050/compare")
+    console("Annotations: http://localhost:8050/annotations")
     console("API documentation: http://localhost:8000/docs")
-    console("Dashboard: http://localhost:8050/overview")
 
 
 def start() -> None:
@@ -940,13 +1415,24 @@ def start() -> None:
     _run_command(["docker", "compose", "config", "--quiet"])
     _run_command(["docker", "compose", "up", "-d"], capture_output=False)
     poll_http_postconditions(include_snowflake=False)
-    console("Services are ready.")
+    _verify_dashboard_api_bridge()
+    console("\nSERVICES STARTED SUCCESSFULLY")
+    console("=" * 29)
+    console("FastAPI, Dash, MongoDB, and Redis passed the cheap startup checks.")
+    console(
+        "Snowflake was not queried during start; use its explicit health check only when needed."
+    )
     _show_urls()
+    console(f"Stop safely with: {_stop_command()}")
 
 
 def stop() -> None:
     _run_command(["docker", "compose", "stop"], capture_output=False)
-    console("Services stopped. Docker volumes were preserved.")
+    console("\nSERVICES STOPPED SAFELY")
+    console(
+        "MongoDB and Redis volumes were preserved; Snowflake objects were unchanged."
+    )
+    console(f"Start again with: {_start_command()}")
 
 
 def analyze() -> None:
@@ -1001,7 +1487,9 @@ def _report_preserved_container_state() -> None:
         "Inspect service logs with: docker compose logs api dashboard mongo redis",
         error=True,
     )
-    console("To stop the preserved containers, run: docker compose down", error=True)
+    console(
+        f"To stop the preserved containers safely, run: {_stop_command()}", error=True
+    )
 
 
 def main() -> None:
@@ -1015,7 +1503,11 @@ def main() -> None:
                 doctor_configured(load_configured_environment())
             console("Doctor checks passed.")
         elif args.command == "setup":
-            setup(resume=args.resume, non_interactive=args.non_interactive)
+            setup(
+                resume=args.resume,
+                non_interactive=args.non_interactive,
+                audit_path=audit_path,
+            )
         elif args.command == "verify":
             verify()
         elif args.command == "start":
@@ -1026,11 +1518,23 @@ def main() -> None:
             analyze()
     except KeyboardInterrupt:
         logger.warning("bootstrap_interrupted", extra={"audit_path": str(audit_path)})
-        _report_preserved_container_state()
-        console(
-            f"Interrupted. No volumes were removed. Resume with setup --resume. Log: {audit_path}",
-            error=True,
+        _flush_log_handlers()
+        interrupted = BootstrapError(
+            "Setup was interrupted from the terminal (exit status 130).",
+            likely_cause="Ctrl+C or another keyboard interrupt stopped the current operation.",
+            fixes=(
+                "Review the preserved container state shown below.",
+                "No Docker volume was deleted; completed setup steps remain resumable after their postconditions are rechecked.",
+            ),
+            retry=_setup_command(resume=True),
+            technical_reference=str(audit_path),
         )
+        _show_failure(
+            interrupted,
+            audit_path=audit_path,
+            default_retry=_setup_command(resume=True),
+        )
+        _report_preserved_container_state()
         raise SystemExit(130) from None
     except BootstrapError as exc:
         logger.exception(
@@ -1038,10 +1542,14 @@ def main() -> None:
             extra={"error_type": type(exc).__name__, "audit_path": str(audit_path)},
             exc_info=sanitized_exception_info(exc),
         )
-        console(f"Setup failed: {exc}", error=True)
-        console(f"Audit log: {audit_path}", error=True)
+        _flush_log_handlers()
+        default_retry = (
+            _setup_command(resume=True)
+            if args.command == "setup"
+            else f"uv run --locked python -m scripts.bootstrap {args.command}"
+        )
+        _show_failure(exc, audit_path=audit_path, default_retry=default_retry)
         _report_preserved_container_state()
-        console("Fix the issue and rerun setup with --resume.", error=True)
         raise SystemExit(1) from exc
     except Exception as exc:
         logger.exception(
@@ -1049,13 +1557,31 @@ def main() -> None:
             extra={"error_type": type(exc).__name__, "audit_path": str(audit_path)},
             exc_info=sanitized_exception_info(exc),
         )
-        console(
-            "Setup failed because an external dependency returned an error. "
-            f"Details were redacted. Audit log: {audit_path}",
-            error=True,
+        _flush_log_handlers()
+        if isinstance(exc, snowflake.connector.Error):
+            failure = _snowflake_bootstrap_error(
+                exc,
+                role="the configured setup role",
+            )
+        else:
+            failure = BootstrapError(
+                "An external dependency returned an unexpected error; technical details were redacted.",
+                likely_cause="Docker, Snowflake, MongoDB, Redis, the network, or a local file operation failed outside a recognized contract.",
+                fixes=(
+                    "Review the technical reference and the closest troubleshooting section in README.md.",
+                    "Correct the dependency problem, then resume; do not paste secrets from .env into an issue or log.",
+                ),
+            )
+        _show_failure(
+            failure,
+            audit_path=audit_path,
+            default_retry=(
+                _setup_command(resume=True)
+                if args.command == "setup"
+                else f"uv run --locked python -m scripts.bootstrap {args.command}"
+            ),
         )
         _report_preserved_container_state()
-        console("Fix the issue and rerun setup with --resume.", error=True)
         raise SystemExit(1) from exc
 
 

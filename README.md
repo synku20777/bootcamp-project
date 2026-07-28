@@ -7,6 +7,386 @@ and transformations, population ingestion, cached analytical APIs, automated
 exploratory-data-analysis exports, and a responsive analytical dashboard with
 MongoDB annotations.
 
+## Start here: run the project from a new computer
+
+This is the primary setup path. You do not need to read the source code or run
+individual SQL files. Follow the sections in order; the guided command validates
+each prerequisite before it changes the next system.
+
+### What this project starts
+
+The finished project has four local Docker services and one remote data system:
+
+- **Dash dashboard** at <http://localhost:8050/overview> for overview, country,
+  comparison, and annotation pages.
+- **FastAPI API** at <http://localhost:8000/docs> for documented HTTP endpoints.
+- **Redis** inside Docker for 24-hour analytical response caching. The API fails
+  closed if Redis is unavailable so a broken cache cannot create repeated
+  Snowflake queries and consume trial credits.
+- **MongoDB** at host port `27017` for annotations.
+- **Snowflake** in your trial account for Marketplace source data and the
+  analytical marts queried by the API.
+
+The terminal is the text-based application used to run commands. On Windows,
+use PowerShell; on macOS or Linux, use Terminal. The **repository root** is the
+downloaded project folder containing `README.md`, `compose.yaml`, `setup.ps1`,
+and `setup.sh`. Run every command below from that folder.
+
+### 1. Create the Snowflake account
+
+Create a Snowflake trial account before installing the local application:
+
+1. Open the [Snowflake trial registration page](https://signup.snowflake.com/).
+2. Choose **Amazon Web Services (AWS)** as the cloud provider.
+3. Choose the **Europe (Stockholm)** region. Other regions may work, but the
+   project onboarding contract and tested example use AWS Stockholm.
+4. Finish account creation and sign in to Snowsight.
+5. Record these values in a password manager:
+   - organization name;
+   - account name;
+   - Snowflake username;
+   - Snowflake password.
+
+The connector needs `SNOWFLAKE_ACCOUNT` in `organization-account` form, for
+example `acme-xy12345`. Find this account identifier in Snowsight account
+details. Do **not** use the Snowsight browser URL, `https://`, a regional
+hostname, or a value ending in `snowflakecomputing.com`.
+
+### 2. Add the required Marketplace database
+
+While signed in to the same Snowflake account:
+
+1. Open **Data Products** / **Marketplace** in Snowsight.
+2. Find the free COVID-19 epidemiological data listing that contains ECDC data.
+3. Add or get the listing for the current account.
+4. Name the installed database exactly:
+
+   ```text
+   COVID19_EPIDEMIOLOGICAL_DATA
+   ```
+
+5. In a Snowsight worksheet, confirm this object exists and is queryable:
+
+   ```sql
+   SELECT *
+   FROM COVID19_EPIDEMIOLOGICAL_DATA.PUBLIC.ECDC_GLOBAL
+   LIMIT 1;
+   ```
+
+Setup deliberately checks both the database and
+`COVID19_EPIDEMIOLOGICAL_DATA.PUBLIC.ECDC_GLOBAL`. A similarly named database
+or another COVID listing is not interchangeable.
+
+> If setup later says the Marketplace object is missing, return to this step.
+> Installing the listing in a different Snowflake account or under a different
+> database name is the usual cause.
+
+### 3. Install the local prerequisites
+
+#### Git or a ZIP download
+
+Git is recommended because it makes updates and branch history available:
+
+- Windows: install [Git for Windows](https://git-scm.com/download/win).
+- macOS: run `xcode-select --install`, or install Git with Homebrew.
+- Linux: install `git` with your distribution package manager.
+
+Verify it in a new terminal:
+
+```bash
+git --version
+```
+
+Git is optional if you download and extract the repository ZIP from GitHub.
+The guided setup works without a `.git` directory; you simply will not have Git
+history or normal pull/update commands.
+
+#### Docker and Docker Compose
+
+- Windows/macOS: install [Docker Desktop](https://www.docker.com/products/docker-desktop/).
+- Linux: install Docker Engine and the Docker Compose v2 plugin using the
+  [official Docker instructions](https://docs.docker.com/engine/install/).
+
+Start Docker Desktop, or start the Docker service on Linux. Installation alone
+is not enough: the engine must be running. Verify the client, server, and
+Compose plugin:
+
+```bash
+docker --version
+docker info
+docker compose version
+```
+
+`docker info` must show a **Server** section. On Linux, if it reports permission
+denied, configure non-root Docker access according to the official Docker
+post-install instructions, then open a new login session.
+
+#### uv
+
+uv installs the exact locked Python environment; a separate manual Python
+installation is not required. Install uv using the
+[official uv installation instructions](https://docs.astral.sh/uv/getting-started/installation/).
+Common options are:
+
+```powershell
+winget install --id=astral-sh.uv -e
+```
+
+or on macOS/Linux:
+
+```bash
+curl -LsSf https://astral.sh/uv/install.sh | sh
+```
+
+Open a new terminal and verify:
+
+```bash
+uv --version
+```
+
+### 4. Download the repository and enter its root
+
+With Git:
+
+```bash
+git clone <repository-url>
+cd bootcamp-project
+```
+
+Without Git, download the repository ZIP, extract it, and open the extracted
+`bootcamp-project` folder in a terminal.
+
+Confirm the current folder before setup.
+
+PowerShell:
+
+```powershell
+Get-Location
+Get-Item README.md, compose.yaml, setup.ps1, setup.sh
+```
+
+macOS/Linux:
+
+```bash
+pwd
+ls README.md compose.yaml setup.ps1 setup.sh
+```
+
+If any file is reported missing, change directory into the repository root.
+Do not run setup from `Downloads`, your home folder, or the parent GitHub folder.
+
+### 5. Understand the configuration values
+
+The guided setup creates `.env` from `.env.example`, prompts only for missing
+secret/account values, backs up an existing `.env`, validates the serialized
+file, then replaces it atomically. `.env` is ignored by Git. Do not commit it,
+paste it into an issue, or share its contents.
+
+These values control Snowflake:
+
+| Variable | Meaning and expected value |
+| --- | --- |
+| `SNOWFLAKE_ACCOUNT` | Connector account identifier such as `organization-account`; never a URL or hostname. |
+| `SNOWFLAKE_USER` | The Snowflake login created for this account. |
+| `SNOWFLAKE_PASSWORD` | Password for that login; hidden during prompting and never written to the audit log. |
+| `SNOWFLAKE_BOOTSTRAP_ROLE` | One-time account-level setup role. Keep the default `ACCOUNTADMIN`; it creates the warehouse/project roles and grants them to the user. |
+| `SNOWFLAKE_ROLE` | Deployment role, `COVID_PROJECT_ADMIN`; creates schemas, views, tables, and reporting objects after bootstrap. |
+| `SNOWFLAKE_API_ROLE` | Runtime least-privilege role, `COVID_APP_ROLE`; FastAPI uses this instead of `ACCOUNTADMIN`. |
+| `SNOWFLAKE_WAREHOUSE` | Project warehouse, `COVID_WH`, with auto-suspend/auto-resume and a resource monitor. |
+| `SNOWFLAKE_DATABASE` | Project-owned database, `COVID_ANALYTICS`. |
+| `SNOWFLAKE_SCHEMA` | Default loader/deployment schema, `RAW`. |
+| `SNOWFLAKE_API_SCHEMA` | Default API analytical schema, `MARTS`. |
+
+These values control the local services:
+
+| Variable | Meaning and expected value |
+| --- | --- |
+| `MONGO_ROOT_USERNAME` | Root username used only for the project-owned MongoDB container. |
+| `MONGO_ROOT_PASSWORD` | Local MongoDB root password; leave the guided prompt blank to generate a strong value. |
+| `MONGO_DATABASE` | Application database, normally `covid_app`. |
+| `MONGODB_URI` | Complete MongoDB connection string. Guided setup derives it from the username/password/database and URL-encodes credentials. |
+| `REDIS_URL` | Host-side default `redis://localhost:6379/0`; Compose supplies `redis://redis:6379/0` to the API container. |
+
+The bootstrap role is temporary authority for setup; the project admin role is
+for deployment; the API role is for runtime reads. Do not simplify all three to
+`ACCOUNTADMIN`. That would defeat the repository's least-privilege design.
+
+### 6. Run the one-time guided setup
+
+Keep Docker running. The first run installs the locked Python dependencies,
+builds images, downloads a small World Bank dataset, and creates Snowflake
+objects, so it normally takes several minutes.
+
+Windows PowerShell:
+
+```powershell
+Set-ExecutionPolicy -Scope Process Bypass
+.\setup.ps1
+```
+
+The execution-policy change applies only to the current PowerShell process.
+
+macOS/Linux:
+
+```bash
+chmod +x setup.sh start.sh stop.sh
+./setup.sh
+```
+
+The terminal displays **Step X of 9** and performs these operations:
+
+1. Validates uv, the Docker engine/Compose plugin, repository permissions,
+   secret-ignore rules, and ports `8000`, `8050`, and `27017`.
+2. Creates or backs up `.env`, collects hidden secrets, authenticates with the
+   bootstrap role, and checks the Marketplace database and ECDC object.
+3. Creates the resource-monitored `COVID_WH`, project database/schemas, and
+   least-privilege roles; grants the project roles to the configured user.
+4. Verifies Marketplace access and deploys the country mapping and staging
+   transformations.
+5. Fetches, validates, and loads World Bank population data transactionally;
+   invalid downloads never replace valid published data.
+6. Creates and verifies the enriched MARTS and reporting objects.
+7. Validates Compose, builds images, and starts FastAPI, Dash, MongoDB, and
+   Redis without deleting existing volumes.
+8. Creates the MongoDB annotations collection/indexes idempotently.
+9. Verifies container networking, API readiness, explicit Snowflake access,
+   analytical data, and the dashboard, while writing a redacted JSONL audit log.
+
+If a step fails, the terminal shows **SETUP COULD NOT CONTINUE**, what happened,
+the likely cause, specific repair actions, the exact retry command, and a
+technical reference. Correct the cause and resume safely:
+
+```powershell
+.\setup.ps1 --resume
+```
+
+or:
+
+```bash
+./setup.sh --resume
+```
+
+Resume skips a completed step only when its input checksum, setup identity, and
+live postcondition still match. Ctrl+C exits with status `130`, flushes the
+audit log, and preserves containers, volumes, and resumable state.
+
+### 7. Confirm setup succeeded
+
+A successful run ends with **SETUP COMPLETED SUCCESSFULLY**, the application
+URLs, the correct start/stop command for your operating system, and an audit log
+path under `outputs/setup/`. That audit is structured JSON and excludes secrets.
+
+Check service state:
+
+```bash
+docker compose ps
+```
+
+`api`, `dashboard`, `mongo`, and `redis` should be running and healthy.
+
+PowerShell verification:
+
+```powershell
+Invoke-RestMethod http://localhost:8000/health/live
+Invoke-RestMethod http://localhost:8000/health/ready
+Invoke-RestMethod http://localhost:8000/countries
+```
+
+macOS/Linux verification:
+
+```bash
+curl -i http://localhost:8000/health/live
+curl -i http://localhost:8000/health/ready
+curl -i http://localhost:8000/countries
+```
+
+The two health routes return HTTP `200`; liveness contains `{"status":"ok"}`
+and countries returns a non-empty JSON list. The explicit Snowflake check may
+resume `COVID_WH`, so call it only when you deliberately want a live check:
+
+```bash
+curl -i http://localhost:8000/health/snowflake
+```
+
+### 8. Open and use the dashboard
+
+Open <http://localhost:8050/overview>. The navigation contains:
+
+- **Overview**: headline totals, leading countries, and a world map.
+- **Country Explorer**: choose one country, metric, and date range.
+- **Compare**: select multiple countries and compare normalized trends.
+- **Annotations**: create and retrieve country/date notes stored in MongoDB.
+
+The Snowflake status initially says **Not checked**. This is a neutral state,
+not a failure: the dashboard deliberately avoids waking the warehouse on page
+load. Use **Check Snowflake** only when a live connection test is necessary.
+Loading indicators mean a request is in progress. Empty-data messages can be
+valid for a selected country/date range; red dependency messages include a
+safe retry action and indicate which service needs attention.
+
+### 9. Daily start and stop
+
+After the one-time setup, do not rerun deployment for normal daily use.
+
+Start existing services:
+
+```powershell
+.\start.ps1
+```
+
+or:
+
+```bash
+./start.sh
+```
+
+`start` validates local prerequisites and `.env`, starts the existing Compose
+services, and runs cheap liveness/readiness checks. It does not redeploy
+Snowflake, reload population data, or call the live Snowflake health endpoint.
+
+Stop services safely:
+
+```powershell
+.\stop.ps1
+```
+
+or:
+
+```bash
+./stop.sh
+```
+
+`stop` stops containers but preserves MongoDB/Redis volumes and every Snowflake
+object. `setup` is one-time deployment, `start` is daily operation, and `stop`
+is a non-destructive shutdown.
+
+### 10. Quick recovery guide
+
+- **Docker is installed but setup says its engine is unavailable:** start Docker
+  Desktop and wait for it to finish, or start the Linux Docker service; rerun
+  `docker info`, then resume setup.
+- **Port 8000, 8050, or 27017 is occupied:** the error names the service. On
+  Windows inspect it with `Get-NetTCPConnection -LocalPort <port>`; on
+  macOS/Linux use `lsof -i :<port>` or `ss -ltnp`. Stop only a process you
+  recognize. Setup never kills processes automatically.
+- **Snowflake authentication/account failure:** verify sign-in in Snowsight and
+  correct the connector-form account, username, or hidden password in `.env`.
+- **Marketplace failure:** install the listing in the same account as the
+  configured credentials, with the exact database/object names shown above.
+- **Role, warehouse, or MARTS failure:** keep the three role settings distinct
+  and resume setup so grants and postconditions are rechecked.
+- **API returns `503`:** read `error.code` and `request_id` in the response. A
+  Redis error intentionally blocks Snowflake queries; restore Redis instead of
+  bypassing the protection. See the full troubleshooting section below.
+- **Dashboard cannot reach API:** `http://api:8000` is correct inside Compose;
+  `http://localhost:8000` is correct from your host browser/terminal.
+- **MongoDB credentials changed after first start:** restore the credentials
+  that initialized the volume. The destructive reset documented below is only
+  for disposable local annotations and is never run by setup.
+
+For individual SQL execution or recovery without the guided workflow, continue
+at [Advanced: manual setup and recovery](#advanced-manual-setup-and-recovery).
+
 ## Current capabilities
 
 - Creates the Snowflake warehouse, resource monitor, database, and schemas.
@@ -73,7 +453,7 @@ flowchart LR
 | Containers            | Docker Compose                                 |
 | Code quality          | Ruff, isort, Black, pre-commit, GitHub Actions |
 
-## Recommended automated setup
+## Automated setup command reference
 
 The setup automation creates the project-owned Snowflake objects, refreshes the
 population table safely, starts the containers, creates MongoDB indexes, and
@@ -225,7 +605,7 @@ Optional exploration is separate from required setup:
 uv run --locked python -m scripts.bootstrap analyze
 ```
 
-## Manual setup from a blank computer
+## Advanced: manual setup and recovery
 
 This section is the detailed fallback when you prefer to execute each operation
 yourself. Follow the steps in order.
@@ -316,10 +696,14 @@ Verify the database in a worksheet:
 
 ```sql
 SHOW DATABASES LIKE 'COVID19_EPIDEMIOLOGICAL_DATA';
+
+SELECT *
+FROM COVID19_EPIDEMIOLOGICAL_DATA.PUBLIC.ECDC_GLOBAL
+LIMIT 1;
 ```
 
-The result must contain one database named
-`COVID19_EPIDEMIOLOGICAL_DATA`.
+The first result must contain one database named
+`COVID19_EPIDEMIOLOGICAL_DATA`; the second must return an ECDC source row.
 
 ### Step 3 — Install Git, Docker, and uv
 
@@ -1382,7 +1766,10 @@ checks on every push and pull request.
 ### Docker cannot connect to the daemon
 
 Start Docker Desktop and wait until the Linux container engine is ready. Verify
-it with `docker version`, which should show both Client and Server sections.
+it with `docker info`, which should show both Client and Server information.
+On Linux, also confirm the Docker service is running and the current user can
+access its socket. Resume setup after the engine responds; reinstalling Python
+packages will not repair a stopped Docker engine.
 
 ### The API health endpoint returns `503`
 
@@ -1404,9 +1791,9 @@ Use this code-to-action guide:
 | `snowflake_configuration_invalid` | One or more required `SNOWFLAKE_*` variables are missing. Compare `.env` with `.env.example`; errors list names, never values. |
 | `snowflake_account_invalid` | `SNOWFLAKE_ACCOUNT` is not the connector identifier. Use `organization-account`, not a Snowsight URL or `snowflakecomputing.com` hostname. |
 | `snowflake_authentication_failed` | The configured Snowflake username or password was rejected. |
-| `snowflake_role_unauthorized` | Grant `COVID_APP_ROLE` to the configured API user, then restart `api`. |
-| `snowflake_warehouse_unavailable` | Confirm `COVID_WH` exists and `COVID_APP_ROLE` has warehouse `USAGE`. |
-| `snowflake_permission_denied` | Re-run the grants in `sql/00_project_setup.sql`. |
+| `snowflake_role_unauthorized` | Resume guided setup so it can verify the `COVID_APP_ROLE` grant to the configured API user, then restart `api`. |
+| `snowflake_warehouse_unavailable` | Resume setup so it can confirm `COVID_WH` and the API role's warehouse `USAGE`. |
+| `snowflake_permission_denied` | Resume setup to recheck the grants in `sql/00_project_setup.sql`; do not switch the API to `ACCOUNTADMIN`. |
 | `analytics_objects_missing` | Complete or resume setup so `COVID_ENRICHED` and `COUNTRY_LATEST_METRICS` exist and are readable. |
 | `snowflake_network_unavailable` | The API container could not reach Snowflake. Check internet, DNS, proxy, and firewall settings. |
 
@@ -1445,6 +1832,18 @@ Prefer restoring the credentials originally used by the volume. Delete the
 volume only if you intentionally accept losing local annotations; `stop.ps1`
 and `stop.sh` never delete it.
 
+If, and only if, the annotations are disposable, the explicit destructive
+recovery is:
+
+```bash
+docker compose down
+docker volume rm covid-platform_mongo_data
+```
+
+Then rerun setup with `--resume`. The volume deletion is irreversible and is
+never performed by setup. The separate Redis volume is not removed by these
+commands.
+
 ### Required ports are already occupied
 
 The API, dashboard, and host MongoDB binding require ports `8000`, `8050`, and
@@ -1454,6 +1853,37 @@ project from unrelated processes:
 ```bash
 uv run --locked python -m scripts.bootstrap doctor --local
 ```
+
+Identify the owner before stopping anything:
+
+```powershell
+Get-NetTCPConnection -LocalPort 8000
+Get-Process -Id <OwningProcess>
+```
+
+or on macOS/Linux:
+
+```bash
+lsof -i :8000
+ss -ltnp
+```
+
+Repeat with `8050` or `27017` as reported. Setup never kills an unrelated
+process automatically.
+
+### World Bank population refresh fails
+
+The loader validates the download and writes the local file/manifest safely
+before transactionally refreshing Snowflake. A failed network request, schema
+check, or load does not replace previously published valid population data.
+Restore network access and resume setup. Use the referenced audit record only
+if the terminal's validation explanation is insufficient.
+
+### Setup was interrupted with Ctrl+C
+
+The command exits with status `130`, flushes the structured audit log, and does
+not delete containers or volumes. Run `setup.ps1 --resume` or
+`./setup.sh --resume`; each completed step is revalidated before it is skipped.
 
 ### A pre-commit hook modifies files
 

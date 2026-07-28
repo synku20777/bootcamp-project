@@ -7,3 +7,4 @@ if (-not (Get-Command uv -ErrorAction SilentlyContinue)) {
 }
 
 uv run --locked python -m scripts.bootstrap stop @args
+exit $LASTEXITCODE
