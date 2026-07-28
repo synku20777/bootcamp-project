@@ -34,6 +34,17 @@ class FakeStreamConnection:
         return iter(self.cursors)
 
 
+class FakeFailingStreamConnection:
+    def __init__(self, error: Exception) -> None:
+        self.cursor = FakeStreamCursor("completed-query")
+        self.error = error
+
+    def execute_stream(self, stream, *, remove_comments: bool):
+        stream.read()
+        yield self.cursor
+        raise self.error
+
+
 def _sql_without_comments(path: Path) -> str:
     return "\n".join(
         line
@@ -107,6 +118,27 @@ class BootstrapTests(unittest.TestCase):
         self.assertTrue(connection.remove_comments)
         self.assertTrue(all(cursor.closed for cursor in connection.cursors))
 
+    def test_execute_sql_file_reports_the_failed_statement_without_raw_details(
+        self,
+    ) -> None:
+        connector_error = bootstrap.snowflake.connector.ProgrammingError(
+            msg="sensitive connector detail"
+        )
+        connection = FakeFailingStreamConnection(connector_error)
+        sql_path = self._temporary_root() / "fixture.sql"
+        sql_path.write_text("SELECT 1; SELECT 2;", encoding="utf-8")
+
+        with self.assertRaises(bootstrap.BootstrapError) as raised:
+            bootstrap.execute_sql_file(connection, sql_path)
+
+        self.assertIn("statement 2", str(raised.exception))
+        self.assertEqual(
+            raised.exception.technical_reference,
+            "fixture.sql: statement 2",
+        )
+        self.assertNotIn("sensitive connector detail", str(raised.exception))
+        self.assertTrue(connection.cursor.closed)
+
     def test_account_setup_grants_user_before_project_role_sql(self) -> None:
         account_sql = bootstrap.SQL_FILES["account_setup"]
         project_sql = bootstrap.SQL_FILES["project_objects"]
@@ -117,6 +149,22 @@ class BootstrapTests(unittest.TestCase):
             "CREATE ROLE IF NOT EXISTS COVID_PROJECT_ADMIN", account_statements
         )
         self.assertNotIn("USE ROLE COVID_PROJECT_ADMIN", account_statements)
+        self.assertIn(
+            "GRANT IMPORTED PRIVILEGES\nON DATABASE COVID19_EPIDEMIOLOGICAL_DATA\nTO ROLE COVID_PROJECT_ADMIN",
+            account_statements,
+        )
+        self.assertNotIn(
+            "GRANT USAGE ON DATABASE COVID19_EPIDEMIOLOGICAL_DATA",
+            account_statements,
+        )
+        self.assertNotIn(
+            "GRANT USAGE ON SCHEMA COVID19_EPIDEMIOLOGICAL_DATA.PUBLIC",
+            account_statements,
+        )
+        self.assertNotIn(
+            "GRANT SELECT ON ALL TABLES IN SCHEMA\n    COVID19_EPIDEMIOLOGICAL_DATA.PUBLIC",
+            account_statements,
+        )
         self.assertIn("USE ROLE COVID_PROJECT_ADMIN", project_statements)
         self.assertIn(
             "CREATE SCHEMA IF NOT EXISTS COVID_ANALYTICS.RAW", project_statements

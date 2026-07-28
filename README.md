@@ -1423,6 +1423,7 @@ It creates:
 - The `COVID_ANALYTICS` database
 - A least-privilege project role named `COVID_PROJECT_ADMIN`
 - A read-only API runtime role named `COVID_APP_ROLE`
+- Imported access from the Marketplace database to `COVID_PROJECT_ADMIN`
 
 The monitor notifies at 50%, suspends the warehouse at 80%, and suspends it
 immediately at 100%. Confirm that this quota is appropriate for your account
@@ -1447,7 +1448,9 @@ the MARTS read contract to `COVID_APP_ROLE`.
 The automated bootstrap performs this exact boundary with bound user
 identifiers: account SQL, user grants, a new project-role connection, and then
 project-object SQL. It never executes `USE ROLE COVID_PROJECT_ADMIN` before the
-user grant exists.
+user grant exists. Marketplace access uses Snowflake's shared-database command,
+`GRANT IMPORTED PRIVILEGES`, rather than attempting to grant `USAGE` or `SELECT`
+on provider-owned objects.
 
 FastAPI connects only as `COVID_APP_ROLE`. That role can use `COVID_WH` and
 read current and future MARTS tables/views, but it cannot create or replace

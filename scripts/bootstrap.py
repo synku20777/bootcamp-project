@@ -778,23 +778,69 @@ def doctor_configured(values: dict[str, str]) -> None:
 def execute_sql_file(connection: Any, path: Path) -> None:
     logger.info("sql_file_started", extra={"sql_file": path.name})
     statement_count = 0
-    with path.open("r", encoding="utf-8") as sql_file:
-        for cursor in connection.execute_stream(sql_file, remove_comments=True):
-            try:
-                statement_count += 1
-                logger.info(
-                    "sql_statement_completed",
-                    extra={
-                        "sql_file": path.name,
-                        "statement_number": statement_count,
-                        "query_id": getattr(cursor, "sfqid", None),
-                    },
-                )
-            finally:
-                cursor.close()
+    try:
+        with path.open("r", encoding="utf-8") as sql_file:
+            for cursor in connection.execute_stream(sql_file, remove_comments=True):
+                try:
+                    statement_count += 1
+                    logger.info(
+                        "sql_statement_completed",
+                        extra={
+                            "sql_file": path.name,
+                            "statement_number": statement_count,
+                            "query_id": getattr(cursor, "sfqid", None),
+                        },
+                    )
+                finally:
+                    cursor.close()
+    except snowflake.connector.Error as exc:
+        failed_statement = statement_count + 1
+        logger.exception(
+            "sql_file_failed",
+            extra={
+                "sql_file": path.name,
+                "statement_number": failed_statement,
+                "error_type": type(exc).__name__,
+            },
+            exc_info=sanitized_exception_info(exc),
+        )
+        raise _sql_file_bootstrap_error(path, failed_statement, exc) from exc
     logger.info(
         "sql_file_completed",
         extra={"sql_file": path.name, "statement_count": statement_count},
+    )
+
+
+def _sql_file_bootstrap_error(
+    path: Path,
+    statement_number: int,
+    exc: snowflake.connector.Error,
+) -> BootstrapError:
+    query_id = getattr(exc, "sfqid", None)
+    technical_reference = f"{path.name}: statement {statement_number}"
+    if query_id:
+        technical_reference = f"{technical_reference}; query ID {query_id}"
+
+    if path.name == SQL_FILES["account_setup"].name:
+        return BootstrapError(
+            f"Snowflake rejected account setup statement {statement_number} in {path.name}.",
+            likely_cause="The bootstrap role lacks ACCOUNTADMIN authority, or the required Marketplace shared database is not installed under the expected name.",
+            fixes=(
+                "Confirm SNOWFLAKE_BOOTSTRAP_ROLE=ACCOUNTADMIN and that the configured user can activate it.",
+                "Confirm the Marketplace database is named COVID19_EPIDEMIOLOGICAL_DATA; shared access is granted with IMPORTED PRIVILEGES.",
+                "After correcting the account, rerun setup with --resume.",
+            ),
+            technical_reference=technical_reference,
+        )
+
+    return BootstrapError(
+        f"Snowflake rejected statement {statement_number} in {path.name}.",
+        likely_cause="The active project role lacks a required grant, or a prerequisite Snowflake object is unavailable.",
+        fixes=(
+            "Run the account setup phase first and confirm COVID_PROJECT_ADMIN is granted to the deployment user.",
+            "Rerun setup with --resume after correcting the reported prerequisite.",
+        ),
+        technical_reference=technical_reference,
     )
 
 
@@ -1245,7 +1291,6 @@ def setup(
         include_project_context=False,
     )
     try:
-
         _setup_progress(
             3,
             "Create account-level project objects",
@@ -1273,9 +1318,15 @@ def setup(
     finally:
         bootstrap_connection.close()
 
-    admin_connection = connect_snowflake(values, role=values["SNOWFLAKE_ROLE"])
+    # RAW does not exist until 00_project_objects.sql runs on a clean account.
+    # Connect with only the freshly granted role; the SQL file creates and then
+    # selects the project warehouse, database, and schema in the required order.
+    admin_connection = connect_snowflake(
+        values,
+        role=values["SNOWFLAKE_ROLE"],
+        include_project_context=False,
+    )
     try:
-
         _setup_progress(
             4,
             "Create project schemas and build staging",
