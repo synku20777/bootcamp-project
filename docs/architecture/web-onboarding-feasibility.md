@@ -1,8 +1,8 @@
 # ADR: Web onboarding feasibility
 
 - Status: Accepted for the current delivery
-- Decision: Keep secure setup in the terminal; consider a localhost-only wrapper
-  as a later enhancement
+- Decision: Use a Docker-hosted terminal bootstrap and browser application;
+  consider a localhost-only setup form only as a later enhancement
 - Scope: First-run configuration and recovery, not normal analytical dashboard use
 
 ## Context
@@ -16,9 +16,11 @@ configuration, resumable postconditions, secret redaction, structured audit
 logs, and non-destructive interruption behavior.
 
 A web form can improve discoverability, but it does not remove the need to
-install Docker and uv or to create the Snowflake account and Marketplace listing
-outside the application. It also introduces a credential-handling service that
-must be secured before the normal application exists.
+install Docker or to create the Snowflake account and Marketplace listing
+outside the application. Local Python and uv are unnecessary because the pinned
+setup image contains them. A setup form would still introduce a
+credential-handling service that must be secured before the normal application
+exists.
 
 ## Options considered
 
@@ -70,12 +72,15 @@ Problems:
 Conclusion: rejected. The analytical dashboard must not become a Snowflake
 account bootstrap service.
 
-### 3. Terminal-only guided bootstrap
+### 3. Docker-hosted guided bootstrap
 
 Advantages:
 
 - Already owns the complete secure and resumable workflow.
-- Runs before containers exist and works consistently across clean machines.
+- Runs its Python/Snowflake phases in a temporary pinned container and works
+  consistently across clean machines.
+- Requires only Docker on the host; Python, uv, databases, and data clients stay
+  inside images.
 - Hidden prompts keep passwords out of shell history and process arguments.
 - Structured JSON audit records can exclude secrets while terminal messages
   remain actionable.
@@ -92,10 +97,13 @@ recovery commands.
 
 ## Decision
 
-Keep `scripts/bootstrap.py` as the only setup authority. Preserve its atomic
+Keep `scripts/bootstrap.py` as the only setup authority, invoked by the
+Docker-only host launchers. Preserve its atomic
 `.env` writer, checksum/postcondition resume state, least-privilege role split,
 structured logging, redaction, and non-destructive failure behavior. Improve its
-terminal UX and documentation rather than copying setup logic into Dash.
+terminal UX and documentation rather than copying setup logic into Dash. Do not
+mount the Docker socket into the setup container; the small host launcher owns
+Compose lifecycle operations.
 
 If a browser wizard is later approved, implement option 1 as a thin,
 localhost-only adapter over the same bootstrap operations. Do not implement a
@@ -103,8 +111,9 @@ setup page inside the production dashboard.
 
 ## Recommended phased approach
 
-1. Current phase: beginner-first README, numbered terminal progress, explanatory
-   hidden prompts, actionable failure taxonomy, and explicit verification.
+1. Current phase: Docker-only launcher, pinned setup container, beginner-first
+   README, numbered progress, hidden prompts, actionable failures, and explicit
+   verification.
 2. Follow-up discovery: usability-test the terminal flow with new users and
    identify steps where a browser materially improves completion.
 3. Security design: threat model the loopback wizard, token lifecycle, CSRF,
@@ -116,7 +125,8 @@ setup page inside the production dashboard.
 
 ## Consequences
 
-New users still need a terminal, but they receive one authoritative path that
-works before any container is running. The production dashboard retains its
-least-privilege runtime boundary. A future wizard remains possible without
-weakening or replacing the secure setup architecture.
+New users need only Docker, the operating system's built-in terminal, and a web
+browser. They do not install a local development runtime. The production
+dashboard retains its least-privilege boundary, and the setup container receives
+no Docker socket. A future wizard remains possible without weakening or
+replacing the secure setup architecture.

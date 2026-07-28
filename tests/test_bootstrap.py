@@ -34,6 +34,14 @@ class FakeStreamConnection:
         return iter(self.cursors)
 
 
+def _sql_without_comments(path: Path) -> str:
+    return "\n".join(
+        line
+        for line in path.read_text(encoding="utf-8").splitlines()
+        if not line.strip().startswith("--")
+    )
+
+
 class BootstrapTests(unittest.TestCase):
     def _temporary_root(self) -> Path:
         root = Path("outputs/test-bootstrap") / uuid4().hex
@@ -98,6 +106,48 @@ class BootstrapTests(unittest.TestCase):
 
         self.assertTrue(connection.remove_comments)
         self.assertTrue(all(cursor.closed for cursor in connection.cursors))
+
+    def test_account_setup_grants_user_before_project_role_sql(self) -> None:
+        account_sql = bootstrap.SQL_FILES["account_setup"]
+        project_sql = bootstrap.SQL_FILES["project_objects"]
+        account_statements = _sql_without_comments(account_sql).upper()
+        project_statements = _sql_without_comments(project_sql).upper()
+
+        self.assertIn(
+            "CREATE ROLE IF NOT EXISTS COVID_PROJECT_ADMIN", account_statements
+        )
+        self.assertNotIn("USE ROLE COVID_PROJECT_ADMIN", account_statements)
+        self.assertIn("USE ROLE COVID_PROJECT_ADMIN", project_statements)
+        self.assertIn(
+            "CREATE SCHEMA IF NOT EXISTS COVID_ANALYTICS.RAW", project_statements
+        )
+
+        events: list[tuple[str, object]] = []
+        connection = MagicMock()
+        cursor = connection.cursor.return_value
+        cursor.fetchone.return_value = ("BOOTCAMP_USER",)
+
+        def record_sql_file(_connection, path: Path) -> None:
+            events.append(("file", path.name))
+
+        def record_statement(query: str, parameters=()) -> None:
+            events.append((query, parameters))
+
+        cursor.execute.side_effect = record_statement
+        with patch("scripts.bootstrap.execute_sql_file", side_effect=record_sql_file):
+            bootstrap.bootstrap_account_objects_and_roles(connection)
+
+        self.assertEqual(events[0], ("file", account_sql.name))
+        grant_events = [event for event in events if event[0].startswith("GRANT ROLE")]
+        self.assertEqual(
+            [event[0] for event in grant_events],
+            [
+                "GRANT ROLE COVID_PROJECT_ADMIN TO USER IDENTIFIER(%s)",
+                "GRANT ROLE COVID_APP_ROLE TO USER IDENTIFIER(%s)",
+            ],
+        )
+        self.assertTrue(all(event[1] == ("BOOTCAMP_USER",) for event in grant_events))
+        cursor.close.assert_called_once()
 
     def test_compose_port_owners_uses_project_labels(self) -> None:
         output = "\n".join(
@@ -201,6 +251,59 @@ class BootstrapTests(unittest.TestCase):
         self.assertIn("How to fix:", output)
         self.assertIn("Then run: docker info", output)
         self.assertIn("Technical reference: audit.jsonl", output)
+
+    def test_host_commands_can_be_supplied_to_containerized_bootstrap(self) -> None:
+        with patch.dict(
+            "scripts.bootstrap.os.environ",
+            {
+                "SETUP_LAUNCH_COMMAND": ".\\setup.ps1",
+                "SETUP_RESUME_COMMAND": ".\\setup.ps1 --resume",
+                "SETUP_START_COMMAND": ".\\start.ps1",
+                "SETUP_STOP_COMMAND": ".\\stop.ps1",
+            },
+            clear=False,
+        ):
+            self.assertEqual(bootstrap._setup_command(), ".\\setup.ps1")
+            self.assertEqual(
+                bootstrap._setup_command(resume=True),
+                ".\\setup.ps1 --resume",
+            )
+            self.assertEqual(bootstrap._start_command(), ".\\start.ps1")
+            self.assertEqual(bootstrap._stop_command(), ".\\stop.ps1")
+
+    def test_container_finalizer_uses_internal_compose_addresses(self) -> None:
+        values = {
+            "SNOWFLAKE_ACCOUNT": "organization-account",
+            "SNOWFLAKE_USER": "user",
+            "SNOWFLAKE_DATABASE": "COVID_ANALYTICS",
+            "MONGODB_URI": "mongodb://mongo/covid_app",
+            "MONGO_DATABASE": "covid_app",
+        }
+        state = MagicMock()
+        with (
+            patch("scripts.bootstrap.load_runtime_environment", return_value=values),
+            patch("scripts.bootstrap.SetupState", return_value=state),
+            patch("scripts.bootstrap.poll_http_postconditions") as poll,
+            patch("scripts.bootstrap._http_postconditions_pass", return_value=True),
+            patch("scripts.bootstrap._mongodb_indexes_ready", return_value=True),
+            patch("scripts.bootstrap._show_setup_success"),
+            patch("scripts.bootstrap.console"),
+        ):
+            bootstrap.finalize_container_setup(
+                resume=False,
+                audit_path=Path("audit.jsonl"),
+            )
+
+        self.assertTrue(poll.called)
+        for call in poll.call_args_list:
+            self.assertEqual(
+                call.kwargs["api_base_url"],
+                "http://127.0.0.1:8000",
+            )
+            self.assertEqual(
+                call.kwargs["dashboard_base_url"],
+                "http://dashboard:8050",
+            )
 
     def test_non_interactive_configuration_lists_missing_values(self) -> None:
         root = self._temporary_root()

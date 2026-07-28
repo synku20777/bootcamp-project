@@ -1,0 +1,26 @@
+name: covid-platform
+
+services:
+  setup:
+    build:
+      context: .
+      dockerfile: dockerfile
+
+    working_dir: /app
+
+    environment:
+      SETUP_LAUNCH_COMMAND: ${SETUP_LAUNCH_COMMAND:-./setup.sh}
+      SETUP_RESUME_COMMAND: ${SETUP_RESUME_COMMAND:-./setup.sh --resume}
+      SETUP_START_COMMAND: ${SETUP_START_COMMAND:-./start.sh}
+      SETUP_STOP_COMMAND: ${SETUP_STOP_COMMAND:-./stop.sh}
+
+    entrypoint:
+      - python
+      - -m
+      - scripts.bootstrap
+
+    stdin_open: true
+    tty: true
+
+    volumes:
+      - .:/app

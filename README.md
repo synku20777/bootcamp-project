@@ -81,7 +81,12 @@ or another COVID listing is not interchangeable.
 > Installing the listing in a different Snowflake account or under a different
 > database name is the usual cause.
 
-### 3. Install the local prerequisites
+### 3. Install the only local prerequisite: Docker
+
+The normal setup, start, stop, and application workflow requires **Docker only**.
+You do not need to install Python, uv, Java, MongoDB, Redis, Snowflake command-line
+tools, or a code editor. Python and uv are installed inside a pinned Docker image.
+After setup, you use the application through a web browser.
 
 #### Git or a ZIP download
 
@@ -121,28 +126,9 @@ docker compose version
 denied, configure non-root Docker access according to the official Docker
 post-install instructions, then open a new login session.
 
-#### uv
-
-uv installs the exact locked Python environment; a separate manual Python
-installation is not required. Install uv using the
-[official uv installation instructions](https://docs.astral.sh/uv/getting-started/installation/).
-Common options are:
-
-```powershell
-winget install --id=astral-sh.uv -e
-```
-
-or on macOS/Linux:
-
-```bash
-curl -LsSf https://astral.sh/uv/install.sh | sh
-```
-
-Open a new terminal and verify:
-
-```bash
-uv --version
-```
+Git remains optional. If you download the repository ZIP, the complete user
+workflow needs only Docker Desktop/Engine, the operating system's built-in
+terminal, and a browser.
 
 ### 4. Download the repository and enter its root
 
@@ -213,9 +199,10 @@ for deployment; the API role is for runtime reads. Do not simplify all three to
 
 ### 6. Run the one-time guided setup
 
-Keep Docker running. The first run installs the locked Python dependencies,
-builds images, downloads a small World Bank dataset, and creates Snowflake
-objects, so it normally takes several minutes.
+Keep Docker running. The first run builds the pinned setup image (including its
+private Python/uv environment), downloads a small World Bank dataset, and
+creates Snowflake objects, so it normally takes several minutes. Nothing is
+installed into your host Python environment.
 
 Windows PowerShell:
 
@@ -235,20 +222,22 @@ chmod +x setup.sh start.sh stop.sh
 
 The terminal displays **Step X of 9** and performs these operations:
 
-1. Validates uv, the Docker engine/Compose plugin, repository permissions,
-   secret-ignore rules, and ports `8000`, `8050`, and `27017`.
-2. Creates or backs up `.env`, collects hidden secrets, authenticates with the
-   bootstrap role, and checks the Marketplace database and ECDC object.
+1. Validates the Docker engine/Compose plugin and ports `8000`, `8050`, and
+   `27017`, then builds the pinned setup image.
+2. Inside the temporary setup container, validates repository permissions and
+   secret-ignore rules, creates or backs up `.env`, collects hidden secrets,
+   authenticates with the bootstrap role, and checks the Marketplace ECDC object.
 3. Creates the resource-monitored `COVID_WH`, project database/schemas, and
    least-privilege roles; grants the project roles to the configured user.
-4. Verifies Marketplace access and deploys the country mapping and staging
-   transformations.
+4. Reconnects as the newly granted `COVID_PROJECT_ADMIN`, creates the project
+   schemas/API grants, verifies Marketplace access, and deploys mapping/staging.
 5. Fetches, validates, and loads World Bank population data transactionally;
    invalid downloads never replace valid published data.
 6. Creates and verifies the enriched MARTS and reporting objects.
-7. Validates Compose, builds images, and starts FastAPI, Dash, MongoDB, and
-   Redis without deleting existing volumes.
-8. Creates the MongoDB annotations collection/indexes idempotently.
+7. The host launcher validates Compose, builds images, and starts FastAPI, Dash,
+   MongoDB, and Redis without mounting the Docker socket into a container.
+8. Creates the MongoDB annotations collection/indexes idempotently from the API
+   container.
 9. Verifies container networking, API readiness, explicit Snowflake access,
    analytical data, and the dashboard, while writing a redacted JSONL audit log.
 
@@ -340,8 +329,8 @@ or:
 ./start.sh
 ```
 
-`start` validates local prerequisites and `.env`, starts the existing Compose
-services, and runs cheap liveness/readiness checks. It does not redeploy
+`start` validates Docker and `.env`, starts the existing Compose services, and
+waits for their cheap health checks. It does not need Python/uv, redeploy
 Snowflake, reload population data, or call the live Snowflake health endpoint.
 
 Stop services safely:
@@ -464,8 +453,8 @@ Before running it, complete these one-time prerequisites:
 
 1. Create the Snowflake account and add the Marketplace database named
    `COVID19_EPIDEMIOLOGICAL_DATA` as described below.
-2. Install Git, Docker Desktop, and uv.
-3. Clone this repository and open a terminal in its root directory.
+2. Install Docker Desktop/Engine. Git is optional when using a downloaded ZIP.
+3. Clone or extract this repository and open a terminal in its root directory.
 4. Start Docker Desktop and wait until its engine is ready.
 
 ### First-time setup on Windows
@@ -482,10 +471,12 @@ Open PowerShell in the repository and run:
 ./setup.sh
 ```
 
-The wrapper verifies the locked environment, then starts the guided setup. It
-asks for missing Snowflake settings without echoing passwords. The generated
-MongoDB password is random. Existing `.env` files are backed up before an
-atomic replacement, and secrets are never written to the audit log.
+The wrapper verifies Docker, builds the pinned setup image, then starts the
+guided setup inside a temporary container. It asks for missing Snowflake
+settings without echoing passwords. The generated MongoDB password is random.
+Existing `.env` files are backed up before an atomic replacement, and secrets
+are never written to the image or audit log. The temporary setup container is
+removed automatically.
 
 The Snowflake bootstrap connection intentionally uses `ACCOUNTADMIN` only for
 account-level object creation and granting `COVID_PROJECT_ADMIN` and
@@ -509,27 +500,32 @@ Completed steps are skipped only when their input checksum, setup context, and
 live postcondition still match. Interrupting with Ctrl+C leaves containers and
 volumes unchanged and exits with status `130`.
 
-For unattended execution, prepare a complete `.env` first and run:
+For unattended execution, prepare a complete `.env` first and run the same
+Docker-only launcher:
 
-```bash
-uv run --locked python -m scripts.bootstrap setup --resume --non-interactive
+```powershell
+.\setup.ps1 --resume --non-interactive
 ```
 
-The command lists missing variable names but never their values. Useful
-diagnostic and verification commands are:
+or:
 
 ```bash
-uv run --locked python -m scripts.bootstrap doctor --local
-uv run --locked python -m scripts.bootstrap doctor --configured
-uv run --locked python -m scripts.bootstrap verify
+./setup.sh --resume --non-interactive
 ```
 
-`doctor --local` checks uv, Docker, repository permissions, ignored secret/state
-files, and whether required ports belong to this Compose project.
-`doctor --configured` authenticates with the bootstrap role and confirms the
-Marketplace database is accessible. `verify` checks the live Snowflake objects,
-containers, MongoDB/Redis readiness, and bounded HTTP smoke tests; it can resume
-the Snowflake warehouse and should be run deliberately on a trial account.
+The command lists missing variable names but never their values. Useful local
+diagnostic commands require Docker only:
+
+```bash
+docker info
+docker compose config
+docker compose ps
+```
+
+Rerunning setup with `--resume` authenticates with the bootstrap role, confirms
+the Marketplace object, rechecks live postconditions, and performs bounded HTTP
+smoke tests. It can resume the Snowflake warehouse and should be run
+deliberately on a trial account.
 
 ### Daily start and stop
 
@@ -602,8 +598,11 @@ non-empty JSON list. Open:
 Optional exploration is separate from required setup:
 
 ```bash
-uv run --locked python -m scripts.bootstrap analyze
+docker compose exec -T api python -m scripts.bootstrap analyze
 ```
+
+The command uses Python and uv already installed inside the API image; nothing
+is installed on the host.
 
 ## Advanced: manual setup and recovery
 
@@ -856,7 +855,7 @@ For every SQL file in the following steps:
 
 The file numbers define the required execution order.
 
-### Step 7 — Create the Snowflake warehouse, monitor, roles, and schemas
+### Step 7 — Create the Snowflake account objects, grant roles, and create schemas
 
 In Snowsight, select the `ACCOUNTADMIN` role and run:
 
@@ -864,7 +863,7 @@ In Snowsight, select the `ACCOUNTADMIN` role and run:
 sql/00_project_setup.sql
 ```
 
-This file creates:
+This first phase creates:
 
 ```text
 COVID_PROJECT_MONITOR
@@ -872,10 +871,6 @@ COVID_WH
 COVID_ANALYTICS
 COVID_PROJECT_ADMIN
 COVID_APP_ROLE
-COVID_ANALYTICS.RAW
-COVID_ANALYTICS.STAGING
-COVID_ANALYTICS.MARTS
-COVID_ANALYTICS.APP
 ```
 
 The final result also includes `PYTHON_ACCOUNT_IDENTIFIER`. Copy that value; it
@@ -887,19 +882,33 @@ MYORGANIZATION-MYACCOUNT
 
 Do not use only the short account locator.
 
-If your Snowflake user cannot select `COVID_PROJECT_ADMIN` or `COVID_APP_ROLE`,
-run this as `ACCOUNTADMIN`, replacing the placeholder with your real Snowflake
-username:
+Before running any SQL that says `USE ROLE COVID_PROJECT_ADMIN`, grant both
+roles to your deployment user. Run this as `ACCOUNTADMIN`, replacing the
+placeholder with the value returned by `SELECT CURRENT_USER()`:
 
 ```sql
 GRANT ROLE COVID_PROJECT_ADMIN TO USER YOUR_SNOWFLAKE_USERNAME;
 GRANT ROLE COVID_APP_ROLE TO USER YOUR_SNOWFLAKE_USERNAME;
 ```
 
-You can find the current username with:
+Then run the second phase:
 
-```sql
-SELECT CURRENT_USER();
+```text
+sql/00_project_objects.sql
+```
+
+This ordering is required. Creating a role does not by itself authorize the
+current user to activate it. The automated Docker setup performs the two bound
+user grants between these SQL files and reconnects explicitly with
+`COVID_PROJECT_ADMIN` before executing the second phase.
+
+The second phase creates:
+
+```text
+COVID_ANALYTICS.RAW
+COVID_ANALYTICS.STAGING
+COVID_ANALYTICS.MARTS
+COVID_ANALYTICS.APP
 ```
 
 ### Step 8 — Explore the source and create the staging layer
@@ -1312,6 +1321,10 @@ directly from MongoDB and are never response-cached.
 
 ## Local development
 
+This section is optional and intended only for contributors who want to run or
+modify Python code outside Docker. Normal dashboard users should stop at the
+Docker-only setup above and do not need Python or uv on the host.
+
 This optional workflow requires
 [uv](https://docs.astral.sh/uv/getting-started/installation/). uv reads
 `.python-version` and can install the project's pinned Python version
@@ -1402,14 +1415,14 @@ at a time so that errors and results are easy to inspect.
 
 ### 1. Create the Snowflake project objects
 
-Run [`sql/00_project_setup.sql`](sql/00_project_setup.sql). It creates:
+Run [`sql/00_project_setup.sql`](sql/00_project_setup.sql) as `ACCOUNTADMIN`.
+It creates:
 
 - A five-credit monthly resource monitor named `COVID_PROJECT_MONITOR`
 - An `XSMALL` warehouse named `COVID_WH`
 - The `COVID_ANALYTICS` database
 - A least-privilege project role named `COVID_PROJECT_ADMIN`
 - A read-only API runtime role named `COVID_APP_ROLE`
-- `RAW`, `STAGING`, `MARTS`, and `APP` schemas
 
 The monitor notifies at 50%, suspends the warehouse at 80%, and suspends it
 immediately at 100%. Confirm that this quota is appropriate for your account
@@ -1417,14 +1430,24 @@ before running the file. The final query returns the
 `PYTHON_ACCOUNT_IDENTIFIER` needed for `.env`; use that
 `organization-account` value, not only the account locator.
 
-The setup grants the project role to `SYSADMIN`. If your user still cannot run
-`USE ROLE COVID_PROJECT_ADMIN`, ask an account administrator to run the
-following after replacing the username:
+The setup grants the project role to `SYSADMIN`, but the deployment user must
+still receive both project roles before activating them. As `ACCOUNTADMIN`, run
+the following after replacing the username:
 
 ```sql
 GRANT ROLE COVID_PROJECT_ADMIN TO USER YOUR_SNOWFLAKE_USERNAME;
 GRANT ROLE COVID_APP_ROLE TO USER YOUR_SNOWFLAKE_USERNAME;
 ```
+
+Only after both grants succeed, run
+[`sql/00_project_objects.sql`](sql/00_project_objects.sql). It activates
+`COVID_PROJECT_ADMIN`, creates `RAW`, `STAGING`, `MARTS`, and `APP`, and grants
+the MARTS read contract to `COVID_APP_ROLE`.
+
+The automated bootstrap performs this exact boundary with bound user
+identifiers: account SQL, user grants, a new project-role connection, and then
+project-object SQL. It never executes `USE ROLE COVID_PROJECT_ADMIN` before the
+user grant exists.
 
 FastAPI connects only as `COVID_APP_ROLE`. That role can use `COVID_WH` and
 read current and future MARTS tables/views, but it cannot create or replace
@@ -1742,7 +1765,8 @@ checks on every push and pull request.
 |   |-- run_spark_bronze.py              # Spark ingest/profile/benchmark CLI
 |   `-- setup_mongodb.py                 # Annotation collection and indexes
 |-- sql/
-|   |-- 00_project_setup.sql             # Monitor, warehouse, DB, schemas
+|   |-- 00_project_setup.sql             # Account objects and project roles
+|   |-- 00_project_objects.sql           # Schemas after user role grants
 |   |-- 01_data_exploration.sql          # Marketplace source checks
 |   |-- 02_create_country_mapping.sql    # Normalize country/code exceptions
 |   |-- 03_create_staging_view.sql       # Clean daily and cumulative metrics
@@ -1755,6 +1779,7 @@ checks on every push and pull request.
 |-- .python-version                     # Exact local/CI Python pin
 |-- tests/                              # Focused API, cache, repository tests
 |-- compose.yaml                         # API, dashboard, MongoDB, Redis
+|-- compose.setup.yaml                   # Temporary Docker-only setup runner
 |-- dockerfile                          # API image
 |-- dockerfile.spark                    # Pinned Java/PySpark image
 |-- pyproject.toml                       # Project metadata and dependencies

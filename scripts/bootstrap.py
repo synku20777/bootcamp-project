@@ -74,6 +74,7 @@ REQUIRED_ENVIRONMENT = (
 )
 SQL_FILES = {
     "account_setup": REPOSITORY_ROOT / "sql" / "00_project_setup.sql",
+    "project_objects": REPOSITORY_ROOT / "sql" / "00_project_objects.sql",
     "mapping": REPOSITORY_ROOT / "sql" / "02_create_country_mapping.sql",
     "staging": REPOSITORY_ROOT / "sql" / "03_create_staging_view.sql",
     "population_verify": REPOSITORY_ROOT / "sql" / "04_verify_population_data.sql",
@@ -122,21 +123,34 @@ def console(message: str, *, error: bool = False) -> None:
 
 
 def _setup_command(*, resume: bool = False) -> str:
+    configured = os.getenv("SETUP_RESUME_COMMAND" if resume else "SETUP_LAUNCH_COMMAND")
+    if configured:
+        return configured
     if os.name == "nt":
         return ".\\setup.ps1 --resume" if resume else ".\\setup.ps1"
     return "./setup.sh --resume" if resume else "./setup.sh"
 
 
 def _start_command() -> str:
+    if configured := os.getenv("SETUP_START_COMMAND"):
+        return configured
     return ".\\start.ps1" if os.name == "nt" else "./start.sh"
 
 
 def _stop_command() -> str:
+    if configured := os.getenv("SETUP_STOP_COMMAND"):
+        return configured
     return ".\\stop.ps1" if os.name == "nt" else "./stop.sh"
 
 
-def _setup_progress(number: int, title: str, explanation: str) -> None:
-    console(f"\nStep {number} of {SETUP_STEP_COUNT} -- {title}")
+def _setup_progress(
+    number: int,
+    title: str,
+    explanation: str,
+    *,
+    total: int = SETUP_STEP_COUNT,
+) -> None:
+    console(f"\nStep {number} of {total} -- {title}")
     console(explanation)
 
 
@@ -427,6 +441,16 @@ def load_configured_environment() -> dict[str, str]:
     return values
 
 
+def load_runtime_environment() -> dict[str, str]:
+    """Prefer container runtime values while retaining the persisted setup file."""
+    values = load_configured_environment()
+    for key in REQUIRED_ENVIRONMENT:
+        runtime_value = os.getenv(key)
+        if runtime_value:
+            values[key] = runtime_value
+    return values
+
+
 class SetupState:
     def __init__(self, path: Path = STATE_PATH) -> None:
         self.path = path
@@ -488,6 +512,20 @@ def _verify_gitignore_contract() -> None:
     if missing:
         raise BootstrapError(
             ".gitignore is missing setup security patterns: " + ", ".join(missing)
+        )
+    docker_patterns = {
+        line.strip()
+        for line in (REPOSITORY_ROOT / ".dockerignore")
+        .read_text(encoding="utf-8")
+        .splitlines()
+        if line.strip() and not line.lstrip().startswith("#")
+    }
+    required_docker_patterns = {".env", ".env.backup-*", ".setup-state.json"}
+    missing_docker_patterns = sorted(required_docker_patterns - docker_patterns)
+    if missing_docker_patterns:
+        raise BootstrapError(
+            ".dockerignore is missing setup security patterns: "
+            + ", ".join(missing_docker_patterns)
         )
 
 
@@ -585,6 +623,14 @@ def doctor_local(*, offer_restart: bool = False, non_interactive: bool = False) 
     logger.info(
         "doctor_local_passed", extra={"occupied_project_ports": sorted(occupied)}
     )
+
+
+def doctor_container_workspace() -> None:
+    """Validate host-mounted files without requiring Docker inside the container."""
+    _verify_gitignore_contract()
+    with tempfile.NamedTemporaryFile(dir=REPOSITORY_ROOT, delete=True):
+        pass
+    logger.info("doctor_container_workspace_passed")
 
 
 def connect_snowflake(
@@ -752,6 +798,29 @@ def execute_sql_file(connection: Any, path: Path) -> None:
     )
 
 
+def bootstrap_account_objects_and_roles(connection: Any) -> None:
+    """Create account objects, then grant roles before any project-role SQL."""
+    execute_sql_file(connection, SQL_FILES["account_setup"])
+    cursor = connection.cursor()
+    try:
+        cursor.execute("USE ROLE ACCOUNTADMIN")
+        cursor.execute("SELECT CURRENT_USER()")
+        row = cursor.fetchone()
+        if row is None or not row[0]:
+            raise BootstrapError("Snowflake returned no current deployment user.")
+        current_user = row[0]
+        cursor.execute(
+            "GRANT ROLE COVID_PROJECT_ADMIN TO USER IDENTIFIER(%s)",
+            (current_user,),
+        )
+        cursor.execute(
+            "GRANT ROLE COVID_APP_ROLE TO USER IDENTIFIER(%s)",
+            (current_user,),
+        )
+    finally:
+        cursor.close()
+
+
 def _query_one(connection: Any, query: str, parameters: tuple[Any, ...] = ()) -> Any:
     cursor = connection.cursor()
     try:
@@ -851,6 +920,18 @@ def _snowflake_objects_ready(connection: Any) -> bool:
     return all(_query_one(connection, query) is not None for query in checks)
 
 
+def _project_schemas_ready(connection: Any) -> bool:
+    row = _query_one(
+        connection,
+        """
+        SELECT COUNT(*)
+        FROM COVID_ANALYTICS.INFORMATION_SCHEMA.SCHEMATA
+        WHERE SCHEMA_NAME IN ('RAW', 'STAGING', 'MARTS', 'APP')
+        """,
+    )
+    return row is not None and int(row[0]) == 4
+
+
 def _compose_services_running() -> bool:
     result = _run_command(
         ["docker", "compose", "ps", "--services", "--status", "running"],
@@ -947,25 +1028,29 @@ def _is_structured_dependency_failure(status: int, payload: Any) -> bool:
 
 
 def poll_http_postconditions(
-    *, include_snowflake: bool, timeout_seconds: int = 120
+    *,
+    include_snowflake: bool,
+    timeout_seconds: int = 120,
+    api_base_url: str = "http://localhost:8000",
+    dashboard_base_url: str = "http://localhost:8050",
 ) -> None:
     checks: list[tuple[str, Callable[[int, Any], bool]]] = [
-        ("http://localhost:8000/health/live", lambda status, _: status == 200),
-        ("http://localhost:8000/health/ready", lambda status, _: status == 200),
+        (f"{api_base_url}/health/live", lambda status, _: status == 200),
+        (f"{api_base_url}/health/ready", lambda status, _: status == 200),
     ]
     if include_snowflake:
         checks.extend(
             [
                 (
-                    "http://localhost:8000/health/snowflake",
+                    f"{api_base_url}/health/snowflake",
                     lambda status, _: status == 200,
                 ),
                 (
-                    "http://localhost:8000/dashboard/overview",
+                    f"{api_base_url}/dashboard/overview",
                     lambda status, _: status == 200,
                 ),
                 (
-                    "http://localhost:8000/countries",
+                    f"{api_base_url}/countries",
                     lambda status, payload: (
                         status == 200
                         and isinstance(payload, list)
@@ -974,7 +1059,7 @@ def poll_http_postconditions(
                 ),
             ]
         )
-    checks.append(("http://localhost:8050/overview", lambda status, _: status == 200))
+    checks.append((f"{dashboard_base_url}/overview", lambda status, _: status == 200))
     deadline = time.monotonic() + timeout_seconds
     pending = {url: validator for url, validator in checks}
     last_responses: dict[str, tuple[int, Any]] = {}
@@ -1007,12 +1092,19 @@ def poll_http_postconditions(
         )
 
 
-def _http_postconditions_pass(*, include_snowflake: bool) -> bool:
+def _http_postconditions_pass(
+    *,
+    include_snowflake: bool,
+    api_base_url: str = "http://localhost:8000",
+    dashboard_base_url: str = "http://localhost:8050",
+) -> bool:
     """Recheck HTTP postconditions without turning a resume probe into a failure."""
     try:
         poll_http_postconditions(
             include_snowflake=include_snowflake,
             timeout_seconds=15,
+            api_base_url=api_base_url,
+            dashboard_base_url=dashboard_base_url,
         )
     except BootstrapError:
         return False
@@ -1106,14 +1198,23 @@ def _mongodb_indexes_ready(values: dict[str, str]) -> bool:
         client.close()
 
 
-def setup(*, resume: bool, non_interactive: bool, audit_path: Path) -> None:
+def setup(
+    *,
+    resume: bool,
+    non_interactive: bool,
+    audit_path: Path,
+    container_data_only: bool = False,
+) -> None:
     state = SetupState()
-    _setup_progress(
-        1,
-        "Validate local prerequisites",
-        "Checking uv, the Docker engine and Compose plugin, repository write access, secret ignores, and ports 8000/8050/27017.",
-    )
-    doctor_local(offer_restart=True, non_interactive=non_interactive)
+    if container_data_only:
+        doctor_container_workspace()
+    else:
+        _setup_progress(
+            1,
+            "Validate local prerequisites",
+            "Checking uv, the Docker engine and Compose plugin, repository write access, secret ignores, and ports 8000/8050/27017.",
+        )
+        doctor_local(offer_restart=True, non_interactive=non_interactive)
     _setup_progress(
         2,
         "Configure and validate Snowflake access",
@@ -1123,9 +1224,15 @@ def setup(*, resume: bool, non_interactive: bool, audit_path: Path) -> None:
     doctor_configured(values)
     context = _setup_context(values)
     state.set_context(context)
+    doctor_inputs = [REPOSITORY_ROOT / "compose.yaml"]
+    if container_data_only:
+        doctor_inputs.append(REPOSITORY_ROOT / "compose.setup.yaml")
     state.mark_complete(
         "local_doctor",
-        _input_checksum(REPOSITORY_ROOT / "compose.yaml", values=("doctor-v1",)),
+        _input_checksum(
+            *doctor_inputs,
+            values=("container-workspace-v1" if container_data_only else "doctor-v1",),
+        ),
     )
     state.mark_complete(
         "environment_and_configured_doctor",
@@ -1145,30 +1252,14 @@ def setup(*, resume: bool, non_interactive: bool, audit_path: Path) -> None:
             "Creating the monitored warehouse and project roles, then granting COVID_PROJECT_ADMIN and COVID_APP_ROLE to the configured user.",
         )
 
-        def account_setup() -> None:
-            execute_sql_file(bootstrap_connection, SQL_FILES["account_setup"])
-            cursor = bootstrap_connection.cursor()
-            try:
-                cursor.execute("USE ROLE ACCOUNTADMIN")
-                cursor.execute("SELECT CURRENT_USER()")
-                current_user = cursor.fetchone()[0]
-                cursor.execute(
-                    "GRANT ROLE COVID_PROJECT_ADMIN TO USER IDENTIFIER(%s)",
-                    (current_user,),
-                )
-                cursor.execute(
-                    "GRANT ROLE COVID_APP_ROLE TO USER IDENTIFIER(%s)",
-                    (current_user,),
-                )
-            finally:
-                cursor.close()
-
         _run_step(
             state=state,
             context=context,
             name="account_setup_and_role_grants",
             checksum=_input_checksum(SQL_FILES["account_setup"]),
-            action=account_setup,
+            action=lambda: bootstrap_account_objects_and_roles(
+                bootstrap_connection,
+            ),
             postcondition=lambda: (
                 _object_exists(bootstrap_connection, "ROLES", "COVID_PROJECT_ADMIN")
                 and _object_exists(bootstrap_connection, "ROLES", "COVID_APP_ROLE")
@@ -1187,8 +1278,21 @@ def setup(*, resume: bool, non_interactive: bool, audit_path: Path) -> None:
 
         _setup_progress(
             4,
-            "Verify Marketplace data and build staging",
-            "Confirming COVID19_EPIDEMIOLOGICAL_DATA.PUBLIC.ECDC_GLOBAL is accessible, then creating country mapping and daily staging objects.",
+            "Create project schemas and build staging",
+            "Reconnecting as COVID_PROJECT_ADMIN, creating project schemas, verifying Marketplace access, and building the daily staging objects.",
+        )
+
+        _run_step(
+            state=state,
+            context=context,
+            name="project_objects",
+            checksum=_input_checksum(SQL_FILES["project_objects"]),
+            action=lambda: execute_sql_file(
+                admin_connection,
+                SQL_FILES["project_objects"],
+            ),
+            postcondition=lambda: _project_schemas_ready(admin_connection),
+            resume=resume,
         )
 
         def verify_marketplace_access() -> bool:
@@ -1319,6 +1423,12 @@ def setup(*, resume: bool, non_interactive: bool, audit_path: Path) -> None:
     finally:
         admin_connection.close()
 
+    if container_data_only:
+        console("\nSNOWFLAKE AND CONFIGURATION PHASE COMPLETED")
+        console("The host launcher will now start and verify the Docker services.")
+        console(f"Phase audit log: {audit_path}")
+        return
+
     _setup_progress(
         7,
         "Build and start application services",
@@ -1370,6 +1480,88 @@ def setup(*, resume: bool, non_interactive: bool, audit_path: Path) -> None:
             poll_http_postconditions(include_snowflake=True),
         ),
         postcondition=lambda: _http_postconditions_pass(include_snowflake=True),
+        resume=resume,
+    )
+    _show_setup_success(audit_path)
+
+
+def finalize_container_setup(*, resume: bool, audit_path: Path) -> None:
+    """Finalize setup from the API container without controlling host Docker."""
+    values = load_runtime_environment()
+    state = SetupState()
+    context = _setup_context(values)
+    state.set_context(context)
+    api_base_url = "http://127.0.0.1:8000"
+    dashboard_base_url = "http://dashboard:8050"
+
+    _setup_progress(
+        7,
+        "Confirm application services",
+        "Checking API liveness plus MongoDB and Redis readiness inside the Compose network.",
+    )
+    _run_step(
+        state=state,
+        context=context,
+        name="docker_services",
+        checksum=_input_checksum(
+            REPOSITORY_ROOT / "compose.yaml",
+            REPOSITORY_ROOT / "compose.setup.yaml",
+            values=("container-runtime-v1",),
+        ),
+        action=lambda: poll_http_postconditions(
+            include_snowflake=False,
+            api_base_url=api_base_url,
+            dashboard_base_url=dashboard_base_url,
+        ),
+        postcondition=lambda: _http_postconditions_pass(
+            include_snowflake=False,
+            api_base_url=api_base_url,
+            dashboard_base_url=dashboard_base_url,
+        ),
+        resume=resume,
+    )
+
+    _setup_progress(
+        8,
+        "Verify MongoDB indexes",
+        "Confirming the annotation indexes created by the Docker launcher are present and usable.",
+    )
+    _run_step(
+        state=state,
+        context=context,
+        name="mongodb_indexes",
+        checksum=_input_checksum(
+            REPOSITORY_ROOT / "scripts" / "setup_mongodb.py",
+            values=("container-runtime-v1",),
+        ),
+        action=lambda: None,
+        postcondition=lambda: _mongodb_indexes_ready(values),
+        resume=resume,
+    )
+
+    _setup_progress(
+        9,
+        "Verify the finished application",
+        "Checking explicit Snowflake access, cached analytical data, and the dashboard before reporting success.",
+    )
+    _run_step(
+        state=state,
+        context=context,
+        name="smoke_tests",
+        checksum=_input_checksum(
+            REPOSITORY_ROOT / "compose.yaml",
+            values=("container-smoke-v1",),
+        ),
+        action=lambda: poll_http_postconditions(
+            include_snowflake=True,
+            api_base_url=api_base_url,
+            dashboard_base_url=dashboard_base_url,
+        ),
+        postcondition=lambda: _http_postconditions_pass(
+            include_snowflake=True,
+            api_base_url=api_base_url,
+            dashboard_base_url=dashboard_base_url,
+        ),
         resume=resume,
     )
     _show_setup_success(audit_path)
@@ -1459,12 +1651,21 @@ def parse_args() -> argparse.Namespace:
     doctor_mode = doctor.add_mutually_exclusive_group(required=True)
     doctor_mode.add_argument("--local", action="store_true")
     doctor_mode.add_argument("--configured", action="store_true")
-    setup_parser = subparsers.add_parser("setup")
-    setup_parser.add_argument("--resume", action="store_true")
-    setup_parser.add_argument("--non-interactive", action="store_true")
+    for command in ("setup", "setup-data"):
+        setup_parser = subparsers.add_parser(command)
+        setup_parser.add_argument("--resume", action="store_true")
+        setup_parser.add_argument("--non-interactive", action="store_true")
+    finalizer = subparsers.add_parser("finalize-container-setup")
+    finalizer.add_argument("--resume", action="store_true")
     for command in ("verify", "start", "stop", "analyze"):
         subparsers.add_parser(command)
     return parser.parse_args()
+
+
+def _default_retry_command(command: str) -> str:
+    if command in {"setup", "setup-data", "finalize-container-setup"}:
+        return _setup_command(resume=True)
+    return f"uv run --locked python -m scripts.bootstrap {command}"
 
 
 def _report_preserved_container_state() -> None:
@@ -1502,10 +1703,16 @@ def main() -> None:
             else:
                 doctor_configured(load_configured_environment())
             console("Doctor checks passed.")
-        elif args.command == "setup":
+        elif args.command in {"setup", "setup-data"}:
             setup(
                 resume=args.resume,
                 non_interactive=args.non_interactive,
+                audit_path=audit_path,
+                container_data_only=args.command == "setup-data",
+            )
+        elif args.command == "finalize-container-setup":
+            finalize_container_setup(
+                resume=args.resume,
                 audit_path=audit_path,
             )
         elif args.command == "verify":
@@ -1543,11 +1750,7 @@ def main() -> None:
             exc_info=sanitized_exception_info(exc),
         )
         _flush_log_handlers()
-        default_retry = (
-            _setup_command(resume=True)
-            if args.command == "setup"
-            else f"uv run --locked python -m scripts.bootstrap {args.command}"
-        )
+        default_retry = _default_retry_command(args.command)
         _show_failure(exc, audit_path=audit_path, default_retry=default_retry)
         _report_preserved_container_state()
         raise SystemExit(1) from exc
@@ -1575,11 +1778,7 @@ def main() -> None:
         _show_failure(
             failure,
             audit_path=audit_path,
-            default_retry=(
-                _setup_command(resume=True)
-                if args.command == "setup"
-                else f"uv run --locked python -m scripts.bootstrap {args.command}"
-            ),
+            default_retry=_default_retry_command(args.command),
         )
         _report_preserved_container_state()
         raise SystemExit(1) from exc

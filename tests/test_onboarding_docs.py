@@ -44,6 +44,7 @@ class OnboardingDocumentationTests(unittest.TestCase):
         self.assertIn(
             "Keep `scripts/bootstrap.py` as the only setup authority", decision
         )
+        self.assertIn("Do not\nmount the Docker socket", decision)
         self.assertIn("setup page inside the production dashboard", decision)
 
     def test_setup_wrappers_propagate_failures_with_guidance(self) -> None:
@@ -55,8 +56,34 @@ class OnboardingDocumentationTests(unittest.TestCase):
             self.assertIn("Likely cause:", wrapper)
             self.assertIn("How to fix:", wrapper)
             self.assertIn("Technical reference:", wrapper)
+            self.assertIn("compose.setup.yaml", wrapper)
+            self.assertIn("setup-data", wrapper)
+            self.assertNotIn("Get-Command uv", wrapper)
+            self.assertNotIn("command -v uv", wrapper)
         self.assertIn("exit $LASTEXITCODE", powershell)
-        self.assertIn("if ! uv lock --check", shell)
+
+    def test_setup_compose_file_does_not_mount_the_docker_socket(self) -> None:
+        setup_compose = (REPOSITORY_ROOT / "compose.setup.yaml").read_text(
+            encoding="utf-8"
+        )
+
+        self.assertIn("dockerfile: dockerfile", setup_compose)
+        self.assertIn("scripts.bootstrap", setup_compose)
+        self.assertIn("- .:/app", setup_compose)
+        self.assertNotIn("docker.sock", setup_compose)
+
+        dockerignore = (REPOSITORY_ROOT / ".dockerignore").read_text(encoding="utf-8")
+        self.assertIn(".env\n", dockerignore)
+        self.assertIn(".env.backup-*", dockerignore)
+        self.assertIn(".setup-state.json", dockerignore)
+
+    def test_normal_user_path_explicitly_requires_no_local_python_or_uv(self) -> None:
+        readme = (REPOSITORY_ROOT / "README.md").read_text(encoding="utf-8")
+        primary_path = readme.split("## Current capabilities", maxsplit=1)[0]
+
+        self.assertIn("requires **Docker only**", primary_path)
+        self.assertIn("do not need to install Python, uv", primary_path)
+        self.assertIn("private Python/uv environment", primary_path)
 
 
 def _environment_value(content: str, key: str) -> str:
