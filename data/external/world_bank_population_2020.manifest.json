@@ -1,0 +1,10 @@
+{
+  "checksum_canonicalization": "covid-population-csv-v1",
+  "data_sha256": "67b9a9e78355cf900c2c276c8104afeaa245472fb4adb8c62c724c9b4e89ede3",
+  "indicator": "SP.POP.TOTL",
+  "manifest_version": 1,
+  "population_year": 2020,
+  "row_count": 217,
+  "source": "World Bank API",
+  "source_endpoint": "country/all/indicator/SP.POP.TOTL"
+}

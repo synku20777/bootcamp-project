@@ -29,6 +29,9 @@ TARGET_DATABASE = "COVID_ANALYTICS"
 TARGET_SCHEMA = "RAW"
 TARGET_TABLE = "WORLD_BANK_POPULATION_2020"
 DEFAULT_CSV_PATH = Path("data/external/world_bank_population_2020.csv")
+DEFAULT_SOURCE_MANIFEST_PATH = Path(
+    "data/external/world_bank_population_2020.manifest.json"
+)
 DEFAULT_MANIFEST_PATH = Path("outputs/setup/population-manifest.json")
 logger = logging.getLogger(__name__)
 
@@ -121,6 +124,78 @@ def validate_population_dataframe(dataframe: pd.DataFrame) -> None:
         raise PopulationValidationError("Population year must be 2020.")
 
 
+def _source_snapshot_manifest(
+    dataframe: pd.DataFrame,
+    csv_content: str,
+) -> dict[str, Any]:
+    return {
+        "manifest_version": 1,
+        "checksum_canonicalization": "covid-population-csv-v1",
+        "source": "World Bank API",
+        "source_endpoint": "country/all/indicator/SP.POP.TOTL",
+        "indicator": "SP.POP.TOTL",
+        "population_year": POPULATION_YEAR,
+        "row_count": len(dataframe),
+        "data_sha256": hashlib.sha256(csv_content.encode("utf-8")).hexdigest(),
+    }
+
+
+def load_population_snapshot(
+    csv_path: Path,
+    source_manifest_path: Path,
+) -> pd.DataFrame:
+    if not csv_path.is_file() or not source_manifest_path.is_file():
+        raise PopulationValidationError(
+            "The committed population snapshot or its source manifest is missing."
+        )
+    try:
+        source_manifest = json.loads(source_manifest_path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError) as exc:
+        raise PopulationValidationError(
+            "The committed population source manifest is unreadable."
+        ) from exc
+
+    if source_manifest.get("manifest_version") != 1:
+        raise PopulationValidationError(
+            "The committed population source manifest version is unsupported."
+        )
+    if source_manifest.get("checksum_canonicalization") != "covid-population-csv-v1":
+        raise PopulationValidationError(
+            "The committed population checksum protocol is unsupported."
+        )
+    if source_manifest.get("population_year") != POPULATION_YEAR:
+        raise PopulationValidationError(
+            "The committed population snapshot year does not match the loader."
+        )
+
+    try:
+        dataframe = pd.read_csv(
+            csv_path,
+            dtype={
+                "COUNTRY_CODE_ISO2": "string",
+                "COUNTRY_CODE_ISO3": "string",
+                "COUNTRY_NAME": "string",
+            },
+            keep_default_na=False,
+        )
+    except (OSError, UnicodeError, ValueError, pd.errors.ParserError) as exc:
+        raise PopulationValidationError(
+            "The committed population snapshot is unreadable."
+        ) from exc
+    if len(dataframe) != source_manifest.get("row_count"):
+        raise PopulationValidationError(
+            "The committed population snapshot row count does not match its manifest."
+        )
+    validate_population_dataframe(dataframe)
+    canonical_csv = _dataframe_csv(dataframe)
+    canonical_checksum = hashlib.sha256(canonical_csv.encode("utf-8")).hexdigest()
+    if source_manifest.get("data_sha256") != canonical_checksum:
+        raise PopulationValidationError(
+            "The committed population snapshot checksum does not match its manifest."
+        )
+    return dataframe
+
+
 def connect_to_snowflake() -> snowflake.connector.SnowflakeConnection:
     required_variables = [
         "SNOWFLAKE_ACCOUNT",
@@ -208,12 +283,33 @@ def refresh_population(
     *,
     connection: snowflake.connector.SnowflakeConnection | None = None,
     csv_path: Path = DEFAULT_CSV_PATH,
+    source_manifest_path: Path | None = None,
     manifest_path: Path = DEFAULT_MANIFEST_PATH,
+    source_mode: str = "api",
 ) -> dict[str, Any]:
-    dataframe = build_population_dataframe()
+    active_source_manifest_path = source_manifest_path or csv_path.with_suffix(
+        ".manifest.json"
+    )
+    if source_mode == "api":
+        dataframe = build_population_dataframe()
+    elif source_mode == "snapshot":
+        dataframe = load_population_snapshot(csv_path, active_source_manifest_path)
+    else:
+        raise PopulationValidationError(
+            "Population source mode must be either 'api' or 'snapshot'."
+        )
     validate_population_dataframe(dataframe)
     csv_content = _dataframe_csv(dataframe)
-    _atomic_write(csv_path, csv_content)
+    if source_mode == "api":
+        _atomic_write(csv_path, csv_content)
+        _atomic_write(
+            active_source_manifest_path,
+            json.dumps(
+                _source_snapshot_manifest(dataframe, csv_content),
+                indent=2,
+                sort_keys=True,
+            ),
+        )
     owns_connection = connection is None
     active_connection = connection or connect_to_snowflake()
     staging_table = _staging_table_name()
@@ -256,6 +352,7 @@ def refresh_population(
             )
         manifest = {
             "source": "world_bank",
+            "source_mode": source_mode,
             "population_year": POPULATION_YEAR,
             "downloaded_rows": len(dataframe),
             "loaded_rows": int(loaded_rows),

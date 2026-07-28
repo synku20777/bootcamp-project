@@ -200,9 +200,10 @@ for deployment; the API role is for runtime reads. Do not simplify all three to
 ### 6. Run the one-time guided setup
 
 Keep Docker running. The first run builds the pinned setup image (including its
-private Python/uv environment), downloads a small World Bank dataset, and
-creates Snowflake objects, so it normally takes several minutes. Nothing is
-installed into your host Python environment.
+private Python/uv environment), checksum-validates the committed World Bank
+snapshot, and creates Snowflake objects, so it normally takes several minutes.
+Nothing is installed into your host Python environment, and guided setup does
+not depend on the World Bank API being reachable.
 
 Windows PowerShell:
 
@@ -231,8 +232,8 @@ The terminal displays **Step X of 9** and performs these operations:
    least-privilege roles; grants the project roles to the configured user.
 4. Reconnects as the newly granted `COVID_PROJECT_ADMIN`, creates the project
    schemas/API grants, verifies Marketplace access, and deploys mapping/staging.
-5. Fetches, validates, and loads World Bank population data transactionally;
-   invalid downloads never replace valid published data.
+5. Checksum-validates and loads the committed World Bank population snapshot
+   transactionally; invalid local data never replaces valid published data.
 6. Creates and verifies the enriched MARTS and reporting objects.
 7. The host launcher validates Compose, builds images, and starts FastAPI, Dash,
    MongoDB, and Redis without mounting the Docker socket into a container.
@@ -385,8 +386,8 @@ at [Advanced: manual setup and recovery](#advanced-manual-setup-and-recovery).
   matching World Bank population record.
 - Creates a latest-country reporting snapshot and detects sustained case-growth
   patterns with Snowflake `MATCH_RECOGNIZE`.
-- Downloads 2020 country population data from the World Bank API, saves it
-  locally, and loads it into Snowflake.
+- Loads the committed, checksum-verified 2020 World Bank population snapshot
+  into Snowflake; a separate developer command can refresh it from the API.
 - Runs analytical queries against the included Snowflake mart and exports EDA
   results as CSV files.
 - Runs FastAPI, a multi-page Dash interface, MongoDB, and Redis through Compose.
@@ -1903,11 +1904,12 @@ process automatically.
 
 ### World Bank population refresh fails
 
-The loader validates the download and writes the local file/manifest safely
-before transactionally refreshing Snowflake. A failed network request, schema
-check, or load does not replace previously published valid population data.
-Restore network access and resume setup. Use the referenced audit record only
-if the terminal's validation explanation is insufficient.
+Guided setup reads the committed population CSV and checksum manifest, so a
+World Bank outage does not block setup. If snapshot validation fails, restore
+both `data/external/world_bank_population_2020.csv` and
+`data/external/world_bank_population_2020.manifest.json` from Git, then resume.
+The standalone developer refresh command still contacts the World Bank API; a
+failed request or load never replaces previously published valid Snowflake data.
 
 ### Setup was interrupted with Ctrl+C
 

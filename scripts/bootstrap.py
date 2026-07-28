@@ -33,7 +33,11 @@ from app.logging_config import (
     configure_logging,
     sanitized_exception_info,
 )
-from scripts.load_population import DEFAULT_MANIFEST_PATH, refresh_population
+from scripts.load_population import (
+    DEFAULT_MANIFEST_PATH,
+    DEFAULT_SOURCE_MANIFEST_PATH,
+    refresh_population,
+)
 
 REPOSITORY_ROOT = Path(__file__).resolve().parents[1]
 ENV_EXAMPLE_PATH = REPOSITORY_ROOT / ".env.example"
@@ -1431,8 +1435,8 @@ def setup(
         )
         _setup_progress(
             5,
-            "Refresh World Bank population data",
-            "Downloading and validating the 2020 population file before transactionally replacing the Snowflake RAW population table. Existing valid data is preserved on failure.",
+            "Load World Bank population data",
+            "Checksum-validating the committed 2020 population snapshot before transactionally replacing the Snowflake RAW population table. No World Bank network request is made during guided setup.",
         )
 
         def refresh_population_safely() -> None:
@@ -1443,7 +1447,9 @@ def setup(
                     / "data"
                     / "external"
                     / "world_bank_population_2020.csv",
+                    source_manifest_path=REPOSITORY_ROOT / DEFAULT_SOURCE_MANIFEST_PATH,
                     manifest_path=POPULATION_MANIFEST_PATH,
+                    source_mode="snapshot",
                 )
             except Exception as exc:
                 logger.exception(
@@ -1452,10 +1458,10 @@ def setup(
                     exc_info=sanitized_exception_info(exc),
                 )
                 raise BootstrapError(
-                    "World Bank population refresh failed validation or publication.",
-                    likely_cause="The World Bank API, network, downloaded schema, or Snowflake load operation was unavailable.",
+                    "World Bank population snapshot validation or publication failed.",
+                    likely_cause="The committed snapshot or checksum manifest is missing/modified, or the Snowflake load operation was unavailable.",
                     fixes=(
-                        "Confirm internet access and retry; existing valid population data was not replaced by an unvalidated download.",
+                        "Restore data/external/world_bank_population_2020.csv and its .manifest.json file from Git, then retry.",
                         "If the failure repeats, use the audit reference to identify the failed validation stage.",
                     ),
                 ) from exc
@@ -1466,6 +1472,11 @@ def setup(
             name="population_refresh",
             checksum=_input_checksum(
                 REPOSITORY_ROOT / "scripts" / "load_population.py",
+                REPOSITORY_ROOT
+                / "data"
+                / "external"
+                / "world_bank_population_2020.csv",
+                REPOSITORY_ROOT / DEFAULT_SOURCE_MANIFEST_PATH,
                 values=("2020",),
             ),
             action=refresh_population_safely,

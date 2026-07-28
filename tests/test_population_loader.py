@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import hashlib
 import json
 import shutil
 import unittest
@@ -166,6 +167,118 @@ class PopulationLoaderTests(unittest.TestCase):
             with self.assertRaises(load_population.PopulationValidationError):
                 load_population.refresh_population(connection=connection)
         connection.cursor.assert_not_called()
+
+    def test_snapshot_mode_validates_checksum_without_calling_api(self) -> None:
+        root = self._temporary_root()
+        csv_path = root / "population.csv"
+        source_manifest_path = root / "population.manifest.json"
+        publication_manifest_path = root / "publication.json"
+        dataframe = population_dataframe()
+        csv_content = dataframe.to_csv(index=False, lineterminator="\n")
+        csv_path.write_text(csv_content, encoding="utf-8")
+        source_manifest_path.write_text(
+            json.dumps(
+                {
+                    "manifest_version": 1,
+                    "checksum_canonicalization": "covid-population-csv-v1",
+                    "population_year": 2020,
+                    "row_count": 2,
+                    "data_sha256": hashlib.sha256(
+                        csv_content.encode("utf-8")
+                    ).hexdigest(),
+                }
+            ),
+            encoding="utf-8",
+        )
+        cursor = FakeCursor(target_exists=False)
+        connection = FakeConnection(cursor)
+
+        with (
+            patch("scripts.load_population.build_population_dataframe") as api_source,
+            patch(
+                "scripts.load_population.write_pandas",
+                return_value=(True, 1, 2, None),
+            ),
+            patch(
+                "scripts.load_population._staging_table_name",
+                return_value="WORLD_BANK_POPULATION_2020_STAGING_TEST",
+            ),
+        ):
+            manifest = load_population.refresh_population(
+                connection=connection,
+                csv_path=csv_path,
+                source_manifest_path=source_manifest_path,
+                manifest_path=publication_manifest_path,
+                source_mode="snapshot",
+            )
+
+        api_source.assert_not_called()
+        self.assertEqual(manifest["source_mode"], "snapshot")
+        self.assertEqual(manifest["loaded_rows"], 2)
+
+    def test_snapshot_checksum_failure_never_opens_snowflake_cursor(self) -> None:
+        root = self._temporary_root()
+        csv_path = root / "population.csv"
+        source_manifest_path = root / "population.manifest.json"
+        csv_path.write_text(
+            population_dataframe().to_csv(index=False, lineterminator="\n"),
+            encoding="utf-8",
+        )
+        source_manifest_path.write_text(
+            json.dumps(
+                {
+                    "manifest_version": 1,
+                    "checksum_canonicalization": "covid-population-csv-v1",
+                    "population_year": 2020,
+                    "row_count": 2,
+                    "data_sha256": "incorrect",
+                }
+            ),
+            encoding="utf-8",
+        )
+        connection = MagicMock()
+
+        with self.assertRaises(load_population.PopulationValidationError):
+            load_population.refresh_population(
+                connection=connection,
+                csv_path=csv_path,
+                source_manifest_path=source_manifest_path,
+                manifest_path=root / "publication.json",
+                source_mode="snapshot",
+            )
+
+        connection.cursor.assert_not_called()
+
+    def test_snapshot_preserves_namibia_iso2_code(self) -> None:
+        root = self._temporary_root()
+        csv_path = root / "population.csv"
+        source_manifest_path = root / "population.manifest.json"
+        csv_content = (
+            "COUNTRY_CODE_ISO2,COUNTRY_CODE_ISO3,COUNTRY_NAME,POPULATION,POPULATION_YEAR\n"
+            "NA,NAM,Namibia,2489098,2020\n"
+        )
+        csv_path.write_text(csv_content, encoding="utf-8")
+        source_manifest_path.write_text(
+            json.dumps(
+                {
+                    "manifest_version": 1,
+                    "checksum_canonicalization": "covid-population-csv-v1",
+                    "population_year": 2020,
+                    "row_count": 1,
+                    "data_sha256": hashlib.sha256(
+                        csv_content.encode("utf-8")
+                    ).hexdigest(),
+                }
+            ),
+            encoding="utf-8",
+        )
+
+        dataframe = load_population.load_population_snapshot(
+            csv_path,
+            source_manifest_path,
+        )
+
+        self.assertEqual(dataframe.iloc[0]["COUNTRY_CODE_ISO2"], "NA")
 
 
 if __name__ == "__main__":
