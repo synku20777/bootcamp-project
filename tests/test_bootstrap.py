@@ -197,6 +197,87 @@ class BootstrapTests(unittest.TestCase):
         self.assertTrue(all(event[1] == ("BOOTCAMP_USER",) for event in grant_events))
         cursor.close.assert_called_once()
 
+    def test_current_user_role_check_supports_legacy_and_current_show_layouts(
+        self,
+    ) -> None:
+        layouts = (
+            (
+                ("created_on", "role", "granted_to", "grantee_name", "granted_by"),
+                (
+                    (None, "COVID_PROJECT_ADMIN", "USER", "BOOTCAMP_USER", None),
+                    (None, "COVID_APP_ROLE", "USER", "BOOTCAMP_USER", None),
+                ),
+            ),
+            (
+                (
+                    "created_on",
+                    "privilege",
+                    "granted_on",
+                    "name",
+                    "role",
+                    "granted_to",
+                    "grantee_name",
+                    "grant_option",
+                    "granted_by",
+                ),
+                (
+                    (
+                        None,
+                        None,
+                        None,
+                        None,
+                        "COVID_PROJECT_ADMIN",
+                        "USER",
+                        "BOOTCAMP_USER",
+                        False,
+                        None,
+                    ),
+                    (
+                        None,
+                        None,
+                        None,
+                        None,
+                        "COVID_APP_ROLE",
+                        "USER",
+                        "BOOTCAMP_USER",
+                        False,
+                        None,
+                    ),
+                ),
+            ),
+        )
+
+        for column_names, grants in layouts:
+            with self.subTest(column_names=column_names):
+                connection = MagicMock()
+                cursor = connection.cursor.return_value
+                cursor.fetchone.return_value = ("BOOTCAMP_USER",)
+                cursor.description = [(name,) for name in column_names]
+                cursor.fetchall.return_value = grants
+
+                self.assertTrue(
+                    bootstrap._current_user_has_roles(
+                        connection,
+                        {"COVID_PROJECT_ADMIN", "COVID_APP_ROLE"},
+                    )
+                )
+                cursor.close.assert_called_once()
+
+    def test_current_user_role_check_reports_missing_expected_role(self) -> None:
+        connection = MagicMock()
+        cursor = connection.cursor.return_value
+        cursor.fetchone.return_value = ("BOOTCAMP_USER",)
+        cursor.description = [("created_on",), ("role",)]
+        cursor.fetchall.return_value = ((None, "COVID_PROJECT_ADMIN"),)
+
+        self.assertFalse(
+            bootstrap._current_user_has_roles(
+                connection,
+                {"COVID_PROJECT_ADMIN", "COVID_APP_ROLE"},
+            )
+        )
+        cursor.close.assert_called_once()
+
     def test_compose_port_owners_uses_project_labels(self) -> None:
         output = "\n".join(
             [

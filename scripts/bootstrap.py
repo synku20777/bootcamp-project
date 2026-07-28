@@ -903,10 +903,39 @@ def _current_user_has_roles(connection: Any, expected_roles: set[str]) -> bool:
         if row is None:
             return False
         cursor.execute("SHOW GRANTS TO USER IDENTIFIER(%s)", (row[0],))
-        granted_roles = {str(grant[1]).upper() for grant in cursor.fetchall()}
-        return {role.upper() for role in expected_roles}.issubset(granted_roles)
+        role_column = _result_column_index(cursor, "role")
+        granted_roles = {
+            str(grant[role_column]).upper()
+            for grant in cursor.fetchall()
+            if grant[role_column] is not None
+        }
+        missing_roles = {role.upper() for role in expected_roles} - granted_roles
+        if missing_roles:
+            logger.warning(
+                "snowflake_user_role_postcondition_failed",
+                extra={"missing_roles": sorted(missing_roles)},
+            )
+            return False
+        return True
     finally:
         cursor.close()
+
+
+def _result_column_index(cursor: Any, column_name: str) -> int:
+    """Resolve a DB-API result column without relying on a vendor's order."""
+    description = cursor.description or ()
+    expected_name = column_name.casefold()
+    for index, column in enumerate(description):
+        if str(column[0]).casefold() == expected_name:
+            return index
+    raise BootstrapError(
+        f"Snowflake returned an unsupported result shape: missing {column_name!r} column.",
+        likely_cause="The Snowflake connector or SHOW command output is incompatible with the setup verifier.",
+        fixes=(
+            "Use the project-pinned setup container and rerun setup with --resume.",
+            "If the problem continues, report the named missing column without sharing credentials or raw connector output.",
+        ),
+    )
 
 
 def _setup_context(values: dict[str, str]) -> dict[str, str]:

@@ -1450,7 +1450,9 @@ identifiers: account SQL, user grants, a new project-role connection, and then
 project-object SQL. It never executes `USE ROLE COVID_PROJECT_ADMIN` before the
 user grant exists. Marketplace access uses Snowflake's shared-database command,
 `GRANT IMPORTED PRIVILEGES`, rather than attempting to grant `USAGE` or `SELECT`
-on provider-owned objects.
+on provider-owned objects. Its grant postcondition resolves the named `role`
+column from `SHOW GRANTS TO USER`, so it works with both legacy and current
+Snowflake result layouts.
 
 FastAPI connects only as `COVID_APP_ROLE`. That role can use `COVID_WH` and
 read current and future MARTS tables/views, but it cannot create or replace
