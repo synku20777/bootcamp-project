@@ -3,7 +3,7 @@ from __future__ import annotations
 from datetime import date
 from enum import StrEnum
 
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 
 class Metric(StrEnum):
@@ -37,7 +37,7 @@ class CountryIdentity(BaseModel):
 
 class CountrySummary(CountryIdentity):
     report_date: date
-    population: int | None
+    covid_rate_population_2020: int | None
     cases_cumulative: int
     deaths_cumulative: int
     cases_per_100k: float | None
@@ -78,7 +78,7 @@ class OverviewTotals(BaseModel):
 
 
 class OverviewLocation(CountrySummary):
-    population_join_status: str
+    denominator_join_status: str
 
 
 class DashboardOverview(BaseModel):
@@ -91,6 +91,44 @@ class MetricSeries(BaseModel):
     points: list[MetricPoint]
 
 
+class ContextIndicator(BaseModel):
+    value: float | int | None
+    status: str
+    year: int
+    unit: str
+    indicator_code: str
+    snapshot_id: str
+
+
+class ContextChange(BaseModel):
+    value: float | None
+    status: str
+    baseline_year: int
+    comparison_year: int
+    unit: str = "percent"
+
+
+class ContextMethodology(BaseModel):
+    classification: str = "descriptive"
+    caveat: str = "Changes during the pandemic period do not establish causality."
+
+
+class CountryContext(CountryIdentity):
+    population_2020_context: ContextIndicator
+    covid_rate_population_2020: ContextIndicator
+    population_density_2019: ContextIndicator
+    population_age_65_plus_pct_2019: ContextIndicator
+    real_gdp_per_capita_2019: ContextIndicator
+    health_expenditure_per_capita_ppp_2019: ContextIndicator
+    real_gdp_per_capita_annual: list[ContextIndicator]
+    real_gdp_per_capita_change_2020_vs_2019: ContextChange
+    real_gdp_per_capita_change_2021_vs_2019: ContextChange
+    real_gdp_per_capita_change_2021_vs_2020: ContextChange
+    covid_latest_report_date: date | None
+    snapshot_id: str
+    methodology: ContextMethodology = Field(default_factory=ContextMethodology)
+
+
 class CountryDashboard(CountryIdentity):
     start_date: date
     end_date: date
@@ -99,6 +137,8 @@ class CountryDashboard(CountryIdentity):
     daily_cases: MetricSeries
     daily_deaths: MetricSeries
     mortality: MetricSeries
+    context: CountryContext | None = None
+    context_status: str = "available"
 
 
 class DashboardComparisonSeries(CountryIdentity):

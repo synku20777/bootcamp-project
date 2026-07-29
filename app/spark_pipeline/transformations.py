@@ -172,6 +172,92 @@ def enrich_with_population(
     )
 
 
+def country_baseline(indicators: DataFrame) -> DataFrame:
+    """Project one narrow row per ISO3 before any broadcast decision is made."""
+    scoped = indicators.where(
+        (
+            F.col("IDENTITY_MAPPING_STATUS").isin(
+                "matched_iso", "matched_explicit_mapping"
+            )
+        )
+        & ~F.col("IS_AGGREGATE")
+    )
+    return scoped.groupBy(
+        _clean_code(F.col("CANONICAL_ISO2")).alias("context_iso2"),
+        _clean_code(F.col("CANONICAL_ISO3")).alias("context_iso3"),
+    ).agg(
+        F.max(
+            F.when(
+                (F.col("INDICATOR_CODE") == "SP.POP.TOTL")
+                & (F.col("OBSERVATION_YEAR") == 2020),
+                F.col("INDICATOR_VALUE"),
+            )
+        ).alias("population_2020_context"),
+        F.max(
+            F.when(
+                (F.col("INDICATOR_CODE") == "EN.POP.DNST")
+                & (F.col("OBSERVATION_YEAR") == 2019),
+                F.col("INDICATOR_VALUE"),
+            )
+        ).alias("population_density_2019"),
+        F.max(
+            F.when(
+                (F.col("INDICATOR_CODE") == "SP.POP.65UP.TO.ZS")
+                & (F.col("OBSERVATION_YEAR") == 2019),
+                F.col("INDICATOR_VALUE"),
+            )
+        ).alias("population_age_65_plus_pct_2019"),
+        F.max(
+            F.when(
+                (F.col("INDICATOR_CODE") == "NY.GDP.PCAP.KD")
+                & (F.col("OBSERVATION_YEAR") == 2019),
+                F.col("INDICATOR_VALUE"),
+            )
+        ).alias("real_gdp_per_capita_2019"),
+        F.max(
+            F.when(
+                (F.col("INDICATOR_CODE") == "SH.XPD.CHEX.PP.CD")
+                & (F.col("OBSERVATION_YEAR") == 2019),
+                F.col("INDICATOR_VALUE"),
+            )
+        ).alias("health_expenditure_per_capita_ppp_2019"),
+        F.max("SNAPSHOT_ID").alias("context_snapshot_id"),
+    )
+
+
+def enrich_with_country_context(
+    enriched_daily: DataFrame,
+    baseline: DataFrame,
+    *,
+    broadcast_baseline: bool,
+) -> DataFrame:
+    # ECDC primarily supplies ISO2 while the analytical grain is ISO3. A typed
+    # code bridge keeps the join independent of display names and avoids making
+    # active WDI context depend on the separately frozen population dimension.
+    lookup = baseline.select(
+        F.explode(
+            F.array_compact(
+                F.array(
+                    _typed_key("ISO2", F.col("context_iso2")),
+                    _typed_key("ISO3", F.col("context_iso3")),
+                )
+            )
+        ).alias("context_lookup_key"),
+        *baseline.columns,
+    )
+    dimension = F.broadcast(lookup) if broadcast_baseline else lookup
+    daily = enriched_daily.withColumn(
+        "context_lookup_key",
+        F.coalesce(
+            _typed_key("ISO3", F.col("country_iso3")),
+            _typed_key("ISO2", F.col("country_iso2")),
+        ),
+    )
+    return daily.join(dimension, "context_lookup_key", "left").drop(
+        "context_lookup_key", "context_iso2"
+    )
+
+
 def duplicate_count(daily: DataFrame) -> int:
     row = daily.agg(F.sum(F.col("source_row_count") - 1).alias("duplicates")).first()
     return int(row["duplicates"] or 0)

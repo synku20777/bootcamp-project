@@ -31,7 +31,10 @@ class Settings(BaseSettings):
     redis_url: str = "redis://localhost:6379/0"
 
     cache_enabled: bool = True
-    cache_namespace: str = "covid-api:v2"
+    cache_namespace: str = "covid-api:v3"
+    world_bank_manifest_path: str = (
+        "data/external/world_bank_indicators_2019_2021.manifest.json"
+    )
     cache_ttl_countries_seconds: int = 86_400
     cache_ttl_overview_seconds: int = 86_400
     cache_ttl_summary_seconds: int = 86_400
@@ -39,6 +42,7 @@ class Settings(BaseSettings):
     cache_ttl_compare_seconds: int = 86_400
     cache_ttl_forecast_seconds: int = 21_600
     cache_ttl_country_page_seconds: int = 86_400
+    cache_ttl_country_context_seconds: int = 86_400
     cache_ttl_comparison_page_seconds: int = 86_400
     cache_ttl_annotation_target_seconds: int = 86_400
     cache_lock_seconds: int = 30

@@ -550,8 +550,8 @@ def render_country_content(state: dict[str, Any] | None) -> html.Div:
                     dmc.GridCol(
                         span={"base": 12, "sm": 6, "md": 4, "lg": 2},
                         children=create_kpi_card(
-                            "Population",
-                            _format_integer(summary["population"]),
+                            "COVID rate denominator, 2020",
+                            _format_integer(summary["covid_rate_population_2020"]),
                             "tabler:users",
                         ),
                     ),
@@ -817,6 +817,152 @@ def render_forecast_content(state: dict[str, Any] | None) -> html.Div:
     caveats = payload.get("caveats", [])
     return dmc.Box(
         [
+            (
+                create_alert(
+                    "Country context is temporarily unavailable because the "
+                    "application manifest and active Snowflake snapshot do not match.",
+                    "warning",
+                )
+                if payload.get("context_status") == "context_data_unavailable"
+                else None
+            ),
+            (
+                dmc.Paper(
+                    p="md",
+                    radius="md",
+                    withBorder=True,
+                    mb="md",
+                    children=[
+                        dmc.Title("Pre-pandemic country context", order=3, mb="xs"),
+                        dmc.Text(
+                            "2019 characteristics use the active WDI snapshot; the "
+                            "2020 context population is separate from the frozen "
+                            "COVID rate denominator.",
+                            size="sm",
+                            c="dimmed",
+                            mb="md",
+                        ),
+                        dmc.Grid(
+                            children=[
+                                dmc.GridCol(
+                                    span={"base": 12, "sm": 6, "lg": 4},
+                                    children=create_kpi_card(
+                                        "Population context, 2020",
+                                        _format_integer(
+                                            payload["context"][
+                                                "population_2020_context"
+                                            ]["value"]
+                                        ),
+                                        "tabler:users-group",
+                                    ),
+                                ),
+                                dmc.GridCol(
+                                    span={"base": 12, "sm": 6, "lg": 4},
+                                    children=create_kpi_card(
+                                        "Population density, 2019",
+                                        _format_integer(
+                                            payload["context"][
+                                                "population_density_2019"
+                                            ]["value"]
+                                        ),
+                                        "tabler:map-pin",
+                                    ),
+                                ),
+                                dmc.GridCol(
+                                    span={"base": 12, "sm": 6, "lg": 4},
+                                    children=create_kpi_card(
+                                        "Population aged 65+, 2019",
+                                        _format_rate(
+                                            payload["context"][
+                                                "population_age_65_plus_pct_2019"
+                                            ]["value"]
+                                        ),
+                                        "tabler:accessible",
+                                    ),
+                                ),
+                                dmc.GridCol(
+                                    span={"base": 12, "sm": 6, "lg": 6},
+                                    children=create_kpi_card(
+                                        "Real GDP per capita, 2019 (constant 2015 US$)",
+                                        _format_integer(
+                                            payload["context"][
+                                                "real_gdp_per_capita_2019"
+                                            ]["value"]
+                                        ),
+                                        "tabler:currency-dollar",
+                                    ),
+                                ),
+                                dmc.GridCol(
+                                    span={"base": 12, "sm": 6, "lg": 6},
+                                    children=create_kpi_card(
+                                        "Current health expenditure per capita, PPP",
+                                        _format_integer(
+                                            payload["context"][
+                                                "health_expenditure_per_capita_ppp_2019"
+                                            ]["value"]
+                                        ),
+                                        "tabler:building-hospital",
+                                    ),
+                                ),
+                            ]
+                        ),
+                        dmc.Text(
+                            "Health expenditure: 2019, current international $. "
+                            "It is not an inflation-adjusted time-series metric.",
+                            size="xs",
+                            c="dimmed",
+                            mt="xs",
+                        ),
+                        dmc.Grid(
+                            mt="md",
+                            children=[
+                                dmc.GridCol(
+                                    span={"base": 12, "md": 4},
+                                    children=create_kpi_card(
+                                        "Real GDP per capita: 2020 vs 2019",
+                                        _format_rate(
+                                            payload["context"][
+                                                "real_gdp_per_capita_change_2020_vs_2019"
+                                            ]["value"]
+                                        ),
+                                        "tabler:chart-line",
+                                    ),
+                                ),
+                                dmc.GridCol(
+                                    span={"base": 12, "md": 4},
+                                    children=create_kpi_card(
+                                        "Real GDP per capita: 2021 vs 2019",
+                                        _format_rate(
+                                            payload["context"][
+                                                "real_gdp_per_capita_change_2021_vs_2019"
+                                            ]["value"]
+                                        ),
+                                        "tabler:chart-line",
+                                    ),
+                                ),
+                                dmc.GridCol(
+                                    span={"base": 12, "md": 4},
+                                    children=create_kpi_card(
+                                        "Real GDP per capita: 2021 vs 2020",
+                                        _format_rate(
+                                            payload["context"][
+                                                "real_gdp_per_capita_change_2021_vs_2020"
+                                            ]["value"]
+                                        ),
+                                        "tabler:chart-line",
+                                    ),
+                                ),
+                            ],
+                        ),
+                        create_alert(
+                            payload["context"]["methodology"]["caveat"],
+                            "info",
+                        ),
+                    ],
+                )
+                if payload.get("context")
+                else None
+            ),
             dmc.Grid(
                 children=[
                     dmc.GridCol(

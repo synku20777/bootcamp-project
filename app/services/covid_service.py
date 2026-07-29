@@ -15,7 +15,10 @@ from app.exceptions import (
 )
 from app.models.covid import (
     ComparisonSeries,
+    ContextChange,
+    ContextIndicator,
     CountryComparison,
+    CountryContext,
     CountryDashboard,
     CountryForecast,
     CountryIdentity,
@@ -41,6 +44,7 @@ from app.services.forecasting import (
     MINIMUM_OBSERVATIONS,
     compute_forecast,
 )
+from app.world_bank_manifest import canonical_context_iso3, committed_snapshot_id
 
 
 class CountryList(RootModel[list[CountryIdentity]]):
@@ -84,7 +88,7 @@ class CovidService:
         return CountrySummary(
             **cls._identity(row),
             report_date=row["REPORT_DATE"],
-            population=row["POPULATION"],
+            covid_rate_population_2020=row["COVID_RATE_POPULATION_2020"],
             cases_cumulative=row["CASES_CUMULATIVE"],
             deaths_cumulative=row["DEATHS_CUMULATIVE"],
             cases_per_100k=row["CASES_PER_100K"],
@@ -105,6 +109,137 @@ class CovidService:
             for row in rows
             if row["REPORT_DATE"] is not None
         ]
+
+    @staticmethod
+    def _context_indicator(
+        row: dict[str, Any],
+        value_column: str,
+        status_column: str | None,
+        year: int,
+        unit: str,
+        indicator_code: str,
+        snapshot_id: str,
+    ) -> ContextIndicator:
+        value = row.get(value_column)
+        status = row.get(status_column) if status_column else None
+        return ContextIndicator(
+            value=value,
+            status=status or ("available" if value is not None else "missing"),
+            year=year,
+            unit=unit,
+            indicator_code=indicator_code,
+            snapshot_id=snapshot_id,
+        )
+
+    @classmethod
+    def _country_context(
+        cls,
+        row: dict[str, Any],
+        expected_snapshot_id: str,
+    ) -> CountryContext:
+        active_snapshot_id = row.get("CONTEXT_SNAPSHOT_ID") or row.get("SNAPSHOT_ID")
+        if active_snapshot_id != expected_snapshot_id:
+            raise DataSourceUnavailableError(
+                "World Bank context",
+                code="context_data_unavailable",
+                message="Country context data is temporarily unavailable.",
+            )
+        denominator_snapshot = (
+            row.get("DENOMINATOR_SOURCE_SNAPSHOT_ID")
+            or row.get("DENOMINATOR_VERSION")
+            or "legacy-world-bank-population-2020"
+        )
+        identity = CountryIdentity(
+            country=row.get("COUNTRY") or row["COUNTRY_NAME"],
+            iso2=row.get("COUNTRY_ISO2") or row.get("ISO2"),
+            iso3=row.get("COUNTRY_ISO3") or row.get("ISO3"),
+            location_key=row["LOCATION_KEY"],
+        )
+        annual_gdp = [
+            cls._context_indicator(
+                row,
+                f"REAL_GDP_PER_CAPITA_{year}",
+                "REAL_GDP_PER_CAPITA_2019_STATUS" if year == 2019 else None,
+                year,
+                "constant 2015 US$",
+                "NY.GDP.PCAP.KD",
+                expected_snapshot_id,
+            )
+            for year in (2019, 2020, 2021)
+        ]
+        return CountryContext(
+            **identity.model_dump(),
+            population_2020_context=cls._context_indicator(
+                row,
+                "POPULATION_2020_CONTEXT",
+                "POPULATION_2020_STATUS",
+                2020,
+                "people",
+                "SP.POP.TOTL",
+                expected_snapshot_id,
+            ),
+            covid_rate_population_2020=cls._context_indicator(
+                row,
+                "COVID_RATE_POPULATION_2020",
+                None,
+                2020,
+                "people",
+                "SP.POP.TOTL",
+                denominator_snapshot,
+            ),
+            population_density_2019=cls._context_indicator(
+                row,
+                "POPULATION_DENSITY_2019",
+                "POPULATION_DENSITY_2019_STATUS",
+                2019,
+                "people per sq. km of land area",
+                "EN.POP.DNST",
+                expected_snapshot_id,
+            ),
+            population_age_65_plus_pct_2019=cls._context_indicator(
+                row,
+                "POPULATION_AGE_65_PLUS_PCT_2019",
+                "AGE_65_PLUS_2019_STATUS",
+                2019,
+                "% of total population",
+                "SP.POP.65UP.TO.ZS",
+                expected_snapshot_id,
+            ),
+            real_gdp_per_capita_2019=annual_gdp[0],
+            health_expenditure_per_capita_ppp_2019=cls._context_indicator(
+                row,
+                "HEALTH_EXPENDITURE_PER_CAPITA_PPP_2019",
+                "HEALTH_EXPENDITURE_PPP_2019_STATUS",
+                2019,
+                "current international $",
+                "SH.XPD.CHEX.PP.CD",
+                expected_snapshot_id,
+            ),
+            real_gdp_per_capita_annual=annual_gdp,
+            real_gdp_per_capita_change_2020_vs_2019=ContextChange(
+                value=row.get("REAL_GDP_PER_CAPITA_CHANGE_2020_VS_2019_PCT"),
+                status=row.get("REAL_GDP_PER_CAPITA_CHANGE_2020_VS_2019_STATUS")
+                or "missing_input",
+                baseline_year=2019,
+                comparison_year=2020,
+            ),
+            real_gdp_per_capita_change_2021_vs_2019=ContextChange(
+                value=row.get("REAL_GDP_PER_CAPITA_CHANGE_2021_VS_2019_PCT"),
+                status=row.get("REAL_GDP_PER_CAPITA_CHANGE_2021_VS_2019_STATUS")
+                or "missing_input",
+                baseline_year=2019,
+                comparison_year=2021,
+            ),
+            real_gdp_per_capita_change_2021_vs_2020=ContextChange(
+                value=row.get("REAL_GDP_PER_CAPITA_CHANGE_2021_VS_2020_PCT"),
+                status=row.get("REAL_GDP_PER_CAPITA_CHANGE_2021_VS_2020_STATUS")
+                or "missing_input",
+                baseline_year=2020,
+                comparison_year=2021,
+            ),
+            covid_latest_report_date=row.get("COVID_LATEST_REPORT_DATE"),
+            snapshot_id=expected_snapshot_id,
+        )
 
     @classmethod
     def _normalize_comparison_identifiers(
@@ -307,7 +442,7 @@ class CovidService:
             locations = [
                 OverviewLocation(
                     **self._summary(row).model_dump(),
-                    population_join_status=row["POPULATION_JOIN_STATUS"],
+                    denominator_join_status=row["DENOMINATOR_JOIN_STATUS"],
                 )
                 for row in rows
             ]
@@ -462,13 +597,24 @@ class CovidService:
             summary = CountrySummary(
                 **self._identity(first),
                 report_date=first["LATEST_REPORT_DATE"],
-                population=first["POPULATION"],
+                covid_rate_population_2020=first["COVID_RATE_POPULATION_2020"],
                 cases_cumulative=first["CASES_CUMULATIVE"],
                 deaths_cumulative=first["DEATHS_CUMULATIVE"],
                 cases_per_100k=first["CASES_PER_100K"],
                 deaths_per_100k=first["DEATHS_PER_100K"],
                 mortality_rate_percent=first["LATEST_MORTALITY_RATE_PERCENT"],
             )
+            try:
+                context = self._country_context(
+                    first,
+                    committed_snapshot_id(self.settings.world_bank_manifest_path),
+                )
+                context_status = "available"
+            except DataSourceUnavailableError:
+                # Context is an optional analytical layer. A manifest mismatch
+                # must not turn the historical COVID page into an outage.
+                context = None
+                context_status = "context_data_unavailable"
             return CountryDashboard(
                 **self._identity(first),
                 start_date=start_date,
@@ -490,6 +636,8 @@ class CovidService:
                     metric=Metric.MORTALITY_RATE_PERCENT,
                     points=self._points(rows, "MORTALITY_VALUE"),
                 ),
+                context=context,
+                context_status=context_status,
             )
 
         return self.cache.get_or_compute(
@@ -499,7 +647,10 @@ class CovidService:
                 "metric": metric.value,
                 "start_date": start_date.isoformat(),
                 "end_date": end_date.isoformat(),
-                "version": 1,
+                "version": 2,
+                "context_snapshot_id": committed_snapshot_id(
+                    self.settings.world_bank_manifest_path
+                ),
             },
             ttl_seconds=self.settings.cache_ttl_country_page_seconds,
             model_type=CountryDashboard,
@@ -532,6 +683,29 @@ class CovidService:
             },
             ttl_seconds=self.settings.cache_ttl_comparison_page_seconds,
             model_type=DashboardComparison,
+            compute=compute,
+        )
+
+    def context(self, identifier: str) -> tuple[CountryContext, CacheStatus]:
+        normalized = self._identifier(identifier)
+        snapshot_id = committed_snapshot_id(self.settings.world_bank_manifest_path)
+        iso3 = canonical_context_iso3(
+            normalized,
+            self.settings.world_bank_manifest_path,
+        )
+
+        def compute() -> CountryContext:
+            rows = self.repository.fetch_country_context(iso3)
+            if not rows:
+                raise CountryNotFoundError(identifier)
+            return self._country_context(rows[0], snapshot_id)
+
+        return self.cache.get_or_compute(
+            endpoint="country-context",
+            key_payload={"iso3": iso3, "snapshot_id": snapshot_id},
+            key_override=f"{snapshot_id}:country-context:{iso3}",
+            ttl_seconds=self.settings.cache_ttl_country_context_seconds,
+            model_type=CountryContext,
             compute=compute,
         )
 

@@ -1,0 +1,949 @@
+{
+  "api": {
+    "indicators": [
+      "SP.POP.TOTL",
+      "EN.POP.DNST",
+      "SP.POP.65UP.TO.ZS",
+      "NY.GDP.PCAP.KD",
+      "SH.XPD.CHEX.PP.CD"
+    ],
+    "pages": 1,
+    "source_id": 2,
+    "source_last_updated": "2026-07-13",
+    "version": "v2",
+    "years": [
+      2019,
+      2020,
+      2021
+    ]
+  },
+  "country_count": 217,
+  "coverage": {
+    "EN.POP.DNST:2019": {
+      "change_from_active_pct_points": null,
+      "coverage_pct": 99.54,
+      "eligible_country_count": 217,
+      "non_null_count": 216,
+      "null_count": 1
+    },
+    "EN.POP.DNST:2020": {
+      "change_from_active_pct_points": null,
+      "coverage_pct": 99.54,
+      "eligible_country_count": 217,
+      "non_null_count": 216,
+      "null_count": 1
+    },
+    "EN.POP.DNST:2021": {
+      "change_from_active_pct_points": null,
+      "coverage_pct": 99.54,
+      "eligible_country_count": 217,
+      "non_null_count": 216,
+      "null_count": 1
+    },
+    "NY.GDP.PCAP.KD:2019": {
+      "change_from_active_pct_points": null,
+      "coverage_pct": 95.85,
+      "eligible_country_count": 217,
+      "non_null_count": 208,
+      "null_count": 9
+    },
+    "NY.GDP.PCAP.KD:2020": {
+      "change_from_active_pct_points": null,
+      "coverage_pct": 95.85,
+      "eligible_country_count": 217,
+      "non_null_count": 208,
+      "null_count": 9
+    },
+    "NY.GDP.PCAP.KD:2021": {
+      "change_from_active_pct_points": null,
+      "coverage_pct": 95.85,
+      "eligible_country_count": 217,
+      "non_null_count": 208,
+      "null_count": 9
+    },
+    "SH.XPD.CHEX.PP.CD:2019": {
+      "change_from_active_pct_points": null,
+      "coverage_pct": 88.94,
+      "eligible_country_count": 217,
+      "non_null_count": 193,
+      "null_count": 24
+    },
+    "SH.XPD.CHEX.PP.CD:2020": {
+      "change_from_active_pct_points": null,
+      "coverage_pct": 88.94,
+      "eligible_country_count": 217,
+      "non_null_count": 193,
+      "null_count": 24
+    },
+    "SH.XPD.CHEX.PP.CD:2021": {
+      "change_from_active_pct_points": null,
+      "coverage_pct": 88.94,
+      "eligible_country_count": 217,
+      "non_null_count": 193,
+      "null_count": 24
+    },
+    "SP.POP.65UP.TO.ZS:2019": {
+      "change_from_active_pct_points": null,
+      "coverage_pct": 100.0,
+      "eligible_country_count": 217,
+      "non_null_count": 217,
+      "null_count": 0
+    },
+    "SP.POP.65UP.TO.ZS:2020": {
+      "change_from_active_pct_points": null,
+      "coverage_pct": 100.0,
+      "eligible_country_count": 217,
+      "non_null_count": 217,
+      "null_count": 0
+    },
+    "SP.POP.65UP.TO.ZS:2021": {
+      "change_from_active_pct_points": null,
+      "coverage_pct": 100.0,
+      "eligible_country_count": 217,
+      "non_null_count": 217,
+      "null_count": 0
+    },
+    "SP.POP.TOTL:2019": {
+      "change_from_active_pct_points": null,
+      "coverage_pct": 100.0,
+      "eligible_country_count": 217,
+      "non_null_count": 217,
+      "null_count": 0
+    },
+    "SP.POP.TOTL:2020": {
+      "change_from_active_pct_points": null,
+      "coverage_pct": 100.0,
+      "eligible_country_count": 217,
+      "non_null_count": 217,
+      "null_count": 0
+    },
+    "SP.POP.TOTL:2021": {
+      "change_from_active_pct_points": null,
+      "coverage_pct": 100.0,
+      "eligible_country_count": 217,
+      "non_null_count": 217,
+      "null_count": 0
+    }
+  },
+  "duplicates": {
+    "conflicting": [],
+    "exact": []
+  },
+  "failures": [],
+  "file_checksum": "fa8402989dec83ec43b71e8c7629b10dd99327bd820e324830dace71f92ec380",
+  "identity": {
+    "counts": {
+      "aggregate_excluded": 78,
+      "conflicting_identity": 0,
+      "matched_explicit_mapping": 0,
+      "matched_iso": 217,
+      "missing_identity": 0,
+      "received_entities": 295,
+      "unsupported_world_bank_economy": 0
+    },
+    "excluded_entities": [
+      {
+        "CANONICAL_ISO2": "ZH",
+        "CANONICAL_ISO3": "AFE",
+        "CODE_SYSTEM": "PROJECT_MAPPING",
+        "COUNTRY_NAME": "Africa Eastern and Southern",
+        "ENTITY_TYPE": "aggregate",
+        "IDENTITY_MAPPING_STATUS": "aggregate_excluded",
+        "IS_AGGREGATE": true,
+        "SOURCE_ENTITY_CODE": "AFE"
+      },
+      {
+        "CANONICAL_ISO2": "A9",
+        "CANONICAL_ISO3": "AFR",
+        "CODE_SYSTEM": "PROJECT_MAPPING",
+        "COUNTRY_NAME": "Africa",
+        "ENTITY_TYPE": "aggregate",
+        "IDENTITY_MAPPING_STATUS": "aggregate_excluded",
+        "IS_AGGREGATE": true,
+        "SOURCE_ENTITY_CODE": "AFR"
+      },
+      {
+        "CANONICAL_ISO2": "ZI",
+        "CANONICAL_ISO3": "AFW",
+        "CODE_SYSTEM": "PROJECT_MAPPING",
+        "COUNTRY_NAME": "Africa Western and Central",
+        "ENTITY_TYPE": "aggregate",
+        "IDENTITY_MAPPING_STATUS": "aggregate_excluded",
+        "IS_AGGREGATE": true,
+        "SOURCE_ENTITY_CODE": "AFW"
+      },
+      {
+        "CANONICAL_ISO2": "1A",
+        "CANONICAL_ISO3": "ARB",
+        "CODE_SYSTEM": "PROJECT_MAPPING",
+        "COUNTRY_NAME": "Arab World",
+        "ENTITY_TYPE": "aggregate",
+        "IDENTITY_MAPPING_STATUS": "aggregate_excluded",
+        "IS_AGGREGATE": true,
+        "SOURCE_ENTITY_CODE": "ARB"
+      },
+      {
+        "CANONICAL_ISO2": "B4",
+        "CANONICAL_ISO3": "BEA",
+        "CODE_SYSTEM": "PROJECT_MAPPING",
+        "COUNTRY_NAME": "East Asia & Pacific (IBRD-only countries)",
+        "ENTITY_TYPE": "aggregate",
+        "IDENTITY_MAPPING_STATUS": "aggregate_excluded",
+        "IS_AGGREGATE": true,
+        "SOURCE_ENTITY_CODE": "BEA"
+      },
+      {
+        "CANONICAL_ISO2": "B7",
+        "CANONICAL_ISO3": "BEC",
+        "CODE_SYSTEM": "PROJECT_MAPPING",
+        "COUNTRY_NAME": "Europe & Central Asia (IBRD-only countries)",
+        "ENTITY_TYPE": "aggregate",
+        "IDENTITY_MAPPING_STATUS": "aggregate_excluded",
+        "IS_AGGREGATE": true,
+        "SOURCE_ENTITY_CODE": "BEC"
+      },
+      {
+        "CANONICAL_ISO2": "B1",
+        "CANONICAL_ISO3": "BHI",
+        "CODE_SYSTEM": "PROJECT_MAPPING",
+        "COUNTRY_NAME": "IBRD countries classified as high income",
+        "ENTITY_TYPE": "aggregate",
+        "IDENTITY_MAPPING_STATUS": "aggregate_excluded",
+        "IS_AGGREGATE": true,
+        "SOURCE_ENTITY_CODE": "BHI"
+      },
+      {
+        "CANONICAL_ISO2": "B2",
+        "CANONICAL_ISO3": "BLA",
+        "CODE_SYSTEM": "PROJECT_MAPPING",
+        "COUNTRY_NAME": "Latin America & the Caribbean (IBRD-only countries)",
+        "ENTITY_TYPE": "aggregate",
+        "IDENTITY_MAPPING_STATUS": "aggregate_excluded",
+        "IS_AGGREGATE": true,
+        "SOURCE_ENTITY_CODE": "BLA"
+      },
+      {
+        "CANONICAL_ISO2": "B3",
+        "CANONICAL_ISO3": "BMN",
+        "CODE_SYSTEM": "PROJECT_MAPPING",
+        "COUNTRY_NAME": "Middle East, North Africa, Afghanistan & Pakistan (IBRD only)",
+        "ENTITY_TYPE": "aggregate",
+        "IDENTITY_MAPPING_STATUS": "aggregate_excluded",
+        "IS_AGGREGATE": true,
+        "SOURCE_ENTITY_CODE": "BMN"
+      },
+      {
+        "CANONICAL_ISO2": "B6",
+        "CANONICAL_ISO3": "BSS",
+        "CODE_SYSTEM": "PROJECT_MAPPING",
+        "COUNTRY_NAME": "Sub-Saharan Africa (IBRD-only countries)",
+        "ENTITY_TYPE": "aggregate",
+        "IDENTITY_MAPPING_STATUS": "aggregate_excluded",
+        "IS_AGGREGATE": true,
+        "SOURCE_ENTITY_CODE": "BSS"
+      },
+      {
+        "CANONICAL_ISO2": "C9",
+        "CANONICAL_ISO3": "CAA",
+        "CODE_SYSTEM": "PROJECT_MAPPING",
+        "COUNTRY_NAME": "Sub-Saharan Africa (IFC classification)",
+        "ENTITY_TYPE": "aggregate",
+        "IDENTITY_MAPPING_STATUS": "aggregate_excluded",
+        "IS_AGGREGATE": true,
+        "SOURCE_ENTITY_CODE": "CAA"
+      },
+      {
+        "CANONICAL_ISO2": "C4",
+        "CANONICAL_ISO3": "CEA",
+        "CODE_SYSTEM": "PROJECT_MAPPING",
+        "COUNTRY_NAME": "East Asia and the Pacific (IFC classification)",
+        "ENTITY_TYPE": "aggregate",
+        "IDENTITY_MAPPING_STATUS": "aggregate_excluded",
+        "IS_AGGREGATE": true,
+        "SOURCE_ENTITY_CODE": "CEA"
+      },
+      {
+        "CANONICAL_ISO2": "B8",
+        "CANONICAL_ISO3": "CEB",
+        "CODE_SYSTEM": "PROJECT_MAPPING",
+        "COUNTRY_NAME": "Central Europe and the Baltics",
+        "ENTITY_TYPE": "aggregate",
+        "IDENTITY_MAPPING_STATUS": "aggregate_excluded",
+        "IS_AGGREGATE": true,
+        "SOURCE_ENTITY_CODE": "CEB"
+      },
+      {
+        "CANONICAL_ISO2": "C5",
+        "CANONICAL_ISO3": "CEU",
+        "CODE_SYSTEM": "PROJECT_MAPPING",
+        "COUNTRY_NAME": "Europe and Central Asia (IFC classification)",
+        "ENTITY_TYPE": "aggregate",
+        "IDENTITY_MAPPING_STATUS": "aggregate_excluded",
+        "IS_AGGREGATE": true,
+        "SOURCE_ENTITY_CODE": "CEU"
+      },
+      {
+        "CANONICAL_ISO2": "C6",
+        "CANONICAL_ISO3": "CLA",
+        "CODE_SYSTEM": "PROJECT_MAPPING",
+        "COUNTRY_NAME": "Latin America and the Caribbean (IFC classification)",
+        "ENTITY_TYPE": "aggregate",
+        "IDENTITY_MAPPING_STATUS": "aggregate_excluded",
+        "IS_AGGREGATE": true,
+        "SOURCE_ENTITY_CODE": "CLA"
+      },
+      {
+        "CANONICAL_ISO2": "C7",
+        "CANONICAL_ISO3": "CME",
+        "CODE_SYSTEM": "PROJECT_MAPPING",
+        "COUNTRY_NAME": "Middle East and North Africa (IFC classification)",
+        "ENTITY_TYPE": "aggregate",
+        "IDENTITY_MAPPING_STATUS": "aggregate_excluded",
+        "IS_AGGREGATE": true,
+        "SOURCE_ENTITY_CODE": "CME"
+      },
+      {
+        "CANONICAL_ISO2": "C8",
+        "CANONICAL_ISO3": "CSA",
+        "CODE_SYSTEM": "PROJECT_MAPPING",
+        "COUNTRY_NAME": "South Asia (IFC classification)",
+        "ENTITY_TYPE": "aggregate",
+        "IDENTITY_MAPPING_STATUS": "aggregate_excluded",
+        "IS_AGGREGATE": true,
+        "SOURCE_ENTITY_CODE": "CSA"
+      },
+      {
+        "CANONICAL_ISO2": "S3",
+        "CANONICAL_ISO3": "CSS",
+        "CODE_SYSTEM": "PROJECT_MAPPING",
+        "COUNTRY_NAME": "Caribbean small states",
+        "ENTITY_TYPE": "aggregate",
+        "IDENTITY_MAPPING_STATUS": "aggregate_excluded",
+        "IS_AGGREGATE": true,
+        "SOURCE_ENTITY_CODE": "CSS"
+      },
+      {
+        "CANONICAL_ISO2": "D4",
+        "CANONICAL_ISO3": "DEA",
+        "CODE_SYSTEM": "PROJECT_MAPPING",
+        "COUNTRY_NAME": "East Asia & Pacific (IDA-eligible countries)",
+        "ENTITY_TYPE": "aggregate",
+        "IDENTITY_MAPPING_STATUS": "aggregate_excluded",
+        "IS_AGGREGATE": true,
+        "SOURCE_ENTITY_CODE": "DEA"
+      },
+      {
+        "CANONICAL_ISO2": "D7",
+        "CANONICAL_ISO3": "DEC",
+        "CODE_SYSTEM": "PROJECT_MAPPING",
+        "COUNTRY_NAME": "Europe & Central Asia (IDA-eligible countries)",
+        "ENTITY_TYPE": "aggregate",
+        "IDENTITY_MAPPING_STATUS": "aggregate_excluded",
+        "IS_AGGREGATE": true,
+        "SOURCE_ENTITY_CODE": "DEC"
+      },
+      {
+        "CANONICAL_ISO2": "D2",
+        "CANONICAL_ISO3": "DLA",
+        "CODE_SYSTEM": "PROJECT_MAPPING",
+        "COUNTRY_NAME": "Latin America & the Caribbean (IDA-eligible countries)",
+        "ENTITY_TYPE": "aggregate",
+        "IDENTITY_MAPPING_STATUS": "aggregate_excluded",
+        "IS_AGGREGATE": true,
+        "SOURCE_ENTITY_CODE": "DLA"
+      },
+      {
+        "CANONICAL_ISO2": "D3",
+        "CANONICAL_ISO3": "DMN",
+        "CODE_SYSTEM": "PROJECT_MAPPING",
+        "COUNTRY_NAME": "Middle East, North Africa, Afghanistan & Pakistan (IDA total)",
+        "ENTITY_TYPE": "aggregate",
+        "IDENTITY_MAPPING_STATUS": "aggregate_excluded",
+        "IS_AGGREGATE": true,
+        "SOURCE_ENTITY_CODE": "DMN"
+      },
+      {
+        "CANONICAL_ISO2": "N6",
+        "CANONICAL_ISO3": "DNS",
+        "CODE_SYSTEM": "PROJECT_MAPPING",
+        "COUNTRY_NAME": "IDA countries in Sub-Saharan Africa not classified as fragile situations ",
+        "ENTITY_TYPE": "aggregate",
+        "IDENTITY_MAPPING_STATUS": "aggregate_excluded",
+        "IS_AGGREGATE": true,
+        "SOURCE_ENTITY_CODE": "DNS"
+      },
+      {
+        "CANONICAL_ISO2": "D5",
+        "CANONICAL_ISO3": "DSA",
+        "CODE_SYSTEM": "PROJECT_MAPPING",
+        "COUNTRY_NAME": "South Asia (IDA-eligible countries)",
+        "ENTITY_TYPE": "aggregate",
+        "IDENTITY_MAPPING_STATUS": "aggregate_excluded",
+        "IS_AGGREGATE": true,
+        "SOURCE_ENTITY_CODE": "DSA"
+      },
+      {
+        "CANONICAL_ISO2": "F6",
+        "CANONICAL_ISO3": "DSF",
+        "CODE_SYSTEM": "PROJECT_MAPPING",
+        "COUNTRY_NAME": "IDA countries in Sub-Saharan Africa classified as fragile situations ",
+        "ENTITY_TYPE": "aggregate",
+        "IDENTITY_MAPPING_STATUS": "aggregate_excluded",
+        "IS_AGGREGATE": true,
+        "SOURCE_ENTITY_CODE": "DSF"
+      },
+      {
+        "CANONICAL_ISO2": "D6",
+        "CANONICAL_ISO3": "DSS",
+        "CODE_SYSTEM": "PROJECT_MAPPING",
+        "COUNTRY_NAME": "Sub-Saharan Africa (IDA-eligible countries)",
+        "ENTITY_TYPE": "aggregate",
+        "IDENTITY_MAPPING_STATUS": "aggregate_excluded",
+        "IS_AGGREGATE": true,
+        "SOURCE_ENTITY_CODE": "DSS"
+      },
+      {
+        "CANONICAL_ISO2": "4E",
+        "CANONICAL_ISO3": "EAP",
+        "CODE_SYSTEM": "PROJECT_MAPPING",
+        "COUNTRY_NAME": "East Asia & Pacific (excluding high income)",
+        "ENTITY_TYPE": "aggregate",
+        "IDENTITY_MAPPING_STATUS": "aggregate_excluded",
+        "IS_AGGREGATE": true,
+        "SOURCE_ENTITY_CODE": "EAP"
+      },
+      {
+        "CANONICAL_ISO2": "V2",
+        "CANONICAL_ISO3": "EAR",
+        "CODE_SYSTEM": "PROJECT_MAPPING",
+        "COUNTRY_NAME": "Early-demographic dividend",
+        "ENTITY_TYPE": "aggregate",
+        "IDENTITY_MAPPING_STATUS": "aggregate_excluded",
+        "IS_AGGREGATE": true,
+        "SOURCE_ENTITY_CODE": "EAR"
+      },
+      {
+        "CANONICAL_ISO2": "Z4",
+        "CANONICAL_ISO3": "EAS",
+        "CODE_SYSTEM": "PROJECT_MAPPING",
+        "COUNTRY_NAME": "East Asia & Pacific",
+        "ENTITY_TYPE": "aggregate",
+        "IDENTITY_MAPPING_STATUS": "aggregate_excluded",
+        "IS_AGGREGATE": true,
+        "SOURCE_ENTITY_CODE": "EAS"
+      },
+      {
+        "CANONICAL_ISO2": "7E",
+        "CANONICAL_ISO3": "ECA",
+        "CODE_SYSTEM": "PROJECT_MAPPING",
+        "COUNTRY_NAME": "Europe & Central Asia (excluding high income)",
+        "ENTITY_TYPE": "aggregate",
+        "IDENTITY_MAPPING_STATUS": "aggregate_excluded",
+        "IS_AGGREGATE": true,
+        "SOURCE_ENTITY_CODE": "ECA"
+      },
+      {
+        "CANONICAL_ISO2": "Z7",
+        "CANONICAL_ISO3": "ECS",
+        "CODE_SYSTEM": "PROJECT_MAPPING",
+        "COUNTRY_NAME": "Europe & Central Asia",
+        "ENTITY_TYPE": "aggregate",
+        "IDENTITY_MAPPING_STATUS": "aggregate_excluded",
+        "IS_AGGREGATE": true,
+        "SOURCE_ENTITY_CODE": "ECS"
+      },
+      {
+        "CANONICAL_ISO2": "XC",
+        "CANONICAL_ISO3": "EMU",
+        "CODE_SYSTEM": "PROJECT_MAPPING",
+        "COUNTRY_NAME": "Euro area",
+        "ENTITY_TYPE": "aggregate",
+        "IDENTITY_MAPPING_STATUS": "aggregate_excluded",
+        "IS_AGGREGATE": true,
+        "SOURCE_ENTITY_CODE": "EMU"
+      },
+      {
+        "CANONICAL_ISO2": "EU",
+        "CANONICAL_ISO3": "EUU",
+        "CODE_SYSTEM": "PROJECT_MAPPING",
+        "COUNTRY_NAME": "European Union",
+        "ENTITY_TYPE": "aggregate",
+        "IDENTITY_MAPPING_STATUS": "aggregate_excluded",
+        "IS_AGGREGATE": true,
+        "SOURCE_ENTITY_CODE": "EUU"
+      },
+      {
+        "CANONICAL_ISO2": "6F",
+        "CANONICAL_ISO3": "FXS",
+        "CODE_SYSTEM": "PROJECT_MAPPING",
+        "COUNTRY_NAME": "IDA countries classified as fragile situations, excluding Sub-Saharan Africa",
+        "ENTITY_TYPE": "aggregate",
+        "IDENTITY_MAPPING_STATUS": "aggregate_excluded",
+        "IS_AGGREGATE": true,
+        "SOURCE_ENTITY_CODE": "FXS"
+      },
+      {
+        "CANONICAL_ISO2": "XD",
+        "CANONICAL_ISO3": "HIC",
+        "CODE_SYSTEM": "PROJECT_MAPPING",
+        "COUNTRY_NAME": "High income",
+        "ENTITY_TYPE": "aggregate",
+        "IDENTITY_MAPPING_STATUS": "aggregate_excluded",
+        "IS_AGGREGATE": true,
+        "SOURCE_ENTITY_CODE": "HIC"
+      },
+      {
+        "CANONICAL_ISO2": "XE",
+        "CANONICAL_ISO3": "HPC",
+        "CODE_SYSTEM": "PROJECT_MAPPING",
+        "COUNTRY_NAME": "Heavily indebted poor countries (HIPC)",
+        "ENTITY_TYPE": "aggregate",
+        "IDENTITY_MAPPING_STATUS": "aggregate_excluded",
+        "IS_AGGREGATE": true,
+        "SOURCE_ENTITY_CODE": "HPC"
+      },
+      {
+        "CANONICAL_ISO2": "ZB",
+        "CANONICAL_ISO3": "IBB",
+        "CODE_SYSTEM": "PROJECT_MAPPING",
+        "COUNTRY_NAME": "IBRD, including blend",
+        "ENTITY_TYPE": "aggregate",
+        "IDENTITY_MAPPING_STATUS": "aggregate_excluded",
+        "IS_AGGREGATE": true,
+        "SOURCE_ENTITY_CODE": "IBB"
+      },
+      {
+        "CANONICAL_ISO2": "XF",
+        "CANONICAL_ISO3": "IBD",
+        "CODE_SYSTEM": "PROJECT_MAPPING",
+        "COUNTRY_NAME": "IBRD only",
+        "ENTITY_TYPE": "aggregate",
+        "IDENTITY_MAPPING_STATUS": "aggregate_excluded",
+        "IS_AGGREGATE": true,
+        "SOURCE_ENTITY_CODE": "IBD"
+      },
+      {
+        "CANONICAL_ISO2": "ZT",
+        "CANONICAL_ISO3": "IBT",
+        "CODE_SYSTEM": "PROJECT_MAPPING",
+        "COUNTRY_NAME": "IDA & IBRD total",
+        "ENTITY_TYPE": "aggregate",
+        "IDENTITY_MAPPING_STATUS": "aggregate_excluded",
+        "IS_AGGREGATE": true,
+        "SOURCE_ENTITY_CODE": "IBT"
+      },
+      {
+        "CANONICAL_ISO2": "XG",
+        "CANONICAL_ISO3": "IDA",
+        "CODE_SYSTEM": "PROJECT_MAPPING",
+        "COUNTRY_NAME": "IDA total",
+        "ENTITY_TYPE": "aggregate",
+        "IDENTITY_MAPPING_STATUS": "aggregate_excluded",
+        "IS_AGGREGATE": true,
+        "SOURCE_ENTITY_CODE": "IDA"
+      },
+      {
+        "CANONICAL_ISO2": "XH",
+        "CANONICAL_ISO3": "IDB",
+        "CODE_SYSTEM": "PROJECT_MAPPING",
+        "COUNTRY_NAME": "IDA blend",
+        "ENTITY_TYPE": "aggregate",
+        "IDENTITY_MAPPING_STATUS": "aggregate_excluded",
+        "IS_AGGREGATE": true,
+        "SOURCE_ENTITY_CODE": "IDB"
+      },
+      {
+        "CANONICAL_ISO2": "XI",
+        "CANONICAL_ISO3": "IDX",
+        "CODE_SYSTEM": "PROJECT_MAPPING",
+        "COUNTRY_NAME": "IDA only",
+        "ENTITY_TYPE": "aggregate",
+        "IDENTITY_MAPPING_STATUS": "aggregate_excluded",
+        "IS_AGGREGATE": true,
+        "SOURCE_ENTITY_CODE": "IDX"
+      },
+      {
+        "CANONICAL_ISO2": "XY",
+        "CANONICAL_ISO3": "INX",
+        "CODE_SYSTEM": "PROJECT_MAPPING",
+        "COUNTRY_NAME": "Not classified",
+        "ENTITY_TYPE": "aggregate",
+        "IDENTITY_MAPPING_STATUS": "aggregate_excluded",
+        "IS_AGGREGATE": true,
+        "SOURCE_ENTITY_CODE": "INX"
+      },
+      {
+        "CANONICAL_ISO2": "XJ",
+        "CANONICAL_ISO3": "LAC",
+        "CODE_SYSTEM": "PROJECT_MAPPING",
+        "COUNTRY_NAME": "Latin America & Caribbean (excluding high income)",
+        "ENTITY_TYPE": "aggregate",
+        "IDENTITY_MAPPING_STATUS": "aggregate_excluded",
+        "IS_AGGREGATE": true,
+        "SOURCE_ENTITY_CODE": "LAC"
+      },
+      {
+        "CANONICAL_ISO2": "ZJ",
+        "CANONICAL_ISO3": "LCN",
+        "CODE_SYSTEM": "PROJECT_MAPPING",
+        "COUNTRY_NAME": "Latin America & Caribbean ",
+        "ENTITY_TYPE": "aggregate",
+        "IDENTITY_MAPPING_STATUS": "aggregate_excluded",
+        "IS_AGGREGATE": true,
+        "SOURCE_ENTITY_CODE": "LCN"
+      },
+      {
+        "CANONICAL_ISO2": "XL",
+        "CANONICAL_ISO3": "LDC",
+        "CODE_SYSTEM": "PROJECT_MAPPING",
+        "COUNTRY_NAME": "Least developed countries: UN classification",
+        "ENTITY_TYPE": "aggregate",
+        "IDENTITY_MAPPING_STATUS": "aggregate_excluded",
+        "IS_AGGREGATE": true,
+        "SOURCE_ENTITY_CODE": "LDC"
+      },
+      {
+        "CANONICAL_ISO2": "XM",
+        "CANONICAL_ISO3": "LIC",
+        "CODE_SYSTEM": "PROJECT_MAPPING",
+        "COUNTRY_NAME": "Low income",
+        "ENTITY_TYPE": "aggregate",
+        "IDENTITY_MAPPING_STATUS": "aggregate_excluded",
+        "IS_AGGREGATE": true,
+        "SOURCE_ENTITY_CODE": "LIC"
+      },
+      {
+        "CANONICAL_ISO2": "XN",
+        "CANONICAL_ISO3": "LMC",
+        "CODE_SYSTEM": "PROJECT_MAPPING",
+        "COUNTRY_NAME": "Lower middle income",
+        "ENTITY_TYPE": "aggregate",
+        "IDENTITY_MAPPING_STATUS": "aggregate_excluded",
+        "IS_AGGREGATE": true,
+        "SOURCE_ENTITY_CODE": "LMC"
+      },
+      {
+        "CANONICAL_ISO2": "XO",
+        "CANONICAL_ISO3": "LMY",
+        "CODE_SYSTEM": "PROJECT_MAPPING",
+        "COUNTRY_NAME": "Low & middle income",
+        "ENTITY_TYPE": "aggregate",
+        "IDENTITY_MAPPING_STATUS": "aggregate_excluded",
+        "IS_AGGREGATE": true,
+        "SOURCE_ENTITY_CODE": "LMY"
+      },
+      {
+        "CANONICAL_ISO2": "V3",
+        "CANONICAL_ISO3": "LTE",
+        "CODE_SYSTEM": "PROJECT_MAPPING",
+        "COUNTRY_NAME": "Late-demographic dividend",
+        "ENTITY_TYPE": "aggregate",
+        "IDENTITY_MAPPING_STATUS": "aggregate_excluded",
+        "IS_AGGREGATE": true,
+        "SOURCE_ENTITY_CODE": "LTE"
+      },
+      {
+        "CANONICAL_ISO2": "M1",
+        "CANONICAL_ISO3": "MDE",
+        "CODE_SYSTEM": "PROJECT_MAPPING",
+        "COUNTRY_NAME": "Middle East (developing only)",
+        "ENTITY_TYPE": "aggregate",
+        "IDENTITY_MAPPING_STATUS": "aggregate_excluded",
+        "IS_AGGREGATE": true,
+        "SOURCE_ENTITY_CODE": "MDE"
+      },
+      {
+        "CANONICAL_ISO2": "ZQ",
+        "CANONICAL_ISO3": "MEA",
+        "CODE_SYSTEM": "PROJECT_MAPPING",
+        "COUNTRY_NAME": "Middle East, North Africa, Afghanistan & Pakistan",
+        "ENTITY_TYPE": "aggregate",
+        "IDENTITY_MAPPING_STATUS": "aggregate_excluded",
+        "IS_AGGREGATE": true,
+        "SOURCE_ENTITY_CODE": "MEA"
+      },
+      {
+        "CANONICAL_ISO2": "XP",
+        "CANONICAL_ISO3": "MIC",
+        "CODE_SYSTEM": "PROJECT_MAPPING",
+        "COUNTRY_NAME": "Middle income",
+        "ENTITY_TYPE": "aggregate",
+        "IDENTITY_MAPPING_STATUS": "aggregate_excluded",
+        "IS_AGGREGATE": true,
+        "SOURCE_ENTITY_CODE": "MIC"
+      },
+      {
+        "CANONICAL_ISO2": "XQ",
+        "CANONICAL_ISO3": "MNA",
+        "CODE_SYSTEM": "PROJECT_MAPPING",
+        "COUNTRY_NAME": "Middle East, North Africa, Afghanistan & Pakistan (excluding high income)",
+        "ENTITY_TYPE": "aggregate",
+        "IDENTITY_MAPPING_STATUS": "aggregate_excluded",
+        "IS_AGGREGATE": true,
+        "SOURCE_ENTITY_CODE": "MNA"
+      },
+      {
+        "CANONICAL_ISO2": "XU",
+        "CANONICAL_ISO3": "NAC",
+        "CODE_SYSTEM": "PROJECT_MAPPING",
+        "COUNTRY_NAME": "North America",
+        "ENTITY_TYPE": "aggregate",
+        "IDENTITY_MAPPING_STATUS": "aggregate_excluded",
+        "IS_AGGREGATE": true,
+        "SOURCE_ENTITY_CODE": "NAC"
+      },
+      {
+        "CANONICAL_ISO2": "M2",
+        "CANONICAL_ISO3": "NAF",
+        "CODE_SYSTEM": "PROJECT_MAPPING",
+        "COUNTRY_NAME": "North Africa",
+        "ENTITY_TYPE": "aggregate",
+        "IDENTITY_MAPPING_STATUS": "aggregate_excluded",
+        "IS_AGGREGATE": true,
+        "SOURCE_ENTITY_CODE": "NAF"
+      },
+      {
+        "CANONICAL_ISO2": "6X",
+        "CANONICAL_ISO3": "NRS",
+        "CODE_SYSTEM": "PROJECT_MAPPING",
+        "COUNTRY_NAME": "Non-resource rich Sub-Saharan Africa countries",
+        "ENTITY_TYPE": "aggregate",
+        "IDENTITY_MAPPING_STATUS": "aggregate_excluded",
+        "IS_AGGREGATE": true,
+        "SOURCE_ENTITY_CODE": "NRS"
+      },
+      {
+        "CANONICAL_ISO2": "6N",
+        "CANONICAL_ISO3": "NXS",
+        "CODE_SYSTEM": "PROJECT_MAPPING",
+        "COUNTRY_NAME": "IDA countries not classified as fragile situations, excluding Sub-Saharan Africa",
+        "ENTITY_TYPE": "aggregate",
+        "IDENTITY_MAPPING_STATUS": "aggregate_excluded",
+        "IS_AGGREGATE": true,
+        "SOURCE_ENTITY_CODE": "NXS"
+      },
+      {
+        "CANONICAL_ISO2": "OE",
+        "CANONICAL_ISO3": "OED",
+        "CODE_SYSTEM": "PROJECT_MAPPING",
+        "COUNTRY_NAME": "OECD members",
+        "ENTITY_TYPE": "aggregate",
+        "IDENTITY_MAPPING_STATUS": "aggregate_excluded",
+        "IS_AGGREGATE": true,
+        "SOURCE_ENTITY_CODE": "OED"
+      },
+      {
+        "CANONICAL_ISO2": "S4",
+        "CANONICAL_ISO3": "OSS",
+        "CODE_SYSTEM": "PROJECT_MAPPING",
+        "COUNTRY_NAME": "Other small states",
+        "ENTITY_TYPE": "aggregate",
+        "IDENTITY_MAPPING_STATUS": "aggregate_excluded",
+        "IS_AGGREGATE": true,
+        "SOURCE_ENTITY_CODE": "OSS"
+      },
+      {
+        "CANONICAL_ISO2": "V1",
+        "CANONICAL_ISO3": "PRE",
+        "CODE_SYSTEM": "PROJECT_MAPPING",
+        "COUNTRY_NAME": "Pre-demographic dividend",
+        "ENTITY_TYPE": "aggregate",
+        "IDENTITY_MAPPING_STATUS": "aggregate_excluded",
+        "IS_AGGREGATE": true,
+        "SOURCE_ENTITY_CODE": "PRE"
+      },
+      {
+        "CANONICAL_ISO2": "S2",
+        "CANONICAL_ISO3": "PSS",
+        "CODE_SYSTEM": "PROJECT_MAPPING",
+        "COUNTRY_NAME": "Pacific island small states",
+        "ENTITY_TYPE": "aggregate",
+        "IDENTITY_MAPPING_STATUS": "aggregate_excluded",
+        "IS_AGGREGATE": true,
+        "SOURCE_ENTITY_CODE": "PSS"
+      },
+      {
+        "CANONICAL_ISO2": "V4",
+        "CANONICAL_ISO3": "PST",
+        "CODE_SYSTEM": "PROJECT_MAPPING",
+        "COUNTRY_NAME": "Post-demographic dividend",
+        "ENTITY_TYPE": "aggregate",
+        "IDENTITY_MAPPING_STATUS": "aggregate_excluded",
+        "IS_AGGREGATE": true,
+        "SOURCE_ENTITY_CODE": "PST"
+      },
+      {
+        "CANONICAL_ISO2": "R6",
+        "CANONICAL_ISO3": "RRS",
+        "CODE_SYSTEM": "PROJECT_MAPPING",
+        "COUNTRY_NAME": "Resource rich Sub-Saharan Africa countries",
+        "ENTITY_TYPE": "aggregate",
+        "IDENTITY_MAPPING_STATUS": "aggregate_excluded",
+        "IS_AGGREGATE": true,
+        "SOURCE_ENTITY_CODE": "RRS"
+      },
+      {
+        "CANONICAL_ISO2": "8S",
+        "CANONICAL_ISO3": "SAS",
+        "CODE_SYSTEM": "PROJECT_MAPPING",
+        "COUNTRY_NAME": "South Asia",
+        "ENTITY_TYPE": "aggregate",
+        "IDENTITY_MAPPING_STATUS": "aggregate_excluded",
+        "IS_AGGREGATE": true,
+        "SOURCE_ENTITY_CODE": "SAS"
+      },
+      {
+        "CANONICAL_ISO2": "ZF",
+        "CANONICAL_ISO3": "SSA",
+        "CODE_SYSTEM": "PROJECT_MAPPING",
+        "COUNTRY_NAME": "Sub-Saharan Africa (excluding high income)",
+        "ENTITY_TYPE": "aggregate",
+        "IDENTITY_MAPPING_STATUS": "aggregate_excluded",
+        "IS_AGGREGATE": true,
+        "SOURCE_ENTITY_CODE": "SSA"
+      },
+      {
+        "CANONICAL_ISO2": "ZG",
+        "CANONICAL_ISO3": "SSF",
+        "CODE_SYSTEM": "PROJECT_MAPPING",
+        "COUNTRY_NAME": "Sub-Saharan Africa ",
+        "ENTITY_TYPE": "aggregate",
+        "IDENTITY_MAPPING_STATUS": "aggregate_excluded",
+        "IS_AGGREGATE": true,
+        "SOURCE_ENTITY_CODE": "SSF"
+      },
+      {
+        "CANONICAL_ISO2": "S1",
+        "CANONICAL_ISO3": "SST",
+        "CODE_SYSTEM": "PROJECT_MAPPING",
+        "COUNTRY_NAME": "Small states",
+        "ENTITY_TYPE": "aggregate",
+        "IDENTITY_MAPPING_STATUS": "aggregate_excluded",
+        "IS_AGGREGATE": true,
+        "SOURCE_ENTITY_CODE": "SST"
+      },
+      {
+        "CANONICAL_ISO2": "A4",
+        "CANONICAL_ISO3": "SXZ",
+        "CODE_SYSTEM": "PROJECT_MAPPING",
+        "COUNTRY_NAME": "Sub-Saharan Africa excluding South Africa",
+        "ENTITY_TYPE": "aggregate",
+        "IDENTITY_MAPPING_STATUS": "aggregate_excluded",
+        "IS_AGGREGATE": true,
+        "SOURCE_ENTITY_CODE": "SXZ"
+      },
+      {
+        "CANONICAL_ISO2": "T4",
+        "CANONICAL_ISO3": "TEA",
+        "CODE_SYSTEM": "PROJECT_MAPPING",
+        "COUNTRY_NAME": "East Asia & Pacific (IDA & IBRD countries)",
+        "ENTITY_TYPE": "aggregate",
+        "IDENTITY_MAPPING_STATUS": "aggregate_excluded",
+        "IS_AGGREGATE": true,
+        "SOURCE_ENTITY_CODE": "TEA"
+      },
+      {
+        "CANONICAL_ISO2": "T7",
+        "CANONICAL_ISO3": "TEC",
+        "CODE_SYSTEM": "PROJECT_MAPPING",
+        "COUNTRY_NAME": "Europe & Central Asia (IDA & IBRD countries)",
+        "ENTITY_TYPE": "aggregate",
+        "IDENTITY_MAPPING_STATUS": "aggregate_excluded",
+        "IS_AGGREGATE": true,
+        "SOURCE_ENTITY_CODE": "TEC"
+      },
+      {
+        "CANONICAL_ISO2": "T2",
+        "CANONICAL_ISO3": "TLA",
+        "CODE_SYSTEM": "PROJECT_MAPPING",
+        "COUNTRY_NAME": "Latin America & the Caribbean (IDA & IBRD countries)",
+        "ENTITY_TYPE": "aggregate",
+        "IDENTITY_MAPPING_STATUS": "aggregate_excluded",
+        "IS_AGGREGATE": true,
+        "SOURCE_ENTITY_CODE": "TLA"
+      },
+      {
+        "CANONICAL_ISO2": "T3",
+        "CANONICAL_ISO3": "TMN",
+        "CODE_SYSTEM": "PROJECT_MAPPING",
+        "COUNTRY_NAME": "Middle East, North Africa, Afghanistan & Pakistan (IDA & IBRD)",
+        "ENTITY_TYPE": "aggregate",
+        "IDENTITY_MAPPING_STATUS": "aggregate_excluded",
+        "IS_AGGREGATE": true,
+        "SOURCE_ENTITY_CODE": "TMN"
+      },
+      {
+        "CANONICAL_ISO2": "T5",
+        "CANONICAL_ISO3": "TSA",
+        "CODE_SYSTEM": "PROJECT_MAPPING",
+        "COUNTRY_NAME": "South Asia (IDA & IBRD)",
+        "ENTITY_TYPE": "aggregate",
+        "IDENTITY_MAPPING_STATUS": "aggregate_excluded",
+        "IS_AGGREGATE": true,
+        "SOURCE_ENTITY_CODE": "TSA"
+      },
+      {
+        "CANONICAL_ISO2": "T6",
+        "CANONICAL_ISO3": "TSS",
+        "CODE_SYSTEM": "PROJECT_MAPPING",
+        "COUNTRY_NAME": "Sub-Saharan Africa (IDA & IBRD countries)",
+        "ENTITY_TYPE": "aggregate",
+        "IDENTITY_MAPPING_STATUS": "aggregate_excluded",
+        "IS_AGGREGATE": true,
+        "SOURCE_ENTITY_CODE": "TSS"
+      },
+      {
+        "CANONICAL_ISO2": "XT",
+        "CANONICAL_ISO3": "UMC",
+        "CODE_SYSTEM": "PROJECT_MAPPING",
+        "COUNTRY_NAME": "Upper middle income",
+        "ENTITY_TYPE": "aggregate",
+        "IDENTITY_MAPPING_STATUS": "aggregate_excluded",
+        "IS_AGGREGATE": true,
+        "SOURCE_ENTITY_CODE": "UMC"
+      },
+      {
+        "CANONICAL_ISO2": "1W",
+        "CANONICAL_ISO3": "WLD",
+        "CODE_SYSTEM": "PROJECT_MAPPING",
+        "COUNTRY_NAME": "World",
+        "ENTITY_TYPE": "aggregate",
+        "IDENTITY_MAPPING_STATUS": "aggregate_excluded",
+        "IS_AGGREGATE": true,
+        "SOURCE_ENTITY_CODE": "WLD"
+      },
+      {
+        "CANONICAL_ISO2": "A5",
+        "CANONICAL_ISO3": "XZN",
+        "CODE_SYSTEM": "PROJECT_MAPPING",
+        "COUNTRY_NAME": "Sub-Saharan Africa excluding South Africa and Nigeria",
+        "ENTITY_TYPE": "aggregate",
+        "IDENTITY_MAPPING_STATUS": "aggregate_excluded",
+        "IS_AGGREGATE": true,
+        "SOURCE_ENTITY_CODE": "XZN"
+      }
+    ]
+  },
+  "indicator_codes": [
+    "SP.POP.TOTL",
+    "EN.POP.DNST",
+    "SP.POP.65UP.TO.ZS",
+    "NY.GDP.PCAP.KD",
+    "SH.XPD.CHEX.PP.CD"
+  ],
+  "null_value_count": 102,
+  "observation_checksum": "372906f371e0391f76bbe5e2dad27069e798b50e8a1a1b35056c6af8a109d762",
+  "retrieved_at": "2026-07-29T18:04:35Z",
+  "row_count": 3255,
+  "snapshot_id": "wdi2-2019-2021-372906f371e0391f",
+  "snapshot_schema_version": 1,
+  "source_id": 2,
+  "source_last_updated": "2026-07-13",
+  "source_name": "World Development Indicators",
+  "warnings": [],
+  "years": [
+    2019,
+    2020,
+    2021
+  ]
+}

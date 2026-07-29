@@ -1,11 +1,17 @@
 # COVID-19 Analytics Platform
 
-A bootcamp data-engineering project that combines World Bank population data,
+A bootcamp data-engineering project that combines versioned World Development
+Indicators country context and a separately frozen COVID population denominator,
 Snowflake analytics, a FastAPI service, MongoDB, and Redis. The repository
 provides a reproducible development and container environment, Snowflake setup
-and transformations, population ingestion, cached analytical APIs, automated
+and transformations, deterministic snapshot ingestion, cached analytical APIs, automated
 exploratory-data-analysis exports, and a responsive analytical dashboard with
 MongoDB annotations and evaluated time-series forecasts.
+
+The current World Bank architecture is documented in
+[`docs/architecture/world-bank-context.md`](docs/architecture/world-bank-context.md).
+It supersedes the older population-only design while retaining that snapshot as
+the explicit frozen denominator for backward-compatible per-capita rates.
 
 ## Start here: run the project from a new computer
 
@@ -31,6 +37,25 @@ The terminal is the text-based application used to run commands. On Windows,
 use PowerShell; on macOS or Linux, use Terminal. The **repository root** is the
 downloaded project folder containing `README.md`, `compose.yaml`, `setup.ps1`,
 and `setup.sh`. Run every command below from that folder.
+
+### Data-source scope and rationale
+
+The Snowflake Marketplace listing exposes many epidemiological tables, but this
+project intentionally reads only
+`COVID19_EPIDEMIOLOGICAL_DATA.PUBLIC.ECDC_GLOBAL`. Its country/date grain and
+daily case/death measures match the assignment's global comparison, per-capita
+normalization, pattern detection and forecasting questions. Joining unrelated
+provider tables with different geographic or event grains would multiply rows
+and expand the analytical scope without a defined question. The source table is
+therefore allowlisted in SQL, bootstrap checks and Spark export code.
+
+World Development Indicators are a separate external integration, not a
+replacement for fields already available in Snowflake. The project adds only
+non-duplicate analytical context: population density, population aged 65+, real
+GDP per capita and PPP health expenditure, plus source-faithful annual
+population. See the [versioned WDI decision record](docs/architecture/world-bank-context.md)
+for the exact indicators, temporal rationale, coverage gates and why 2019
+baseline values are kept separate from 2019–2021 descriptive change.
 
 ### 1. Create the Snowflake account
 
@@ -232,9 +257,10 @@ The terminal displays **Step X of 9** and performs these operations:
    least-privilege roles; grants the project roles to the configured user.
 4. Reconnects as the newly granted `COVID_PROJECT_ADMIN`, creates the project
    schemas/API grants, verifies Marketplace access, and deploys mapping/staging.
-5. Checksum-validates and loads the committed World Bank population snapshot
-   transactionally; invalid local data never replaces valid published data.
-6. Creates and verifies the enriched MARTS and reporting objects.
+5. Loads the committed WDI history without a network request, validates its
+   manifest, and activates exactly one immutable source snapshot.
+6. Preserves the separately frozen COVID denominator, then creates and verifies
+   the baseline, annual-context, enriched, latest-metrics, and context marts.
 7. The host launcher validates Compose, builds images, and starts FastAPI, Dash,
    MongoDB, and Redis without mounting the Docker socket into a container.
 8. Creates the MongoDB annotations collection/indexes idempotently from the API
@@ -386,8 +412,10 @@ at [Advanced: manual setup and recovery](#advanced-manual-setup-and-recovery).
   matching World Bank population record.
 - Creates a latest-country reporting snapshot and detects sustained case-growth
   patterns with Snowflake `MATCH_RECOGNIZE`.
-- Loads the committed, checksum-verified 2020 World Bank population snapshot
-  into Snowflake; a separate developer command can refresh it from the API.
+- Publishes a committed, checksum-verified 2019–2021 WDI history with one active
+  snapshot, while preserving the original 2020 COVID denominator separately.
+- Exposes metadata-rich baseline and pandemic-period context without allowing
+  socioeconomic values into forecasting.
 - Runs analytical queries against the included Snowflake mart and exports EDA
   results as CSV files.
 - Runs FastAPI, a multi-page Dash interface, MongoDB, and Redis through Compose.
@@ -416,11 +444,13 @@ preference persistence are production-hardening opportunities.
 flowchart LR
     Market[Snowflake Marketplace ECDC data] --> Staging[(COVID_COUNTRY_DAILY)]
     Mapping[(Country-code mapping)] --> Staging
-    WB[World Bank API] --> Loader[Population loader]
-    Loader --> CSV[(Local population CSV)]
-    Loader --> Raw[(Snowflake RAW table)]
+    WB[World Bank API refresh] --> Snapshot[Reviewed CSV + manifest]
+    Snapshot --> Registry[(Historical WDI + active registry)]
+    Registry --> Context[(Baseline + annual context marts)]
+    Legacy[Legacy 2020 population] --> Denominator[(Frozen COVID denominator)]
     Staging --> Marts[(Snowflake COVID_ENRICHED mart)]
-    Raw --> Marts
+    Denominator --> Marts
+    Context --> API
     Marts --> EDA[EDA script]
     EDA --> Reports[(CSV reports)]
 
@@ -454,8 +484,8 @@ flowchart LR
 
 ## Automated setup command reference
 
-The setup automation creates the project-owned Snowflake objects, refreshes the
-population table safely, starts the containers, creates MongoDB indexes, and
+The setup automation creates the project-owned Snowflake objects, publishes the
+committed WDI snapshot offline, preserves the frozen denominator, starts the containers, creates MongoDB indexes, and
 checks the finished application. It stops on the first failed postcondition and
 can resume without repeating completed work.
 
@@ -1000,38 +1030,41 @@ Save and close `.env`.
 > into screenshots, or commit it to Git. The repository is configured to ignore
 > it.
 
-### Step 10 — Load the World Bank population data
+### Step 10 — Publish the committed World Bank context
 
 From the project directory in the terminal, run:
 
 ```bash
-uv run python scripts/load_population.py
+uv run python -m scripts.world_bank_indicators publish
 ```
 
-A successful run should report that it downloaded and loaded approximately 217
-rows. The exact wording may differ because the application uses structured JSON
-logging.
+A successful run validates the committed CSV and manifest, inserts immutable
+historical observations, and leaves exactly one snapshot active. It does not
+download live data.
 
 If the command reports `404 Not Found` for a Snowflake login request, check
 `SNOWFLAKE_ACCOUNT`. It must be the full `organization-account` identifier from
 Step 7.
 
-### Step 11 — Verify the population data
+### Step 11 — Create and verify the country-context objects
 
 In Snowsight, run:
 
 ```text
-sql/04_verify_population_data.sql
+sql/04_create_world_bank_context.sql
 ```
 
 Then run this direct check:
 
 ```sql
-SELECT COUNT(*) AS POPULATION_ROWS
-FROM COVID_ANALYTICS.RAW.WORLD_BANK_POPULATION_2020;
+SELECT SNAPSHOT_ID, ROW_COUNT, COUNTRY_COUNT
+FROM COVID_ANALYTICS.RAW.WORLD_BANK_INDICATOR_SNAPSHOTS
+WHERE IS_ACTIVE;
 ```
 
-The current source normally produces 217 rows.
+The query must return exactly one row. Also run
+`uv run python scripts/verify_world_bank_context.py` for the registry, baseline,
+annual, denominator, and context reconciliation checks.
 
 ### Step 12 — Create the enriched analytical mart
 
@@ -1211,7 +1244,9 @@ The setup is complete only when every item below is true:
 - [ ] `COVID19_EPIDEMIOLOGICAL_DATA` exists.
 - [ ] `COVID_WH` and `COVID_PROJECT_MONITOR` exist.
 - [ ] `COVID_ANALYTICS.STAGING.COVID_COUNTRY_DAILY` contains rows.
-- [ ] `COVID_ANALYTICS.RAW.WORLD_BANK_POPULATION_2020` contains population rows.
+- [ ] `RAW.WORLD_BANK_INDICATOR_SNAPSHOTS` contains exactly one active snapshot.
+- [ ] `MARTS.COUNTRY_COVID_DENOMINATOR` contains frozen population rows.
+- [ ] `MARTS.COUNTRY_BASELINE_2019` contains context-eligible countries.
 - [ ] `COVID_ANALYTICS.MARTS.COVID_ENRICHED` contains rows.
 - [ ] `COVID_ANALYTICS.MARTS.COUNTRY_LATEST_METRICS` contains rows.
 - [ ] `docker compose ps` shows the four application services running.
@@ -1520,25 +1555,25 @@ Install the locked dependencies:
 uv sync --locked
 ```
 
-### 6. Load and verify the World Bank population data
+### 6. Publish and verify the committed World Bank context
 
-Run the loader from the repository root:
+Normal setup uses committed artifacts and never contacts the live API:
 
 ```bash
-uv run python scripts/load_population.py
+uv run python -m scripts.world_bank_indicators publish
 ```
 
-It recreates `COVID_ANALYTICS.RAW.WORLD_BANK_POPULATION_2020` and currently
-loads 217 rows. Then run
-[`sql/04_verify_population_data.sql`](sql/04_verify_population_data.sql) to
-check the row count, missing values, and duplicate country codes.
+This validates and publishes the versioned 2019–2021 WDI snapshot. The legacy
+2020 population file is loaded only when the permanent frozen denominator has
+not yet been seeded. Run [`scripts/verify_world_bank_context.py`](scripts/verify_world_bank_context.py)
+to verify the active snapshot and every downstream context object.
 
 ### 7. Create and verify the enriched mart
 
 Run [`sql/05_create_enriched_view.sql`](sql/05_create_enriched_view.sql). It
-joins the daily COVID-19 view to population data and creates
+joins the daily COVID-19 view only to the frozen denominator and creates
 `COVID_ANALYTICS.MARTS.COVID_ENRICHED` with cumulative, daily, per-100,000, and
-mortality metrics. Its `POPULATION_JOIN_STATUS` distinguishes matched rows,
+mortality metrics. Its `DENOMINATOR_JOIN_STATUS` distinguishes matched rows,
 expected source-unavailable locations, missing codes, and genuine unmatched
 records.
 
@@ -1568,41 +1603,42 @@ COVID19_EPIDEMIOLOGICAL_DATA.PUBLIC.ECDC_GLOBAL
     -> COVID_ANALYTICS.STAGING.COVID_COUNTRY_DAILY
 
 World Bank API
-    -> COVID_ANALYTICS.RAW.WORLD_BANK_POPULATION_2020
+    -> reviewed CSV + manifest + evidence
+    -> RAW.WORLD_BANK_COUNTRY_INDICATORS + snapshot registry
+    -> STAGING current/clean views
+    -> MARTS.COUNTRY_BASELINE_2019 + COUNTRY_INDICATOR_ANNUAL
 
 COVID_ANALYTICS.STAGING.COVID_COUNTRY_DAILY
-    + COVID_ANALYTICS.RAW.WORLD_BANK_POPULATION_2020
+    + MARTS.COUNTRY_COVID_DENOMINATOR (frozen policy object)
     -> COVID_ANALYTICS.MARTS.COVID_ENRICHED
     -> COVID_ANALYTICS.MARTS.COUNTRY_LATEST_METRICS
+
+MARTS.COUNTRY_BASELINE_2019 + MARTS.COUNTRY_INDICATOR_ANNUAL
+    + MARTS.COUNTRY_LATEST_METRICS
+    -> MARTS.COUNTRY_CONTEXT_ANALYSIS
 
 COVID_ANALYTICS.STAGING.COVID_COUNTRY_DAILY
     -> COVID_ANALYTICS.MARTS.CASE_INCREASE_PATTERNS
 ```
 
-## Population ingestion
+## World Bank ingestion
 
-The population loader requests country metadata and the `SP.POP.TOTL`
-indicator for 2020 from the World Bank. It writes
-`data/external/world_bank_population_2020.csv` and loads the same rows into
-`COVID_ANALYTICS.RAW.WORLD_BANK_POPULATION_2020`.
+The normal setup publishes the committed, checksum-verified WDI snapshot. A
+network refresh is an explicit review workflow:
 
 After completing the Snowflake setup and configuring `.env`, run:
 
 ```bash
-uv run python scripts/load_population.py
+uv run python -m scripts.world_bank_indicators refresh
+uv run python -m scripts.world_bank_indicators publish
 ```
 
-The configured warehouse, `COVID_ANALYTICS` database, and `RAW` schema must
-already exist. The selected Snowflake role needs permission to use them and to
-create and write tables in the schema. Verify the load with
-`sql/04_verify_population_data.sql`.
-
-The checked-in CSV currently contains 217 country records with ISO-2, ISO-3,
-country name, population, and population year fields.
-
-> **Important:** the loader validates a uniquely named staging table before an
-> atomic swap or rename. A failed refresh removes only staging data and preserves
-> the last known-good `WORLD_BANK_POPULATION_2020` table.
+Refresh downloads all source-2 pages, applies identity and coverage gates, and
+writes immutable candidate files only after validation. Review and commit the
+CSV, manifest, identity report, and coverage report together. The publisher
+retains historical observations, activates one snapshot under a single-writer
+rule, and preserves its predecessor for rollback. The frozen denominator is a
+separate permanent mart and is never updated by WDI publication.
 
 ## Forecasting
 
@@ -1795,15 +1831,19 @@ checks on every push and pull request.
 |   |-- repositories/                   # Snowflake and MongoDB access
 |   |-- services/                       # Cache, analytics, forecasts, annotations
 |   |-- spark_pipeline/                 # Bronze, profiling, transformations
+|   |-- world_bank.py                  # WDI contracts and canonical checksums
 |   |-- config.py                       # Typed environment settings
 |   |-- logging_config.py               # Structured JSON logging
 |   `-- main.py                         # FastAPI factory and lifespan
 |-- data/external/
-|   `-- world_bank_population_2020.csv  # Population snapshot
+|   |-- world_bank_indicators_2019_2021.csv  # Versioned WDI snapshot
+|   `-- world_bank_population_2020.csv       # Frozen denominator seed
 |-- scripts/
 |   |-- clear_cache.py                   # Prefix-scoped Redis invalidation
 |   |-- export_spark_sources.py          # Snowflake -> immutable local batch
 |   |-- load_population.py              # World Bank -> CSV/Snowflake
+|   |-- world_bank_indicators.py         # Explicit WDI refresh/publication
+|   |-- update_covid_denominator.py      # Reviewed denominator lifecycle
 |   |-- run_eda.py                       # Snowflake mart -> CSV reports
 |   |-- run_spark_bronze.py              # Spark ingest/profile/benchmark CLI
 |   `-- setup_mongodb.py                 # Annotation collection and indexes
@@ -1813,10 +1853,11 @@ checks on every push and pull request.
 |   |-- 01_data_exploration.sql          # Marketplace source checks
 |   |-- 02_create_country_mapping.sql    # Normalize country/code exceptions
 |   |-- 03_create_staging_view.sql       # Clean daily and cumulative metrics
-|   |-- 04_verify_population_data.sql    # Population load checks
-|   |-- 05_create_enriched_view.sql      # Population-enriched analytics mart
-|   |-- 06_create_reporting_objects.sql  # Latest snapshot and pattern view
-|   `-- 07_analysis_queries.sql          # Final analytical queries
+|   |-- 04_create_world_bank_context.sql # Versioned context and denominator
+|   |-- 05_create_enriched_view.sql      # Frozen-denominator analytics mart
+|   |-- 06_create_reporting_objects.sql  # Latest/context/pattern objects
+|   |-- 07_analysis_queries.sql          # Final analytical queries
+|   `-- 08_migrate_population_compatibility.sql # Controlled legacy cutover
 |-- .env.example                        # Configuration template
 |-- .pre-commit-config.yaml             # Local Git hooks
 |-- .python-version                     # Exact local/CI Python pin
@@ -1939,14 +1980,14 @@ ss -ltnp
 Repeat with `8050` or `27017` as reported. Setup never kills an unrelated
 process automatically.
 
-### World Bank population refresh fails
+### World Bank context publication fails
 
-Guided setup reads the committed population CSV and checksum manifest, so a
-World Bank outage does not block setup. If snapshot validation fails, restore
-both `data/external/world_bank_population_2020.csv` and
-`data/external/world_bank_population_2020.manifest.json` from Git, then resume.
-The standalone developer refresh command still contacts the World Bank API; a
-failed request or load never replaces previously published valid Snowflake data.
+Guided setup reads the committed WDI CSV and manifest, so a World Bank outage
+does not block setup. If validation fails, restore both
+`data/external/world_bank_indicators_2019_2021.csv` and its `.manifest.json`
+from Git, then resume. Only `python -m scripts.world_bank_indicators refresh`
+contacts the API; a failed candidate never replaces the active Snowflake
+snapshot or changes the frozen denominator.
 
 ### Setup was interrupted with Ctrl+C
 

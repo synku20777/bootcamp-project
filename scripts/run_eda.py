@@ -52,7 +52,7 @@ def main() -> None:
                 COUNT(DISTINCT COUNTRY) AS COUNTRIES,
                 MIN(REPORT_DATE) AS FIRST_DATE,
                 MAX(REPORT_DATE) AS LAST_DATE,
-                COUNT_IF(POPULATION IS NULL)
+                COUNT_IF(COVID_RATE_POPULATION_2020 IS NULL)
                     AS ROWS_WITHOUT_POPULATION
             FROM COVID_ANALYTICS.MARTS.COVID_ENRICHED
         """,
@@ -61,10 +61,10 @@ def main() -> None:
                 COUNTRY,
                 COUNTRY_ISO2,
                 COUNTRY_ISO3,
-                POPULATION_JOIN_STATUS
+                DENOMINATOR_JOIN_STATUS
             FROM COVID_ANALYTICS.MARTS.COVID_ENRICHED
-            WHERE POPULATION IS NULL
-            ORDER BY POPULATION_JOIN_STATUS, COUNTRY
+            WHERE COVID_RATE_POPULATION_2020 IS NULL
+            ORDER BY DENOMINATOR_JOIN_STATUS, COUNTRY
         """,
         "data_corrections": """
             SELECT
@@ -83,14 +83,14 @@ def main() -> None:
             SELECT
                 COUNTRY,
                 REPORT_DATE,
-                POPULATION,
+                COVID_RATE_POPULATION_2020,
                 CASES_CUMULATIVE,
                 DEATHS_CUMULATIVE,
                 CASES_PER_100K,
                 DEATHS_PER_100K,
                 MORTALITY_RATE_PERCENT
             FROM COVID_ANALYTICS.MARTS.COVID_ENRICHED
-            WHERE POPULATION IS NOT NULL
+            WHERE COVID_RATE_POPULATION_2020 IS NOT NULL
             QUALIFY ROW_NUMBER() OVER (
                 PARTITION BY COUNTRY
                 ORDER BY REPORT_DATE DESC

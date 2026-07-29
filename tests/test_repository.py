@@ -18,7 +18,7 @@ class SnowflakeRepositoryTests(unittest.TestCase):
             ("COUNTRY_ISO3",),
             ("LOCATION_KEY",),
             ("REPORT_DATE",),
-            ("POPULATION",),
+            ("COVID_RATE_POPULATION_2020",),
             ("CASES_CUMULATIVE",),
             ("DEATHS_CUMULATIVE",),
             ("CASES_PER_100K",),

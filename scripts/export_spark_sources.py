@@ -23,6 +23,10 @@ REPOSITORY_ROOT = Path(__file__).resolve().parents[1]
 if str(REPOSITORY_ROOT) not in sys.path:
     sys.path.insert(0, str(REPOSITORY_ROOT))
 
+from app.country_context_fingerprint import (  # noqa: E402
+    COUNTRY_CONTEXT_FINGERPRINT_COLUMNS,
+    country_context_fingerprint,
+)
 from app.logging_config import (  # noqa: E402
     configure_logging,
     sanitized_exception_info,
@@ -33,6 +37,10 @@ logger = logging.getLogger(__name__)
 
 DEFAULT_OUTPUT_ROOT = Path("data/source")
 DEFAULT_POPULATION_PATH = Path("data/external/world_bank_population_2020.csv")
+DEFAULT_INDICATORS_PATH = Path("data/external/world_bank_indicators_2019_2021.csv")
+DEFAULT_INDICATORS_MANIFEST_PATH = Path(
+    "data/external/world_bank_indicators_2019_2021.manifest.json"
+)
 
 ECDC_QUERY = """
     SELECT
@@ -57,6 +65,19 @@ MAPPING_QUERY = """
     ORDER BY SOURCE_COUNTRY_NAME, SOURCE_COUNTRY_CODE
 """
 
+COUNTRY_CONTEXT_QUERY = """
+    SELECT
+        ISO3,
+        POPULATION_2020_CONTEXT,
+        POPULATION_DENSITY_2019,
+        POPULATION_AGE_65_PLUS_PCT_2019,
+        REAL_GDP_PER_CAPITA_2019,
+        HEALTH_EXPENDITURE_PER_CAPITA_PPP_2019,
+        SNAPSHOT_ID
+    FROM COVID_ANALYTICS.MARTS.COUNTRY_BASELINE_2019
+    ORDER BY ISO3
+"""
+
 
 def file_sha256(path: Path) -> str:
     digest = hashlib.sha256()
@@ -77,6 +98,17 @@ def export_query(cursor: Any, query: str, output_path: Path) -> int:
             writer.writerows(rows)
             row_count += len(rows)
     return row_count
+
+
+def fetch_context_fingerprint(cursor: Any) -> dict[str, Any]:
+    cursor.execute(COUNTRY_CONTEXT_QUERY)
+    headers = tuple(column[0].upper() for column in cursor.description)
+    if headers != COUNTRY_CONTEXT_FINGERPRINT_COLUMNS:
+        raise RuntimeError("Snowflake country-context fingerprint columns drifted.")
+    rows: list[dict[str, Any]] = []
+    while batch := cursor.fetchmany(10_000):
+        rows.extend(dict(zip(headers, row, strict=True)) for row in batch)
+    return country_context_fingerprint(rows)
 
 
 def _required_environment() -> dict[str, str]:
@@ -123,6 +155,8 @@ def export_source_batch(
     source_batch_id: str,
     output_root: Path,
     population_path: Path,
+    indicators_path: Path = DEFAULT_INDICATORS_PATH,
+    indicators_manifest_path: Path = DEFAULT_INDICATORS_MANIFEST_PATH,
     connection: Any | None = None,
 ) -> Path:
     valid_batch_id(source_batch_id)
@@ -131,6 +165,10 @@ def export_source_batch(
         raise FileExistsError(f"Source batch already exists: {source_batch_id}")
     if not population_path.is_file():
         raise FileNotFoundError("The population source CSV does not exist.")
+    if not indicators_path.is_file() or not indicators_manifest_path.is_file():
+        raise FileNotFoundError(
+            "The committed WDI snapshot or manifest does not exist."
+        )
 
     output_root.mkdir(parents=True, exist_ok=True)
     staging = output_root / f".{source_batch_id}.staging-{uuid4().hex}"
@@ -144,9 +182,12 @@ def export_source_batch(
             ecdc_path = staging / "ecdc_global.csv"
             mapping_path = staging / "country_mapping.csv"
             population_copy = staging / "population.csv"
+            indicators_copy = staging / "world_bank_indicators.csv"
             ecdc_rows = export_query(cursor, ECDC_QUERY, ecdc_path)
             mapping_rows = export_query(cursor, MAPPING_QUERY, mapping_path)
+            snowflake_context_fingerprint = fetch_context_fingerprint(cursor)
             shutil.copy2(population_path, population_copy)
+            shutil.copy2(indicators_path, indicators_copy)
         finally:
             cursor.close()
 
@@ -157,17 +198,26 @@ def export_source_batch(
                 population_copy,
                 _csv_row_count(population_copy),
             ),
+            "indicators": _manifest_entry(
+                indicators_copy,
+                _csv_row_count(indicators_copy),
+            ),
         }
         checksum_payload = "".join(str(files[name]["sha256"]) for name in sorted(files))
         manifest = {
-            "manifest_version": 1,
+            "manifest_version": 2,
             "source_batch_id": source_batch_id,
             "extracted_at_utc": datetime.now(UTC).isoformat(),
             "sources": {
                 "ecdc": "COVID19_EPIDEMIOLOGICAL_DATA.PUBLIC.ECDC_GLOBAL",
                 "mapping": "COVID_ANALYTICS.RAW.COUNTRY_CODE_MAPPING",
                 "population": "World Bank SP.POP.TOTL 2020 snapshot",
+                "indicators": "World Development Indicators source 2, 2019-2021",
             },
+            "world_bank_snapshot_id": json.loads(
+                indicators_manifest_path.read_text(encoding="utf-8")
+            )["snapshot_id"],
+            "snowflake_context_fingerprint": snowflake_context_fingerprint,
             "files": files,
             "batch_sha256": hashlib.sha256(
                 checksum_payload.encode("ascii")
@@ -205,6 +255,16 @@ def parse_args() -> argparse.Namespace:
         type=Path,
         default=DEFAULT_POPULATION_PATH,
     )
+    parser.add_argument(
+        "--indicators-input",
+        type=Path,
+        default=DEFAULT_INDICATORS_PATH,
+    )
+    parser.add_argument(
+        "--indicators-manifest",
+        type=Path,
+        default=DEFAULT_INDICATORS_MANIFEST_PATH,
+    )
     return parser.parse_args()
 
 
@@ -217,6 +277,8 @@ def main() -> None:
             source_batch_id=args.source_batch_id,
             output_root=args.output_root,
             population_path=args.population_input,
+            indicators_path=args.indicators_input,
+            indicators_manifest_path=args.indicators_manifest,
         )
     except Exception as exc:
         logger.exception(

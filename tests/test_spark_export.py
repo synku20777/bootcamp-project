@@ -32,7 +32,7 @@ class FakeCursor:
                 [("Latvia", "LV", "2020-03-01", 1, 0)],
                 [],
             ]
-        else:
+        elif self.executions == 2:
             self.description = [
                 ("SOURCE_COUNTRY_NAME",),
                 ("SOURCE_COUNTRY_CODE",),
@@ -43,6 +43,30 @@ class FakeCursor:
             ]
             self._pending = [
                 [("Namibia", None, "Namibia", "NA", "NAM", True)],
+                [],
+            ]
+        else:
+            self.description = [
+                ("ISO3",),
+                ("POPULATION_2020_CONTEXT",),
+                ("POPULATION_DENSITY_2019",),
+                ("POPULATION_AGE_65_PLUS_PCT_2019",),
+                ("REAL_GDP_PER_CAPITA_2019",),
+                ("HEALTH_EXPENDITURE_PER_CAPITA_PPP_2019",),
+                ("SNAPSHOT_ID",),
+            ]
+            self._pending = [
+                [
+                    (
+                        "LVA",
+                        1_900_449,
+                        30.75,
+                        20.4,
+                        15_328.38,
+                        2_202.67,
+                        "snapshot",
+                    )
+                ],
                 [],
             ]
 
@@ -79,7 +103,7 @@ class SparkSourceExportTests(unittest.TestCase):
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assertIn("--source-batch-id", result.stdout)
 
-    def test_export_uses_two_queries_and_writes_an_immutable_manifest(self) -> None:
+    def test_export_includes_cross_engine_context_fingerprint(self) -> None:
         root = Path("outputs/test-spark-export") / uuid4().hex
         root.mkdir(parents=True)
         try:
@@ -108,10 +132,11 @@ class SparkSourceExportTests(unittest.TestCase):
                 (target / "manifest.json").read_text(encoding="utf-8")
             )
 
-            self.assertEqual(connection.cursor_instance.executions, 2)
+            self.assertEqual(connection.cursor_instance.executions, 3)
             self.assertEqual(manifest["files"]["ecdc"]["row_count"], 1)
             self.assertEqual(manifest["files"]["mapping"]["row_count"], 1)
             self.assertEqual(len(manifest["batch_sha256"]), 64)
+            self.assertEqual(manifest["snowflake_context_fingerprint"]["row_count"], 1)
             with self.assertRaises(FileExistsError):
                 export_source_batch(
                     source_batch_id="fixture-v1",

@@ -9,20 +9,20 @@ Implementation report
 
 ## 1. Executive summary
 
-This project integrates the free Snowflake Marketplace COVID-19 Epidemiological Data share with a checksum-verified World Bank 2020 population snapshot. Snowflake owns the analytical truth, PySpark demonstrates an immutable Bronze and profiling path, FastAPI exposes typed analytical and forecasting contracts, Redis protects the Snowflake trial budget, MongoDB stores user annotations, and Dash provides six interactive pages.
+This project integrates the free Snowflake Marketplace COVID-19 Epidemiological Data share with a versioned, checksum-verified World Development Indicators history for 2019–2021. A source-faithful active WDI snapshot supplies country context, while a separately frozen 2020 population denominator preserves existing epidemiological rates. Snowflake owns the analytical truth, PySpark demonstrates an immutable Bronze and profiling path, FastAPI exposes typed analytical and forecasting contracts, Redis protects the Snowflake trial budget, MongoDB stores user annotations, and Dash provides six interactive pages.
 
 The implementation now covers every required in-repository functional task. Forecasting was the final missing requirement and is implemented as a transparent comparison between a 7-day mean and a recent linear trend. The selected model is chosen by rolling temporal holdout MAE, reports both MAE and RMSE, and returns a descriptive 90% empirical error band. Clustering remains unimplemented because it is explicitly a bonus item. Final submission publication and clean-environment acceptance evidence remain release steps rather than code gaps.
 
 The strongest engineering qualities are reproducibility, explicit data contracts, least-privilege access, source-correction fidelity, bounded warehouse queries, fail-closed cache protection, and unusually careful Spark evidence. The project does not claim Spark is faster at this data volume: three common “optimizations” measured slower, while caching a reused frame and writing one appropriately sized Parquet file measured faster.
 
-At review time, 77 application, API, dashboard, repository, ingestion, and forecasting tests passed. Ruff and Black passed. Docker Compose configuration parsed successfully. A fresh Spark test run was not completed on the review host because Java was not installed and Docker Desktop was stopped; the committed Spark evidence is therefore reported as previously generated evidence rather than a newly reproduced benchmark. A final submission should commit and push the working tree and perform one clean-VM acceptance run.
+At review time, 90 application, API, dashboard, repository, ingestion, checksum, export, denominator-lifecycle, and forecasting tests passed. Ruff, isort, and Black passed. Docker Compose configuration parsed successfully. Live Snowflake publication, mart verification, API smoke testing, and row-level migration reconciliation passed. A fresh Spark test run was not completed on the review host because Java was not installed and Docker Desktop was stopped; historical Spark timing evidence is therefore separated from the new, executable WDI equivalence gate. A final submission should commit and push the working tree and perform one clean-VM acceptance run.
 
 ## 2. Requirement compliance
 
 | Assignment task | Status | Implementation evidence | Qualification |
 | --- | --- | --- | --- |
 | 1. Marketplace data and resource monitor | Complete | Imported ECDC source contract; AWS Stockholm setup instructions; 5-credit monthly monitor; X-Small warehouse; 60-second auto-suspend | Marketplace installation remains a manual account action because it requires the student's Snowflake account acceptance |
-| 2. Exploration and enhancement | Complete | Reusable SQL EDA, automated CSV exports, explicit Spark profiling, World Bank population integration, normalized per-capita and mortality metrics | The external source is population only; GDP and median age were optional examples, not requirements |
+| 2. Exploration and enhancement | Complete | Reusable SQL EDA, automated CSV exports, explicit Spark profiling, versioned WDI population, density, age, real-GDP-per-capita and health-expenditure context, normalized per-capita and mortality metrics | Pandemic-period indicator changes are descriptive and make no causal claim |
 | 3. NoSQL model | Complete | MongoDB annotations with Pydantic validation, canonical analytical identity, UTC dates, and two compound indexes | No database-side JSON Schema validator; API validation is authoritative |
 | 4. Python API | Complete | FastAPI queries Snowflake, reads/writes MongoDB, performs on-the-fly metrics and forecasting, and returns typed JSON | No public authentication or rate limiting |
 | 5. Interactive visualization | Complete | Dash pages for status, overview, country exploration, comparison, forecasting, and annotations | Browser QA should be repeated on the final clean VM |
@@ -39,8 +39,8 @@ At review time, 77 application, API, dashboard, repository, ingestion, and forec
 1. The Snowflake Marketplace ECDC share provides country-level daily cases and deaths.
 2. SQL exploration establishes the real grain, date coverage, null behavior, duplicates, and correction semantics before transformation.
 3. A country mapping table resolves known source exceptions. The staging view aggregates duplicate country-date records, creates stable location keys, and derives cumulative measures while preserving negative daily corrections.
-4. The World Bank snapshot contributes population and ISO identifiers. Its loader validates the local checksum and schema, loads a uniquely named staging table, validates it in Snowflake, and swaps it atomically into the production name.
-5. `COVID_ENRICHED` joins the sources and derives cases and deaths per 100,000, cumulative measures, mortality percentage, join status, and data-correction flags.
+4. The World Bank path preserves immutable historical observations and a snapshot registry. A current-snapshot view selects exactly one active WDI release; identity, allowlist, year, decimal, duplicate and coverage gates run before publication.
+5. `COUNTRY_COVID_DENOMINATOR` preserves the original committed 2020 population values independently. `COVID_ENRICHED` uses only that frozen policy object to derive cases and deaths per 100,000, cumulative measures, mortality percentage, join status, and data-correction flags.
 6. A small transient latest-country table serves overview and identity resolution. A separate pattern view applies `MATCH_RECOGNIZE` to daily data.
 7. FastAPI separates routes, services, typed models, and repositories. Every public Snowflake repository method executes one bounded statement.
 8. Redis serves validated analytical responses and blocks cache stampedes. MongoDB owns user-authored annotations.
@@ -61,9 +61,9 @@ At review time, 77 application, API, dashboard, repository, ingestion, and forec
 
 **Why:** negative daily values are legitimate provider revisions. Replacing them would silently rewrite history. **Tradeoff:** cumulative curves can fall and simple pattern or forecasting logic can be sensitive to corrections. The mart exposes flags, and forecasting retains the raw history while flooring only the model's working copy.
 
-#### Atomic population refresh
+#### Versioned WDI publication and frozen denominator
 
-**Why:** validating a staging table before swap prevents a failed API download or partial write from destroying the last known-good population table. **Tradeoff:** staging, backup, and swap operations add code and require create/rename privileges for the deployment role.
+**Why:** source observations, application policy and analytical timing answer different questions. The immutable WDI history preserves source fidelity; a registry makes the selected snapshot explicit; the 2019 mart provides a pre-pandemic baseline; and the frozen denominator prevents a routine World Bank revision from silently rewriting COVID rates. **Tradeoff:** publication requires two controlled transactions, reconciliation, snapshot-aware caching and a separate denominator approval lifecycle. These controls add code but remove an otherwise hidden semantic dependency.
 
 #### MongoDB for annotations
 
@@ -97,20 +97,36 @@ Automated EDA has two levels. `scripts/run_eda.py` exports coverage, missing pop
 
 ## 5. Data enhancement and analytical model
 
-The committed World Bank file contains 217 population records for 2020 and a manifest with a SHA-256 checksum. Snapshot mode makes supervisor deployment independent of the public API; refresh mode is available to developers who want to retrieve the source again.
+The committed WDI snapshot contains 3,255 observations: 217 non-aggregate economies, five indicators and three years. The 29 July 2026 manifest records 102 null indicator values, no duplicate candidate keys, no identity conflicts, and source last-update date 13 July 2026. Observed minimum coverage was 100% for population and population aged 65+, 99.54% for density, 95.85% for real GDP per capita and 88.94% for PPP health expenditure. Each indicator exceeded its configured publication threshold.
+
+The selected indicators are deliberately non-duplicate analytical variables: `SP.POP.TOTL`, `EN.POP.DNST`, `SP.POP.65UP.TO.ZS`, `NY.GDP.PCAP.KD`, and `SH.XPD.CHEX.PP.CD`. Real GDP per capita is labelled in constant 2015 US dollars and never called total GDP or pandemic impact. Health expenditure is labelled “Current health expenditure per capita, PPP — current international $, 2019”; no health-spending change is calculated because this current-price PPP series is not a real inflation-adjusted time series.
+
+The 2019 values serve as explanatory country context measured before the pandemic. The 2020 and 2021 real-GDP-per-capita values are retained to describe change during the pandemic period. The names `REAL_GDP_PER_CAPITA_CHANGE_*` intentionally avoid causal “impact” language. Population context from the active 2020 WDI observation and the frozen 2020 COVID rate denominator are exposed as separate fields.
 
 The analytical model deliberately favors a narrow serving mart over a full star schema because the source already has a simple country-date grain:
 
 | Object | Type | Purpose |
 | --- | --- | --- |
-| `RAW.WORLD_BANK_POPULATION_2020` | Table | Validated demographic snapshot |
-| `STAGING.COUNTRY_CODE_MAPPING` | Table | Explicit source normalization rules |
+| `RAW.WORLD_BANK_COUNTRY_INDICATORS` | Permanent table | Immutable WDI observations across historical snapshots |
+| `RAW.WORLD_BANK_INDICATOR_SNAPSHOTS` | Permanent table | Publication state, provenance, active snapshot and rollback predecessor |
+| `STAGING.WORLD_BANK_COUNTRY_INDICATORS_CURRENT` | View | Exactly the one active source snapshot |
+| `STAGING.WORLD_BANK_COUNTRY_INDICATORS_CLEAN` | View | Accepted identities, allowlist, years, names and units |
+| `MARTS.DIM_COUNTRY` | Transient table | Canonical COVID country universe and context eligibility |
+| `MARTS.COUNTRY_COVID_DENOMINATOR` | Permanent table | Frozen population policy for per-capita COVID rates |
+| `MARTS.COUNTRY_COVID_DENOMINATOR_HISTORY` | Permanent table | Approved denominator versions retained for rollback |
+| `MARTS.COUNTRY_BASELINE_2019` | Transient table | One context-eligible country row with values and missing statuses |
+| `MARTS.COUNTRY_INDICATOR_ANNUAL` | Transient table | One country/year row retaining all five indicators |
 | `STAGING.COVID_COUNTRY_DAILY` | View | Clean daily grain, stable key, cumulative metrics, correction flags |
-| `MARTS.COVID_ENRICHED` | View | Population join, per-capita metrics, mortality, join status |
+| `MARTS.COVID_ENRICHED` | View | Frozen-denominator join, per-capita metrics, mortality, join status |
 | `MARTS.COUNTRY_LATEST_METRICS` | Transient table | Small precomputed snapshot for overview and identity lookups |
+| `MARTS.COUNTRY_CONTEXT_ANALYSIS` | View | Baseline, latest COVID metrics and descriptive real-GDP-per-capita changes |
 | `MARTS.CASE_INCREASE_PATTERNS` | View | Sustained daily-increase pattern results |
 
-`NULLIF` prevents division by zero. Per-capita metrics use a common population denominator and mortality uses cumulative deaths divided by cumulative confirmed cases. These are reported-data indicators, not estimates of infections or infection fatality.
+`NULLIF` prevents division by zero. Missing observations and zero are never conflated. Per-capita metrics use the frozen denominator and mortality uses cumulative deaths divided by cumulative confirmed cases. These are reported-data indicators, not estimates of infections or infection fatality.
+
+Live Snowflake verification accepted active snapshot `wdi2-2019-2021-372906f371e0391f` with 3,255 observations, 203 frozen-denominator countries, 213 context-eligible baseline rows, 639 annual rows, 213 context rows, and zero duplicate observation keys. Migration reconciliation compared 61,836 canonical ISO3/date rows: no keys were missing, all case, death and denominator values matched exactly, and every per-capita and mortality difference was zero. The 64 old and 64 new rows without canonical ISO3 were reported separately rather than being forced into an unsafe name join.
+
+The explicit denominator planner compared all 203 frozen countries and 59,336 covered COVID rows to the active WDI population. It found zero population or rate differences, so the proposed `v2` plan was correctly marked unapproved: a source refresh cannot manufacture a new denominator version when no policy value changed.
 
 ## 6. NoSQL design
 
@@ -137,7 +153,9 @@ Two non-unique compound indexes support chronological country/date reads and met
 
 ## 7. API implementation and caching
 
-FastAPI exposes liveness, readiness, an explicit Snowflake health check, overview, country summary, time series, comparison, combined dashboard payloads, forecasts, and annotation create/list operations. Swagger documentation is available at `/docs`.
+FastAPI exposes liveness, readiness, an explicit Snowflake health check, overview, country summary, country context, time series, comparison, combined dashboard payloads, forecasts, and annotation create/list operations. Swagger documentation is available at `/docs`.
+
+`GET /countries/{identifier}/context` returns metadata-rich baseline, annual and change fields. Each indicator carries value, missing status, year, unit, code and snapshot ID. The combined Country Explorer response carries the same object without another browser request. The methodology is explicitly `descriptive` and warns that pandemic-period changes do not establish causality.
 
 Security and correctness controls include Pydantic request/response contracts, enum-based metric selection, bind parameters for user values, a least-privilege Snowflake role, sanitized dependency errors, structured request IDs, and no credential fields in dashboard settings. Metric names are interpolated only after an enum-to-column allowlist lookup.
 
@@ -149,7 +167,9 @@ GET /forecast?country=LV&metric=new_cases&days=30&lookback_days=90
 
 It accepts daily cases or deaths, a 1-30-day horizon, and a 42-180-observation window. Snowflake applies the history limit before data crosses the network. The response includes reported history, predictions, lower and upper bounds, both candidates' MAE/RMSE, the selected model, and caveats.
 
-Redis uses versioned canonical keys and validates cached JSON back into the declared Pydantic model. Stable analytical payloads default to 24 hours; forecasts default to 6 hours. A per-key lease prevents concurrent misses from duplicating a Snowflake query. Prefix-scoped invalidation uses incremental `SCAN`, never database-wide `FLUSHDB`.
+Redis uses versioned canonical keys and validates cached JSON back into the declared Pydantic model. Context keys have the visible namespace `covid-api:v3:<snapshot-id>:country-context:<iso3>`, so a newly deployed snapshot cannot reuse stale country context. Stable analytical payloads default to 24 hours; forecasts default to 6 hours. A per-key lease prevents concurrent misses from duplicating a Snowflake query. Prefix-scoped invalidation uses incremental `SCAN`, never database-wide `FLUSHDB`.
+
+The committed manifest is loaded at application startup. If it differs from Snowflake's active snapshot, the context endpoint alone returns `503 context_data_unavailable`. COVID summary, time-series and forecast routes remain available, and the Country Explorer renders epidemiological content with a context warning. This failure boundary prevents optional context rollout from becoming a platform-wide outage.
 
 ## 8. Dashboard implementation
 
@@ -157,7 +177,7 @@ The Dash application provides:
 
 1. **Status:** cheap API, MongoDB, and Redis checks; Snowflake is queried only by an explicit button.
 2. **Overview:** global KPIs, top-ten case/death bars, and cases-per-100,000 choropleth.
-3. **Country Explorer:** country, metric, and date controls plus selected metric, daily case/death, and mortality charts.
+3. **Country Explorer:** country, metric, and date controls; selected metric, daily case/death and mortality charts; explicit COVID denominator; 2019 baseline cards; 2020 population context; and descriptive real-GDP-per-capita changes.
 4. **Comparison:** two to ten countries across cases per 100,000, deaths per 100,000, and mortality.
 5. **Forecast:** model choice, holdout MAE/RMSE, history, 1-30-day forecast, and empirical interval.
 6. **Annotations:** create and filter comments stored in MongoDB.
@@ -190,23 +210,23 @@ The warehouse is intentionally X-Small with 60-second auto-suspend because the p
 
 No clustering key, materialized view, or Search Optimization Service is configured. At 61,900 mart rows, their maintenance and credit cost would likely exceed pruning benefits. This is an optimization decision, not an omission. A future scale trigger should use Query Profile evidence: bytes scanned, partitions pruned, latency percentiles, and credits per representative endpoint.
 
-`COUNTRY_LATEST_METRICS` refreshes inside a transaction so readers never observe an intentionally empty snapshot. The tradeoff is manual refresh orchestration. The population loader's staging/swap workflow similarly favors last-known-good availability over minimal SQL.
+`COUNTRY_LATEST_METRICS` is atomically replaced from the verified enriched view, so readers never observe an intentionally empty snapshot. WDI publication first commits immutable candidate observations and an inactive registry row, then performs a separate controlled activation transaction. If downstream mart verification fails and a predecessor exists, bootstrap reactivates it and rebuilds the previous marts. This favors last-known-good availability over minimal orchestration.
 
 ### 11.2 Spark optimization evidence
 
-The committed evidence was generated on 26 July 2026 with Python 3.12.13, PySpark 3.5.6, Java 17.0.19, `local[2]`, adaptive execution enabled, and 32 shuffle partitions. The immutable source contained 61,900 ECDC rows, 14 mapping rows, and 217 population rows. Every comparison passed ordered-schema, row-count, and order-independent SHA-256 multiset checks before timing.
+The previously committed evidence was generated on 26 July 2026 with Python 3.12.13, PySpark 3.5.6, Java 17.0.19, `local[2]`, adaptive execution enabled, and 32 shuffle partitions. It predates the versioned WDI integration and is retained only as historical optimization evidence. The new pipeline additionally profiles 3,255 WDI observations, validates candidate grain and scope, derives a narrow one-row-per-country baseline, and broadcasts that projection rather than the long-form history. Source export now records the live Snowflake baseline fingerprint: 213 rows, 20,199 canonical bytes, SHA-256 `6fa8fc8208d748a8dfbd2b4d606eb09cf2faae59869dfa52c62f3b3913872d83`. Spark publication fails unless its typed ISO projection produces the same fingerprint. Executing that final comparison remains a release gate because the review host has no Java runtime.
 
 | Comparison | Baseline median | Candidate median | Result | Engineering conclusion |
 | --- | ---: | ---: | --- | --- |
 | Early projection/filter | 309.199 ms | 342.216 ms | 10.7% slower | Keep projection for schema and network discipline, not as a local-speed claim |
-| Broadcast mapping/population | 708.043 ms | 766.993 ms | 8.3% slower | Physical plan improved to two build-right broadcast hash joins, but tiny local input did not amortize setup |
+| Broadcast mapping/frozen denominator | 708.043 ms | 766.993 ms | 8.3% slower | Historical physical plan improved to two build-right broadcast hash joins, but tiny local input did not amortize setup; the new narrow context broadcast must be remeasured |
 | Adaptive duplicate aggregation | 445.400 ms | 586.483 ms | 31.7% slower | AQE remains a scale-safety setting; do not claim a speedup for this fixture |
 | Reused-frame cache | 651.562 ms | 512.305 ms | 21.4% faster | Persist only the frame reused by profiling and transformation, then unpersist in `finally` |
 | File layout | 3,659.314 ms | 1,932.798 ms | 47.2% faster | One output file avoids small-file overhead at this measured size |
 
 The final Parquet output measured 733,769 bytes. Thirteen monthly partitions had a median of only 74,313 bytes, far below the 128 MiB target. The pipeline therefore writes an unpartitioned dataset and coalesces to one file. Partitioning by country or date would create tiny files and scheduler overhead. The decision is recalculated from measured bytes rather than hard-coded as a universal rule.
 
-Explicit schemas and header inspection fail before Bronze publication on drift. Corrupt rows and quality failures are retained as run-local evidence. Immutable source, ingestion, and benchmark IDs prevent silent overwrite. Bronze manifest version 2 records source checksums, the ruleset, quality status, and quality-document checksum. Benchmark evidence is published atomically only if correctness gates pass.
+Explicit schemas and header inspection fail before Bronze publication on drift. The WDI schema uses fixed decimal precision and the canonical `\N` null token. Corrupt rows, duplicate WDI keys, out-of-scope indicators/years and quality failures are retained as run-local evidence. Immutable source, snapshot, ingestion and benchmark IDs prevent silent overwrite. The Bronze manifest records the WDI snapshot ID, Snowflake context fingerprint, source checksums, ruleset, quality status and quality-document checksum. Benchmark evidence version 3 adds baseline rows, canonical broadcast-projection bytes, joined COVID rows, unmatched identities and the Snowflake/Spark fingerprint comparison; it is published atomically only if correctness gates pass.
 
 The key lesson is that Spark optimization is workload-specific. Broadcast and AQE are architecturally sensible at scale but slower here. The report therefore separates physical-plan improvement from elapsed-time improvement and keeps Snowflake SQL/pandas as the production path for the current volume.
 
@@ -228,22 +248,25 @@ Confirmed cases are not infections. Countries differed in testing availability, 
 
 The codebase separates API routes, Pydantic contracts, services, repositories, dashboard components, Spark transformations, SQL, setup scripts, and tests. Non-obvious comments explain why decisions exist: fail-closed cache behavior, immutable publication, source corrections, atomic swaps, temporal validation, empirical intervals, bounded history, broadcast choice, persistence, and file layout. Comments avoid narrating readable syntax.
 
-Dependencies are declared in `pyproject.toml` and resolved in `uv.lock`. Python 3.12 patch compatibility is declared in package metadata, while `.python-version` and Docker pin 3.12.13. Java and PySpark live only in the optional Spark image/group. GitHub Actions runs lock verification, isort, Black, Ruff, 77 application tests, and the Spark fixture suite.
+Dependencies are declared in `pyproject.toml` and resolved in `uv.lock`. Python 3.12 patch compatibility is declared in package metadata, while `.python-version` and Docker pin 3.12.13. Java and PySpark live only in the optional Spark image/group. GitHub Actions runs lock verification, isort, Black, Ruff, 90 application tests, and the Spark fixture suite.
 
 Verification on 29 July 2026:
 
 | Check | Result |
 | --- | --- |
-| Application/unit/contract tests | 77 passed |
+| Application/unit/contract tests | 90 passed |
 | Ruff | Passed |
-| Black | Passed with cache disabled because the review sandbox blocked the user cache path |
+| isort and Black | Passed with a repository-local Black cache |
 | Compose configuration | Parsed successfully |
-| Live Snowflake forecast read | Passed with `COVID_APP_ROLE` |
+| Live Snowflake WDI publication and mart verification | Passed; evidence in `reports/world_bank/snowflake_verification.json` |
+| Legacy/new COVID reconciliation | Passed; 61,836 exact canonical rows and zero tolerance failures |
+| Live context/API smoke | Passed with `COVID_APP_ROLE`; combined page context available |
+| Snowflake context export fingerprint | Passed; 213 baseline rows captured |
 | Docker runtime | Not run; Docker Desktop engine was stopped |
 | Fresh local Spark suite | Not completed; review host had no Java runtime |
 | Committed Spark evidence | Version 2; all five correctness gates passed in the recorded run |
 
-The normal supervisor path requires only Docker plus a Snowflake account. `setup.ps1` or `setup.sh` invokes the containerized bootstrap, validates prerequisites and postconditions, loads the committed population snapshot, deploys marts, starts dependencies, creates MongoDB indexes, and performs smoke checks. Manual recovery instructions are also documented.
+The normal supervisor path requires only Docker plus a Snowflake account. `setup.ps1` or `setup.sh` invokes the containerized bootstrap, validates prerequisites and postconditions, publishes the committed WDI snapshot without a network request, preserves or seeds the frozen denominator, deploys marts, starts dependencies, creates MongoDB indexes, and performs smoke checks. Manual recovery instructions are also documented.
 
 ## 14. Limitations and prioritized next work
 
@@ -279,6 +302,10 @@ uv run black --check --diff .
 uv run ruff check .
 uv run python -m unittest discover -s tests -v
 
+# Intentional WDI refresh and offline publication are separate workflows
+uv run python -m scripts.world_bank_indicators refresh
+uv run python -m scripts.world_bank_indicators publish
+
 # Spark quality and benchmark path
 docker compose --profile spark run --rm spark ingest-profile \
   --source-batch-id ecdc-2020-v1 \
@@ -304,10 +331,11 @@ curl -i "http://localhost:8000/forecast?country=LV&metric=new_cases&days=30&look
 | Exploration and source semantics | `sql/01_data_exploration.sql`, `scripts/run_eda.py` |
 | Country normalization and mart | `sql/02_create_country_mapping.sql` through `sql/05_create_enriched_view.sql` |
 | Snapshot and pattern recognition | `sql/06_create_reporting_objects.sql`, `sql/07_analysis_queries.sql` |
-| Atomic population load | `scripts/load_population.py`, `tests/test_population_loader.py` |
+| Versioned WDI publication and checksums | `app/world_bank.py`, `scripts/world_bank_indicators.py`, `tests/test_world_bank_indicators.py` |
+| Frozen COVID denominator and migration | `sql/04_create_world_bank_context.sql`, `scripts/reconcile_world_bank_migration.py`, `reports/world_bank` |
 | API, caching, and errors | `app/api`, `app/services`, `app/repositories`, `tests/test_api.py`, `tests/test_cache.py` |
 | Forecasting | `app/services/forecasting.py`, `app/services/covid_service.py`, `tests/test_forecasting.py` |
 | MongoDB annotations | `app/repositories/annotation_repository.py`, `app/services/annotation_service.py`, `tests/test_annotations.py` |
 | Dashboard | `app/dashboard`, `tests/test_dashboard.py` |
-| Spark Bronze, profiling, and optimization | `app/spark_pipeline`, `spark_tests`, `reports/spark/evidence.json` |
+| Spark Bronze, profiling, cross-engine fingerprint, and optimization | `app/spark_pipeline`, `scripts/export_spark_sources.py`, `spark_tests`, `reports/spark/evidence.json` |
 | Reproducible deployment | `README.md`, `.env.example`, `compose.yaml`, Dockerfiles, `setup.ps1`, `setup.sh` |

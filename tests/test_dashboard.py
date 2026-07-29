@@ -274,7 +274,7 @@ class DashboardSmokeTests(unittest.TestCase):
                 "iso3": "LVA",
                 "location_key": "LVA",
                 "report_date": "2020-12-14",
-                "population": 1_900_000,
+                "covid_rate_population_2020": 1_900_000,
                 "cases_cumulative": 25_000,
                 "deaths_cumulative": 350,
                 "cases_per_100k": 1315.79,
@@ -285,6 +285,8 @@ class DashboardSmokeTests(unittest.TestCase):
             "daily_cases": {"metric": "new_cases", "points": []},
             "daily_deaths": {"metric": "new_deaths", "points": []},
             "mortality": {"metric": "mortality_rate_percent", "points": []},
+            "context": None,
+            "context_status": "context_data_unavailable",
         }
 
         state = load_country_page(

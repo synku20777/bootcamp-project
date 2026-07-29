@@ -1,0 +1,47 @@
+{
+  "schema_version": 1,
+  "generated_at": "2026-07-29T19:08:56.606106+00:00",
+  "expected_snapshot_id": "wdi2-2019-2021-372906f371e0391f",
+  "results": {
+    "active_snapshot": [
+      {
+        "snapshot_id": "wdi2-2019-2021-372906f371e0391f",
+        "row_count": 3255,
+        "country_count": 217,
+        "null_value_count": 102
+      }
+    ],
+    "object_counts": [
+      {
+        "active_observations": 3255,
+        "denominator_rows": 203,
+        "denominator_history_rows": 0,
+        "baseline_rows": 213,
+        "annual_rows": 639,
+        "context_rows": 213
+      }
+    ],
+    "duplicates": [
+      {
+        "duplicate_keys": 0
+      }
+    ],
+    "latvia_context": [
+      {
+        "iso3": "LVA",
+        "population_2020_context": "1900449.000000000",
+        "covid_rate_population_2020": 1900449,
+        "population_density_2019": "30.755491989",
+        "population_age_65_plus_pct_2019": "20.407227220",
+        "real_gdp_per_capita_2019": "15328.385993330",
+        "health_expenditure_per_capita_ppp_2019": "2202.675929217",
+        "real_gdp_per_capita_change_2020_vs_2019_pct": "-2.789963807200",
+        "real_gdp_per_capita_change_2021_vs_2019_pct": "4.839270163400",
+        "real_gdp_per_capita_change_2021_vs_2020_pct": "7.848195792700",
+        "snapshot_id": "wdi2-2019-2021-372906f371e0391f"
+      }
+    ]
+  },
+  "failures": [],
+  "accepted": true
+}

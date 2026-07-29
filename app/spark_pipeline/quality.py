@@ -47,6 +47,7 @@ def read_bronze_source(
         .option("mode", "PERMISSIVE")
         .option("columnNameOfCorruptRecord", CORRUPT_RECORD_COLUMN)
         .option("dateFormat", "yyyy-MM-dd")
+        .option("nullValue", r"\N")
         .schema(dataset.schema)
         .csv(str(path))
     )
@@ -239,6 +240,67 @@ def evaluate_quality(
         ]
     )
 
+    indicators = frames["indicators"]
+    indicator_columns = profiles["indicators"]["columns"]
+    for column in (
+        "SNAPSHOT_ID",
+        "CANONICAL_ISO3",
+        "INDICATOR_CODE",
+        "OBSERVATION_YEAR",
+    ):
+        checks.append(
+            _check(
+                f"indicators.required.{column.lower()}",
+                "FAIL",
+                indicator_columns[column]["null_count"],
+                "The versioned WDI candidate grain cannot contain null keys.",
+            )
+        )
+    invalid_indicator_scope = indicators.where(
+        ~F.col("INDICATOR_CODE").isin(
+            "SP.POP.TOTL",
+            "EN.POP.DNST",
+            "SP.POP.65UP.TO.ZS",
+            "NY.GDP.PCAP.KD",
+            "SH.XPD.CHEX.PP.CD",
+        )
+        | ~F.col("OBSERVATION_YEAR").isin(2019, 2020, 2021)
+    ).count()
+    duplicate_indicator_keys = (
+        indicators.groupBy(
+            "SNAPSHOT_ID",
+            "CANONICAL_ISO3",
+            "INDICATOR_CODE",
+            "OBSERVATION_YEAR",
+        )
+        .count()
+        .where(F.col("count") > 1)
+        .count()
+    )
+    snapshot_count = indicators.select("SNAPSHOT_ID").distinct().count()
+    checks.extend(
+        [
+            _check(
+                "indicators.allowlist_and_year_scope",
+                "FAIL",
+                invalid_indicator_scope,
+                "Only the five approved WDI indicators for 2019-2021 are allowed.",
+            ),
+            _check(
+                "indicators.duplicate_candidate_key",
+                "FAIL",
+                duplicate_indicator_keys,
+                "Snapshot, ISO3, indicator and year must be unique.",
+            ),
+            _check(
+                "indicators.single_snapshot",
+                "FAIL",
+                abs(snapshot_count - 1),
+                "A Spark source batch must contain exactly one WDI snapshot.",
+            ),
+        ]
+    )
+
     population_columns = profiles["population"]["columns"]
     for column in ("COUNTRY_NAME", "POPULATION", "POPULATION_YEAR"):
         checks.append(
@@ -381,5 +443,16 @@ def evaluate_quality(
         "informational": {
             "negative_case_corrections": negative_cases,
             "negative_death_corrections": negative_deaths,
+            "indicator_nulls_by_year": [
+                row.asDict(recursive=True)
+                for row in indicators.groupBy("INDICATOR_CODE", "OBSERVATION_YEAR")
+                .agg(
+                    F.sum(F.col("INDICATOR_VALUE").isNull().cast("long")).alias(
+                        "null_count"
+                    )
+                )
+                .orderBy("INDICATOR_CODE", "OBSERVATION_YEAR")
+                .collect()
+            ],
         },
     }

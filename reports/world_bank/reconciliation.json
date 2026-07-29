@@ -1,0 +1,28 @@
+{
+  "schema_version": 1,
+  "generated_at": "2026-07-29T18:31:00.424714+00:00",
+  "tolerances": {
+    "cases_and_deaths_per_100k": 0.01,
+    "mortality_percentage_points": 0.0001
+  },
+  "metrics": {
+    "excluded_old_rows_without_iso3": 64,
+    "excluded_new_rows_without_iso3": 64,
+    "compared_row_count": 61836,
+    "missing_old_keys": 0,
+    "missing_new_keys": 0,
+    "exact_matches": 61836,
+    "case_count_differences": 0,
+    "death_count_differences": 0,
+    "population_differences": 0,
+    "case_rate_tolerance_failures": 0,
+    "death_rate_tolerance_failures": 0,
+    "mortality_tolerance_failures": 0,
+    "max_case_rate_abs_diff": "0.00",
+    "max_death_rate_abs_diff": "0.00",
+    "max_mortality_abs_diff": "0.0000",
+    "max_case_rate_rel_diff": "0E-8",
+    "max_death_rate_rel_diff": "0E-8"
+  },
+  "accepted": true
+}

@@ -12,14 +12,24 @@ from app.api.routes_covid import router as covid_router
 from app.api.routes_health import router as health_router
 from app.config import get_settings
 from app.error_handlers import register_error_handlers
+from app.exceptions import DataSourceUnavailableError
 from app.logging_config import configure_logging
 from app.middleware import register_request_middleware
+from app.world_bank_manifest import committed_snapshot_id
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     settings = get_settings()
     app.state.settings = settings
+    try:
+        app.state.world_bank_snapshot_id = committed_snapshot_id(
+            settings.world_bank_manifest_path
+        )
+    except DataSourceUnavailableError:
+        # Optional context is disabled independently; COVID and forecast routes
+        # remain available while deployment artifacts are corrected.
+        app.state.world_bank_snapshot_id = None
     app.state.mongo_client = MongoClient(
         settings.mongodb_uri,
         connect=False,

@@ -6,6 +6,7 @@ __pycache__/
 *.pyc
 .pytest_cache/
 .ruff_cache/
+.black-cache/
 outputs/
 outputs/setup/
 .vscode/
@@ -19,3 +20,5 @@ data/curated/
 !reports/spark/
 !reports/spark/**
 !reports/bootcamp_project_report_2026.md
+!reports/world_bank/
+!reports/world_bank/**

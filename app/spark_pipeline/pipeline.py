@@ -15,6 +15,7 @@ from pyspark import StorageLevel
 from pyspark.sql import DataFrame, SparkSession
 from pyspark.sql import functions as F
 
+from app.country_context_fingerprint import country_context_fingerprint
 from app.spark_pipeline.benchmark import (
     FINGERPRINT_PROTOCOL,
     BenchmarkRunner,
@@ -34,7 +35,9 @@ from app.spark_pipeline.quality import (
 )
 from app.spark_pipeline.schemas import CORRUPT_RECORD_COLUMN, DATASETS
 from app.spark_pipeline.transformations import (
+    country_baseline,
     duplicate_count,
+    enrich_with_country_context,
     enrich_with_population,
     normalized_daily,
 )
@@ -238,6 +241,8 @@ def _publish_bronze(
     ingestion_id: str,
     spark_application_id: str,
     quality_summary: dict[str, str],
+    world_bank_snapshot_id: str | None,
+    snowflake_context_fingerprint: dict[str, Any] | None,
 ) -> Path:
     target = bronze_root / f"ingestion_id={ingestion_id}"
     if target.exists():
@@ -263,6 +268,8 @@ def _publish_bronze(
                 "spark_application_id": spark_application_id,
                 "datasets": list(frames),
                 "quality_summary": quality_summary,
+                "world_bank_snapshot_id": world_bank_snapshot_id,
+                "snowflake_context_fingerprint": snowflake_context_fingerprint,
             },
         )
         staging.replace(target)
@@ -295,6 +302,56 @@ def _count_action(dataframe: DataFrame) -> Any:
 
 def _single_output(name: str, dataframe: DataFrame) -> CorrectnessOutputs:
     return CorrectnessOutputs({name: dataframe})
+
+
+def _country_context_equivalence(
+    enriched: DataFrame,
+    expected: dict[str, Any] | None,
+) -> dict[str, Any]:
+    projection = (
+        enriched.where(F.col("context_iso3").isNotNull())
+        .select(
+            F.col("context_iso3").alias("ISO3"),
+            F.col("population_2020_context").alias("POPULATION_2020_CONTEXT"),
+            F.col("population_density_2019").alias("POPULATION_DENSITY_2019"),
+            F.col("population_age_65_plus_pct_2019").alias(
+                "POPULATION_AGE_65_PLUS_PCT_2019"
+            ),
+            F.col("real_gdp_per_capita_2019").alias("REAL_GDP_PER_CAPITA_2019"),
+            F.col("health_expenditure_per_capita_ppp_2019").alias(
+                "HEALTH_EXPENDITURE_PER_CAPITA_PPP_2019"
+            ),
+            F.col("context_snapshot_id").alias("SNAPSHOT_ID"),
+        )
+        .dropDuplicates(["ISO3"])
+    )
+    actual = country_context_fingerprint(
+        row.asDict(recursive=True) for row in projection.toLocalIterator()
+    )
+    matches = expected is None or actual == expected
+    if not matches:
+        raise SparkPipelineError(
+            "Spark country context does not match the Snowflake baseline fingerprint."
+        )
+    snapshot_ids = sorted(
+        str(row["SNAPSHOT_ID"])
+        for row in projection.select("SNAPSHOT_ID").distinct().collect()
+    )
+    return {
+        "snowflake": expected,
+        "spark": actual,
+        "fingerprints_match": matches,
+        "snapshot_ids": snapshot_ids,
+        "baseline_rows": actual["row_count"],
+        "baseline_projection_canonical_bytes": actual["canonical_bytes"],
+        "joined_covid_rows": enriched.count(),
+        "unmatched_location_count": enriched.where(
+            F.col("context_snapshot_id").isNull()
+        )
+        .select("location_key")
+        .distinct()
+        .count(),
+    }
 
 
 def _projected_input(ecdc: DataFrame) -> DataFrame:
@@ -491,7 +548,14 @@ def _benchmark_suite(
     *,
     benchmark_run_id: str,
     run_output: Path,
-) -> tuple[list[dict[str, Any]], DataFrame, dict[str, Any], dict[str, Any]]:
+    snowflake_context_fingerprint: dict[str, Any] | None,
+) -> tuple[
+    list[dict[str, Any]],
+    DataFrame,
+    dict[str, Any],
+    dict[str, Any],
+    dict[str, Any],
+]:
     scratch_root = run_output / "benchmark_scratch"
     runner = BenchmarkRunner(
         spark,
@@ -501,19 +565,28 @@ def _benchmark_suite(
     ecdc = frames["ecdc"]
     mapping = frames["mapping"]
     population = frames["population"]
+    baseline = country_baseline(frames["indicators"])
     projected_ecdc = _projected_input(ecdc)
 
     baseline_daily = normalized_daily(ecdc, mapping, broadcast_mapping=False)
     optimized_daily = normalized_daily(ecdc, mapping, broadcast_mapping=True)
-    baseline_enriched = enrich_with_population(
-        baseline_daily,
-        population,
-        broadcast_population=False,
+    baseline_enriched = enrich_with_country_context(
+        enrich_with_population(
+            baseline_daily,
+            population,
+            broadcast_population=False,
+        ),
+        baseline,
+        broadcast_baseline=False,
     )
-    optimized_enriched = enrich_with_population(
-        optimized_daily,
-        population,
-        broadcast_population=True,
+    optimized_enriched = enrich_with_country_context(
+        enrich_with_population(
+            optimized_daily,
+            population,
+            broadcast_population=True,
+        ),
+        baseline,
+        broadcast_baseline=True,
     )
 
     benchmarks = [
@@ -561,10 +634,16 @@ def _benchmark_suite(
     baseline_enriched.count()
     optimized_plan = plan_evidence(optimized_enriched)
     baseline_plan = plan_evidence(baseline_enriched)
-    if optimized_plan["broadcast_hash_join_count"] < 2:
-        raise SparkPipelineError("Optimized plan did not use both broadcast joins.")
-    if optimized_plan["build_right_count"] < 2:
-        raise SparkPipelineError("Optimized joins did not build both right dimensions.")
+    context_equivalence = _country_context_equivalence(
+        optimized_enriched,
+        snowflake_context_fingerprint,
+    )
+    if optimized_plan["broadcast_hash_join_count"] < 3:
+        raise SparkPipelineError(
+            "Optimized plan did not use all three broadcast joins."
+        )
+    if optimized_plan["build_right_count"] < 3:
+        raise SparkPipelineError("Optimized joins did not build all right dimensions.")
     if not optimized_plan["null_safe_mapping_key_present"]:
         raise SparkPipelineError("Mapping plan does not show null-safe key matching.")
     if not optimized_plan["typed_population_key_present"]:
@@ -611,6 +690,7 @@ def _benchmark_suite(
             "baseline": baseline_plan,
             "optimized": optimized_plan,
         },
+        context_equivalence,
     )
 
 
@@ -689,13 +769,14 @@ def _sanitized_evidence(
     plans: dict[str, Any],
     quality: dict[str, Any],
     cold_end_to_end_ms: float,
+    context_equivalence: dict[str, Any],
 ) -> dict[str, Any]:
     compact_plans = {
         name: {key: value for key, value in plan.items() if key != "normalized_plan"}
         for name, plan in plans.items()
     }
     return {
-        "evidence_version": 2,
+        "evidence_version": 3,
         "generated_at_utc": datetime.now(UTC).isoformat(),
         "fingerprint_protocol": FINGERPRINT_PROTOCOL,
         "environment": environment,
@@ -710,6 +791,7 @@ def _sanitized_evidence(
                 }
                 for name, details in source_manifest["files"].items()
             },
+            "world_bank_snapshot_id": source_manifest.get("world_bank_snapshot_id"),
         },
         "ingestion_id": ingestion_id,
         "benchmark_run_id": benchmark_run_id,
@@ -721,6 +803,7 @@ def _sanitized_evidence(
         },
         "layout": layout,
         "plans": compact_plans,
+        "country_context_equivalence": context_equivalence,
         "benchmarks": benchmarks,
         "conclusions": _conclusions(benchmarks),
         "limitations": [
@@ -836,16 +919,23 @@ def run_ingest_profile(
             ingestion_id=ingestion_id,
             spark_application_id=environment["spark_application_id"],
             quality_summary=quality_summary,
+            world_bank_snapshot_id=source_manifest.get("world_bank_snapshot_id"),
+            snowflake_context_fingerprint=source_manifest.get(
+                "snowflake_context_fingerprint"
+            ),
         )
         _write_json(quality_path, quality)
         if assessment["status"] == "FAIL":
             raise QualityFailure("Quality failures blocked curated publication.")
 
-        benchmarks, curated, layout, plans = _benchmark_suite(
+        benchmarks, curated, layout, plans, context_equivalence = _benchmark_suite(
             spark,
             frames,
             benchmark_run_id=benchmark_run_id,
             run_output=run_output,
+            snowflake_context_fingerprint=source_manifest.get(
+                "snowflake_context_fingerprint"
+            ),
         )
         curated_metrics = _write_curated(
             curated,
@@ -887,6 +977,7 @@ def run_ingest_profile(
         plans=plans,
         quality=quality_summary,
         cold_end_to_end_ms=cold_end_to_end_ms,
+        context_equivalence=context_equivalence,
     )
     _write_json_atomic(evidence_path, evidence)
     logger.info(
@@ -925,11 +1016,14 @@ def run_benchmark(
     environment = _environment(spark)
     frames = _read_bronze(spark, ingestion_directory)
     try:
-        benchmarks, _curated, layout, plans = _benchmark_suite(
+        benchmarks, _curated, layout, plans, context_equivalence = _benchmark_suite(
             spark,
             frames,
             benchmark_run_id=benchmark_run_id,
             run_output=run_output,
+            snowflake_context_fingerprint=bronze_manifest.get(
+                "snowflake_context_fingerprint"
+            ),
         )
     finally:
         for frame in frames.values():
@@ -943,6 +1037,7 @@ def run_benchmark(
         "source_batch_id": bronze_manifest["source_batch_id"],
         "batch_sha256": bronze_manifest["source_batch_sha256"],
         "files": bronze_manifest["source_files"],
+        "world_bank_snapshot_id": bronze_manifest.get("world_bank_snapshot_id"),
     }
     cold_end_to_end_ms = round((time.perf_counter() - started) * 1000, 3)
     evidence = _sanitized_evidence(
@@ -955,6 +1050,7 @@ def run_benchmark(
         plans=plans,
         quality=quality,
         cold_end_to_end_ms=cold_end_to_end_ms,
+        context_equivalence=context_equivalence,
     )
     _write_json(run_output / "optimization_metrics.json", evidence)
     _write_json_atomic(evidence_path, evidence)

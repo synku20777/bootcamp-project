@@ -8,6 +8,7 @@ from fastapi import APIRouter, Query, Request, Response
 from app.dependencies import CovidServiceDependency
 from app.models.covid import (
     CountryComparison,
+    CountryContext,
     CountryDashboard,
     CountryForecast,
     CountryIdentity,
@@ -149,6 +150,18 @@ def compare(
         start_date,
         end_date,
     )
+    _record_cache_status(request, response, cache_status)
+    return result
+
+
+@router.get("/countries/{identifier}/context", response_model=CountryContext)
+def context(
+    identifier: str,
+    request: Request,
+    response: Response,
+    service: CovidServiceDependency,
+) -> CountryContext:
+    result, cache_status = service.context(identifier)
     _record_cache_status(request, response, cache_status)
     return result
 

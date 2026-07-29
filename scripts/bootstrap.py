@@ -38,6 +38,10 @@ from scripts.load_population import (
     DEFAULT_SOURCE_MANIFEST_PATH,
     refresh_population,
 )
+from scripts.world_bank_indicators import DEFAULT_CSV_PATH as WDI_CSV_PATH
+from scripts.world_bank_indicators import DEFAULT_MANIFEST_PATH as WDI_MANIFEST_PATH
+from scripts.world_bank_indicators import publish_snapshot as publish_wdi_snapshot
+from scripts.world_bank_indicators import rollback_snapshot as rollback_wdi_snapshot
 
 REPOSITORY_ROOT = Path(__file__).resolve().parents[1]
 ENV_EXAMPLE_PATH = REPOSITORY_ROOT / ".env.example"
@@ -45,6 +49,8 @@ ENV_PATH = REPOSITORY_ROOT / ".env"
 STATE_PATH = REPOSITORY_ROOT / ".setup-state.json"
 SETUP_OUTPUT_ROOT = REPOSITORY_ROOT / "outputs" / "setup"
 POPULATION_MANIFEST_PATH = REPOSITORY_ROOT / DEFAULT_MANIFEST_PATH
+WDI_SNAPSHOT_PATH = REPOSITORY_ROOT / WDI_CSV_PATH
+WDI_SNAPSHOT_MANIFEST_PATH = REPOSITORY_ROOT / WDI_MANIFEST_PATH
 COMPOSE_PROJECT_NAME = "covid-platform"
 REQUIRED_PORTS = (8000, 8050, 27017)
 PORT_SERVICES = {
@@ -82,6 +88,7 @@ SQL_FILES = {
     "mapping": REPOSITORY_ROOT / "sql" / "02_create_country_mapping.sql",
     "staging": REPOSITORY_ROOT / "sql" / "03_create_staging_view.sql",
     "population_verify": REPOSITORY_ROOT / "sql" / "04_verify_population_data.sql",
+    "world_bank_context": REPOSITORY_ROOT / "sql" / "04_create_world_bank_context.sql",
     "mart": REPOSITORY_ROOT / "sql" / "05_create_enriched_view.sql",
     "reporting": REPOSITORY_ROOT / "sql" / "06_create_reporting_objects.sql",
     "exploration": REPOSITORY_ROOT / "sql" / "01_data_exploration.sql",
@@ -117,6 +124,7 @@ class BootstrapAuditFilter(logging.Filter):
             "__main__",
             "scripts.bootstrap",
             "scripts.load_population",
+            "scripts.world_bank_indicators",
         }
 
 
@@ -991,12 +999,47 @@ def _population_matches(connection: Any) -> bool:
         return False
 
 
+def _frozen_denominator_ready(connection: Any) -> bool:
+    """Protect an approved denominator from being coupled to legacy source reloads."""
+    try:
+        row = _query_one(
+            connection,
+            """
+            SELECT COUNT(*), COUNT_IF(NOT IS_FROZEN)
+            FROM COVID_ANALYTICS.MARTS.COUNTRY_COVID_DENOMINATOR
+            """,
+        )
+        return row is not None and int(row[0]) > 0 and int(row[1]) == 0
+    except Exception:
+        return False
+
+
 def _snowflake_objects_ready(connection: Any) -> bool:
     checks = (
         "SELECT COUNT(*) FROM COVID_ANALYTICS.MARTS.COVID_ENRICHED",
         "SELECT COUNT(*) FROM COVID_ANALYTICS.MARTS.COUNTRY_LATEST_METRICS",
+        "SELECT COUNT(*) FROM COVID_ANALYTICS.MARTS.COUNTRY_CONTEXT_ANALYSIS",
+        "SELECT COUNT(*) FROM COVID_ANALYTICS.MARTS.COUNTRY_COVID_DENOMINATOR",
     )
     return all(_query_one(connection, query) is not None for query in checks)
+
+
+def _wdi_snapshot_matches(connection: Any) -> bool:
+    try:
+        expected = json.loads(WDI_SNAPSHOT_MANIFEST_PATH.read_text(encoding="utf-8"))[
+            "snapshot_id"
+        ]
+        row = _query_one(
+            connection,
+            """
+            SELECT SNAPSHOT_ID
+            FROM COVID_ANALYTICS.RAW.WORLD_BANK_INDICATOR_SNAPSHOTS
+            WHERE IS_ACTIVE AND PUBLICATION_STATUS = 'ACTIVE'
+            """,
+        )
+        return row is not None and row[0] == expected
+    except Exception:
+        return False
 
 
 def _project_schemas_ready(connection: Any) -> bool:
@@ -1435,21 +1478,28 @@ def setup(
         )
         _setup_progress(
             5,
-            "Load World Bank population data",
-            "Checksum-validating the committed 2020 population snapshot before transactionally replacing the Snowflake RAW population table. No World Bank network request is made during guided setup.",
+            "Load versioned World Bank context",
+            "Publishing the checksum-valid committed WDI snapshot while preserving the legacy 2020 population snapshot used to seed the frozen COVID denominator. Guided setup makes no World Bank network request.",
         )
 
         def refresh_population_safely() -> None:
             try:
-                refresh_population(
-                    connection=admin_connection,
-                    csv_path=REPOSITORY_ROOT
-                    / "data"
-                    / "external"
-                    / "world_bank_population_2020.csv",
-                    source_manifest_path=REPOSITORY_ROOT / DEFAULT_SOURCE_MANIFEST_PATH,
-                    manifest_path=POPULATION_MANIFEST_PATH,
-                    source_mode="snapshot",
+                if not _frozen_denominator_ready(admin_connection):
+                    refresh_population(
+                        connection=admin_connection,
+                        csv_path=REPOSITORY_ROOT
+                        / "data"
+                        / "external"
+                        / "world_bank_population_2020.csv",
+                        source_manifest_path=REPOSITORY_ROOT
+                        / DEFAULT_SOURCE_MANIFEST_PATH,
+                        manifest_path=POPULATION_MANIFEST_PATH,
+                        source_mode="snapshot",
+                    )
+                publish_wdi_snapshot(
+                    admin_connection,
+                    WDI_SNAPSHOT_PATH,
+                    WDI_SNAPSHOT_MANIFEST_PATH,
                 )
             except Exception as exc:
                 logger.exception(
@@ -1458,10 +1508,10 @@ def setup(
                     exc_info=sanitized_exception_info(exc),
                 )
                 raise BootstrapError(
-                    "World Bank population snapshot validation or publication failed.",
-                    likely_cause="The committed snapshot or checksum manifest is missing/modified, or the Snowflake load operation was unavailable.",
+                    "World Bank snapshot validation or publication failed.",
+                    likely_cause="A committed snapshot or checksum manifest is missing/modified, or the Snowflake publication transaction was unavailable.",
                     fixes=(
-                        "Restore data/external/world_bank_population_2020.csv and its .manifest.json file from Git, then retry.",
+                        "Restore both committed World Bank CSV files and their manifests from Git, then retry.",
                         "If the failure repeats, use the audit reference to identify the failed validation stage.",
                     ),
                 ) from exc
@@ -1469,7 +1519,7 @@ def setup(
         _run_step(
             state=state,
             context=context,
-            name="population_refresh",
+            name="world_bank_snapshot_publication",
             checksum=_input_checksum(
                 REPOSITORY_ROOT / "scripts" / "load_population.py",
                 REPOSITORY_ROOT
@@ -1477,22 +1527,54 @@ def setup(
                 / "external"
                 / "world_bank_population_2020.csv",
                 REPOSITORY_ROOT / DEFAULT_SOURCE_MANIFEST_PATH,
-                values=("2020",),
+                REPOSITORY_ROOT / "scripts" / "world_bank_indicators.py",
+                WDI_SNAPSHOT_PATH,
+                WDI_SNAPSHOT_MANIFEST_PATH,
+                values=("2020", "wdi-source-2-2019-2021"),
             ),
             action=refresh_population_safely,
-            postcondition=lambda: _population_matches(admin_connection),
+            postcondition=lambda: (
+                (
+                    _frozen_denominator_ready(admin_connection)
+                    or _population_matches(admin_connection)
+                )
+                and _wdi_snapshot_matches(admin_connection)
+            ),
             resume=resume,
         )
 
         _setup_progress(
             6,
             "Create and verify analytical marts",
-            "Verifying population coverage, creating COVID_ENRICHED and reporting objects, and checking the API role's required data contract.",
+            "Selecting the active WDI snapshot, freezing the existing COVID denominator, and rebuilding baseline, annual, enriched, latest and context marts in dependency order.",
         )
 
         def create_marts() -> None:
-            for key in ("population_verify", "mart", "reporting"):
-                execute_sql_file(admin_connection, SQL_FILES[key])
+            ordered_keys = (
+                "population_verify",
+                "world_bank_context",
+                "mart",
+                "reporting",
+            )
+            snapshot_id = json.loads(
+                WDI_SNAPSHOT_MANIFEST_PATH.read_text(encoding="utf-8")
+            )["snapshot_id"]
+            try:
+                for key in ordered_keys:
+                    execute_sql_file(admin_connection, SQL_FILES[key])
+            except Exception:
+                restored = rollback_wdi_snapshot(admin_connection, snapshot_id)
+                if restored:
+                    logger.warning(
+                        "world_bank_snapshot_rolled_back",
+                        extra={
+                            "failed_snapshot_id": snapshot_id,
+                            "restored_snapshot_id": restored,
+                        },
+                    )
+                    for key in ("world_bank_context", "mart", "reporting"):
+                        execute_sql_file(admin_connection, SQL_FILES[key])
+                raise
 
         _run_step(
             state=state,
@@ -1500,14 +1582,19 @@ def setup(
             name="population_verification_and_marts",
             checksum=_input_checksum(
                 SQL_FILES["population_verify"],
+                SQL_FILES["world_bank_context"],
                 SQL_FILES["mart"],
                 SQL_FILES["reporting"],
                 POPULATION_MANIFEST_PATH,
             ),
             action=create_marts,
             postcondition=lambda: (
-                _population_matches(admin_connection)
+                (
+                    _frozen_denominator_ready(admin_connection)
+                    or _population_matches(admin_connection)
+                )
                 and _snowflake_objects_ready(admin_connection)
+                and _wdi_snapshot_matches(admin_connection)
             ),
             resume=resume,
         )
@@ -1663,9 +1750,9 @@ def verify() -> None:
     doctor_configured(values)
     connection = connect_snowflake(values, role=values["SNOWFLAKE_ROLE"])
     try:
-        if not _population_matches(connection) or not _snowflake_objects_ready(
-            connection
-        ):
+        if not (
+            _frozen_denominator_ready(connection) or _population_matches(connection)
+        ) or not _snowflake_objects_ready(connection):
             raise BootstrapError("Snowflake postconditions are incomplete.")
     finally:
         connection.close()

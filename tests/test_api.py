@@ -16,7 +16,10 @@ from app.exceptions import DataSourceUnavailableError
 from app.main import app
 from app.models.covid import (
     ComparisonSeries,
+    ContextChange,
+    ContextIndicator,
     CountryComparison,
+    CountryContext,
     CountryDashboard,
     CountryForecast,
     CountrySummary,
@@ -41,7 +44,7 @@ LATVIA_SUMMARY = CountrySummary(
     iso3="LVA",
     location_key="LVA",
     report_date=date(2020, 12, 14),
-    population=1_900_000,
+    covid_rate_population_2020=1_900_000,
     cases_cumulative=25_000,
     deaths_cumulative=350,
     cases_per_100k=1315.79,
@@ -49,12 +52,70 @@ LATVIA_SUMMARY = CountrySummary(
     mortality_rate_percent=1.4,
 )
 
+SNAPSHOT_ID = "wdi2-2019-2021-372906f371e0391f"
+
+
+def context_indicator(
+    value: float | int | None,
+    year: int,
+    unit: str,
+    code: str,
+) -> ContextIndicator:
+    return ContextIndicator(
+        value=value,
+        status="available" if value is not None else "missing",
+        year=year,
+        unit=unit,
+        indicator_code=code,
+        snapshot_id=SNAPSHOT_ID,
+    )
+
+
+LATVIA_CONTEXT = CountryContext(
+    country="Latvia",
+    iso2="LV",
+    iso3="LVA",
+    location_key="LVA",
+    population_2020_context=context_indicator(1_901_548, 2020, "people", "SP.POP.TOTL"),
+    covid_rate_population_2020=context_indicator(
+        1_900_000, 2020, "people", "SP.POP.TOTL"
+    ),
+    population_density_2019=context_indicator(
+        30.4, 2019, "people per sq. km of land area", "EN.POP.DNST"
+    ),
+    population_age_65_plus_pct_2019=context_indicator(
+        20.3, 2019, "% of total population", "SP.POP.65UP.TO.ZS"
+    ),
+    real_gdp_per_capita_2019=context_indicator(
+        18_000, 2019, "constant 2015 US$", "NY.GDP.PCAP.KD"
+    ),
+    health_expenditure_per_capita_ppp_2019=context_indicator(
+        2_200, 2019, "current international $", "SH.XPD.CHEX.PP.CD"
+    ),
+    real_gdp_per_capita_annual=[
+        context_indicator(18_000, 2019, "constant 2015 US$", "NY.GDP.PCAP.KD"),
+        context_indicator(17_500, 2020, "constant 2015 US$", "NY.GDP.PCAP.KD"),
+        context_indicator(18_200, 2021, "constant 2015 US$", "NY.GDP.PCAP.KD"),
+    ],
+    real_gdp_per_capita_change_2020_vs_2019=ContextChange(
+        value=-2.78, status="available", baseline_year=2019, comparison_year=2020
+    ),
+    real_gdp_per_capita_change_2021_vs_2019=ContextChange(
+        value=1.11, status="available", baseline_year=2019, comparison_year=2021
+    ),
+    real_gdp_per_capita_change_2021_vs_2020=ContextChange(
+        value=4.0, status="available", baseline_year=2020, comparison_year=2021
+    ),
+    covid_latest_report_date=date(2020, 12, 14),
+    snapshot_id=SNAPSHOT_ID,
+)
+
 
 class FakeCovidService:
     def overview(self):
         location = OverviewLocation(
             **LATVIA_SUMMARY.model_dump(),
-            population_join_status="MATCHED",
+            denominator_join_status="MATCHED",
         )
         return (
             DashboardOverview(
@@ -72,6 +133,9 @@ class FakeCovidService:
 
     def summary(self, _identifier):
         return LATVIA_SUMMARY, CacheStatus.MISS
+
+    def context(self, _identifier):
+        return LATVIA_CONTEXT, CacheStatus.MISS
 
     def compare(self, _identifiers, metric, start_date, end_date):
         return (
@@ -122,6 +186,7 @@ class FakeCovidService:
                     metric=Metric.MORTALITY_RATE_PERCENT,
                     points=[point],
                 ),
+                context=LATVIA_CONTEXT,
             ),
             CacheStatus.MISS,
         )
@@ -286,6 +351,7 @@ class ApiTests(unittest.TestCase):
         with TestClient(app) as client:
             overview = client.get("/dashboard/overview")
             summary = client.get("/countries/LV/summary")
+            context = client.get("/countries/LV/context")
             comparison = client.get(
                 "/compare",
                 params=[
@@ -328,6 +394,12 @@ class ApiTests(unittest.TestCase):
         self.assertEqual(overview.json()["totals"]["total_cases"], 25_000)
         self.assertEqual(summary.status_code, 200)
         self.assertEqual(summary.json()["iso2"], "LV")
+        self.assertEqual(context.status_code, 200)
+        self.assertEqual(context.json()["methodology"]["classification"], "descriptive")
+        self.assertEqual(
+            context.json()["population_2020_context"]["indicator_code"],
+            "SP.POP.TOTL",
+        )
         self.assertEqual(comparison.status_code, 200)
         self.assertEqual(
             comparison.json()["countries_without_data"],

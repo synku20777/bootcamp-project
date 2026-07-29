@@ -251,13 +251,13 @@ class SnowflakeRepository:
                 COUNTRY_ISO3,
                 LOCATION_KEY,
                 REPORT_DATE,
-                POPULATION,
+                COVID_RATE_POPULATION_2020,
                 CASES_CUMULATIVE,
                 DEATHS_CUMULATIVE,
                 CASES_PER_100K,
                 DEATHS_PER_100K,
                 MORTALITY_RATE_PERCENT,
-                POPULATION_JOIN_STATUS,
+                DENOMINATOR_JOIN_STATUS,
                 MAX(REPORT_DATE) OVER () AS DATASET_REPORT_DATE,
                 COUNT(*) OVER () AS COUNTRY_COUNT,
                 SUM(CASES_CUMULATIVE) OVER () AS TOTAL_CASES,
@@ -296,7 +296,7 @@ class SnowflakeRepository:
                 COUNTRY_ISO3,
                 LOCATION_KEY,
                 REPORT_DATE,
-                POPULATION,
+                COVID_RATE_POPULATION_2020,
                 CASES_CUMULATIVE,
                 DEATHS_CUMULATIVE,
                 CASES_PER_100K,
@@ -332,6 +332,22 @@ class SnowflakeRepository:
                 ORDER BY
                     IFF(UPPER(COALESCE(COUNTRY_ISO2, '')) = %s, 0, 1),
                     COUNTRY
+            ) = 1
+            """,
+            (identifier, identifier, identifier, identifier),
+        )
+
+    def fetch_country_context(self, identifier: str) -> list[dict[str, Any]]:
+        return self._execute(
+            "country_context",
+            """
+            SELECT *
+            FROM COVID_ANALYTICS.MARTS.COUNTRY_CONTEXT_ANALYSIS
+            WHERE UPPER(COUNTRY_NAME) = %s
+               OR UPPER(COALESCE(ISO2, '')) = %s
+               OR UPPER(COALESCE(ISO3, '')) = %s
+            QUALIFY ROW_NUMBER() OVER (
+                ORDER BY IFF(UPPER(COALESCE(ISO2, '')) = %s, 0, 1), COUNTRY_NAME
             ) = 1
             """,
             (identifier, identifier, identifier, identifier),
@@ -567,7 +583,7 @@ class SnowflakeRepository:
                     COUNTRY_ISO3,
                     LOCATION_KEY,
                     REPORT_DATE AS LATEST_REPORT_DATE,
-                    POPULATION,
+                    COVID_RATE_POPULATION_2020,
                     CASES_CUMULATIVE,
                     DEATHS_CUMULATIVE,
                     CASES_PER_100K,
@@ -589,7 +605,7 @@ class SnowflakeRepository:
                 resolved.COUNTRY_ISO3,
                 resolved.LOCATION_KEY,
                 resolved.LATEST_REPORT_DATE,
-                resolved.POPULATION,
+                resolved.COVID_RATE_POPULATION_2020,
                 resolved.CASES_CUMULATIVE,
                 resolved.DEATHS_CUMULATIVE,
                 resolved.CASES_PER_100K,
@@ -599,11 +615,36 @@ class SnowflakeRepository:
                 data.{metric_column} AS SELECTED_METRIC_VALUE,
                 data.NEW_CASES_RAW AS NEW_CASES_VALUE,
                 data.NEW_DEATHS_RAW AS NEW_DEATHS_VALUE,
-                data.MORTALITY_RATE_PERCENT AS MORTALITY_VALUE
+                data.MORTALITY_RATE_PERCENT AS MORTALITY_VALUE,
+                context.POPULATION_2020_CONTEXT,
+                context.POPULATION_2020_STATUS,
+                context.POPULATION_DENSITY_2019,
+                context.POPULATION_DENSITY_2019_STATUS,
+                context.POPULATION_AGE_65_PLUS_PCT_2019,
+                context.AGE_65_PLUS_2019_STATUS,
+                context.REAL_GDP_PER_CAPITA_2019,
+                context.REAL_GDP_PER_CAPITA_2019_STATUS,
+                context.HEALTH_EXPENDITURE_PER_CAPITA_PPP_2019,
+                context.HEALTH_EXPENDITURE_PPP_2019_STATUS,
+                context.REAL_GDP_PER_CAPITA_2020,
+                context.REAL_GDP_PER_CAPITA_2021,
+                context.REAL_GDP_PER_CAPITA_CHANGE_2020_VS_2019_PCT,
+                context.REAL_GDP_PER_CAPITA_CHANGE_2021_VS_2019_PCT,
+                context.REAL_GDP_PER_CAPITA_CHANGE_2021_VS_2020_PCT,
+                context.REAL_GDP_PER_CAPITA_CHANGE_2020_VS_2019_STATUS,
+                context.REAL_GDP_PER_CAPITA_CHANGE_2021_VS_2019_STATUS,
+                context.REAL_GDP_PER_CAPITA_CHANGE_2021_VS_2020_STATUS,
+                context.COVID_LATEST_REPORT_DATE,
+                context.SNAPSHOT_ID AS CONTEXT_SNAPSHOT_ID,
+                context.DENOMINATOR_SOURCE_SNAPSHOT_ID,
+                context.DENOMINATOR_VERSION,
+                context.DENOMINATOR_POLICY
             FROM RESOLVED AS resolved
             LEFT JOIN COVID_ANALYTICS.MARTS.COVID_ENRICHED AS data
                 ON data.LOCATION_KEY = resolved.LOCATION_KEY
                AND data.REPORT_DATE BETWEEN %s AND %s
+            LEFT JOIN COVID_ANALYTICS.MARTS.COUNTRY_CONTEXT_ANALYSIS AS context
+                ON resolved.COUNTRY_ISO3 = context.ISO3
             ORDER BY data.REPORT_DATE
             """,
             (

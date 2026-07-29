@@ -90,6 +90,21 @@ class CacheServiceTests(unittest.TestCase):
         self.assertEqual(second_status, CacheStatus.HIT)
         self.assertEqual(compute_calls, 1)
 
+    def test_context_key_exposes_snapshot_namespace_for_safe_invalidation(self) -> None:
+        snapshot_id = "wdi2-2019-2021-fixture"
+        self.cache.get_or_compute(
+            endpoint="country-context",
+            key_payload={"iso3": "LVA", "snapshot_id": snapshot_id},
+            key_override=f"{snapshot_id}:country-context:LVA",
+            ttl_seconds=60,
+            model_type=CountryIdentity,
+            compute=self.model,
+        )
+        self.assertIn(
+            f"covid-api:v3:{snapshot_id}:country-context:LVA",
+            self.redis.values,
+        )
+
     def test_redis_failure_does_not_compute(self) -> None:
         compute_calls = 0
         self.redis.available = False

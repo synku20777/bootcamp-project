@@ -453,15 +453,15 @@ class BootstrapTests(unittest.TestCase):
             ):
                 bootstrap.configure_environment(non_interactive=True)
 
-    def test_reporting_snapshot_uses_transactional_refresh(self) -> None:
+    def test_reporting_snapshot_uses_atomic_replacement(self) -> None:
         sql = bootstrap.REPOSITORY_ROOT / "sql/06_create_reporting_objects.sql"
         text = sql.read_text(encoding="utf-8").upper()
 
-        self.assertNotIn("CREATE OR REPLACE TRANSIENT TABLE", text)
-        self.assertIn("CREATE TRANSIENT TABLE IF NOT EXISTS", text)
-        self.assertIn("BEGIN TRANSACTION;", text)
-        self.assertIn("DELETE FROM COVID_ANALYTICS.MARTS.COUNTRY_LATEST_METRICS", text)
-        self.assertIn("COMMIT;", text)
+        self.assertIn("CREATE OR REPLACE TRANSIENT TABLE", text)
+        self.assertIn("COUNTRY_CONTEXT_ANALYSIS", text)
+        self.assertNotIn(
+            "DELETE FROM COVID_ANALYTICS.MARTS.COUNTRY_LATEST_METRICS", text
+        )
 
 
 if __name__ == "__main__":

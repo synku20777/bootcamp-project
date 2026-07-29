@@ -1,0 +1,21 @@
+{
+  "accepted": false,
+  "generated_at": "2026-07-29T19:08:15.264234+00:00",
+  "plan_fingerprint": "c848ad90d467c4bdd114b0a8c04ab080348069008d2f78f1a7b01d720550b0f9",
+  "schema_version": 1,
+  "semantic_plan": {
+    "active_snapshot_id": "wdi2-2019-2021-372906f371e0391f",
+    "candidate_denominator_version": "v2",
+    "changed_country_count": 0,
+    "country_changes": [],
+    "covid_rows_compared": 59336,
+    "current_country_count": 203,
+    "current_denominator_version": "v1",
+    "matched_country_count": 203,
+    "max_cases_per_100k_change": "0.000000",
+    "max_deaths_per_100k_change": "0.000000",
+    "max_population_absolute_change": 0,
+    "max_population_change_pct": "0.000000",
+    "missing_candidate_count": 0
+  }
+}

@@ -240,11 +240,16 @@ class CacheService:
         ttl_seconds: int,
         model_type: type[ModelT],
         compute: Callable[[], ModelT],
+        key_override: str | None = None,
     ) -> tuple[ModelT, CacheStatus]:
         if not self.settings.cache_enabled:
             return compute(), CacheStatus.BYPASS
 
-        key, key_hash = self._key(endpoint, key_payload)
+        if key_override is None:
+            key, key_hash = self._key(endpoint, key_payload)
+        else:
+            key = f"{self.settings.cache_namespace}:{key_override}"
+            key_hash = hashlib.sha256(key.encode("utf-8")).hexdigest()
         lock_key = f"{key}:lock"
 
         cached_value = self._read_cached_value(

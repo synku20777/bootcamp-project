@@ -4,6 +4,7 @@ import json
 import tempfile
 import unittest
 from datetime import UTC, datetime
+from decimal import Decimal
 from pathlib import Path
 
 from pyspark.sql import SparkSession
@@ -14,10 +15,14 @@ from app.spark_pipeline.pipeline import _publish_bronze, _quality_summary
 from app.spark_pipeline.quality import inspect_header, read_bronze_source
 from app.spark_pipeline.schemas import ECDC
 from app.spark_pipeline.transformations import (
+    country_baseline,
     duplicate_population_keys,
+    enrich_with_country_context,
     enrich_with_population,
     normalized_daily,
 )
+from app.spark_pipeline.world_bank_checksum import spark_observation_checksum
+from app.world_bank import observation_checksum
 
 
 class SparkPipelineTests(unittest.TestCase):
@@ -100,6 +105,137 @@ class SparkPipelineTests(unittest.TestCase):
                 ),
             ],
             schema,
+        )
+
+    def _indicators(self):
+        schema = T.StructType(
+            [
+                T.StructField("SNAPSHOT_ID", T.StringType()),
+                T.StructField("CANONICAL_ISO2", T.StringType()),
+                T.StructField("CANONICAL_ISO3", T.StringType()),
+                T.StructField("IDENTITY_MAPPING_STATUS", T.StringType()),
+                T.StructField("IS_AGGREGATE", T.BooleanType()),
+                T.StructField("INDICATOR_CODE", T.StringType()),
+                T.StructField("OBSERVATION_YEAR", T.LongType()),
+                T.StructField("INDICATOR_VALUE", T.DecimalType(38, 9)),
+            ]
+        )
+        return self.spark.createDataFrame(
+            [
+                (
+                    "snapshot",
+                    "LV",
+                    "LVA",
+                    "matched_iso",
+                    False,
+                    "SP.POP.TOTL",
+                    2020,
+                    Decimal("1900449"),
+                ),
+                (
+                    "snapshot",
+                    "LV",
+                    "LVA",
+                    "matched_iso",
+                    False,
+                    "EN.POP.DNST",
+                    2019,
+                    Decimal("30.755491989"),
+                ),
+                (
+                    "snapshot",
+                    "LV",
+                    "LVA",
+                    "matched_iso",
+                    False,
+                    "SP.POP.65UP.TO.ZS",
+                    2019,
+                    Decimal("20.407227220"),
+                ),
+                (
+                    "snapshot",
+                    "LV",
+                    "LVA",
+                    "matched_iso",
+                    False,
+                    "NY.GDP.PCAP.KD",
+                    2019,
+                    Decimal("15328.385993330"),
+                ),
+                (
+                    "snapshot",
+                    "LV",
+                    "LVA",
+                    "matched_iso",
+                    False,
+                    "SH.XPD.CHEX.PP.CD",
+                    2019,
+                    Decimal("2202.675929217"),
+                ),
+            ],
+            schema,
+        )
+
+    def test_country_context_is_narrow_before_broadcast(self) -> None:
+        baseline = country_baseline(self._indicators())
+        self.assertEqual(baseline.count(), 1)
+        self.assertEqual(
+            baseline.first()["context_iso3"],
+            "LVA",
+        )
+        plan = enrich_with_country_context(
+            self.spark.createDataFrame(
+                [("LV", None, 1), ("LV", None, 2)],
+                "country_iso2 string, country_iso3 string, observation long",
+            ),
+            baseline,
+            broadcast_baseline=True,
+        )
+        self.assertEqual(plan.count(), 2)
+        self.assertEqual(plan.select("context_snapshot_id").distinct().count(), 1)
+
+    def test_world_bank_checksum_matches_python_golden_protocol(self) -> None:
+        source = {
+            "CANONICAL_ISO2": "LV",
+            "CANONICAL_ISO3": "LVA",
+            "COUNTRY_NAME": "Latvia",
+            "INDICATOR_CODE": "NY.GDP.PCAP.KD",
+            "INDICATOR_NAME": "GDP per capita (constant 2015 US$)",
+            "INDICATOR_UNIT": "constant 2015 US$",
+            "SOURCE_ID": 2,
+            "SOURCE_NAME": "World Development Indicators",
+            "OBSERVATION_YEAR": 2019,
+            "INDICATOR_VALUE": Decimal("123.400000000"),
+            "OBSERVATION_STATUS": None,
+            "SOURCE_DECIMAL_PRECISION": 1,
+            "SOURCE_LAST_UPDATED": "2026-07-01",
+        }
+        indicators = self.spark.createDataFrame(
+            [tuple(source.values())],
+            T.StructType(
+                [
+                    T.StructField("CANONICAL_ISO2", T.StringType()),
+                    T.StructField("CANONICAL_ISO3", T.StringType()),
+                    T.StructField("COUNTRY_NAME", T.StringType()),
+                    T.StructField("INDICATOR_CODE", T.StringType()),
+                    T.StructField("INDICATOR_NAME", T.StringType()),
+                    T.StructField("INDICATOR_UNIT", T.StringType()),
+                    T.StructField("SOURCE_ID", T.LongType()),
+                    T.StructField("SOURCE_NAME", T.StringType()),
+                    T.StructField("OBSERVATION_YEAR", T.LongType()),
+                    T.StructField("INDICATOR_VALUE", T.DecimalType(38, 9)),
+                    T.StructField("OBSERVATION_STATUS", T.StringType()),
+                    T.StructField("SOURCE_DECIMAL_PRECISION", T.LongType()),
+                    T.StructField("SOURCE_LAST_UPDATED", T.StringType()),
+                ]
+            ),
+        )
+
+        expected = observation_checksum([source])
+        self.assertEqual(spark_observation_checksum(indicators), expected)
+        self.assertEqual(
+            expected,
+            "30ecf2520c6e69c69fe991ef1ef2f902e026810c3817aa54dc07e6a441b12e0d",
         )
 
     def _mapping(self):
@@ -241,6 +377,8 @@ class SparkPipelineTests(unittest.TestCase):
                 ingestion_id="bronze-v1",
                 spark_application_id="local-fixture",
                 quality_summary=quality_summary,
+                world_bank_snapshot_id="snapshot",
+                snowflake_context_fingerprint=None,
             )
             manifest = json.loads(
                 (target / "manifest.json").read_text(encoding="utf-8")
@@ -248,6 +386,7 @@ class SparkPipelineTests(unittest.TestCase):
 
             self.assertEqual(manifest["manifest_version"], 2)
             self.assertEqual(manifest["quality_summary"], quality_summary)
+            self.assertEqual(manifest["world_bank_snapshot_id"], "snapshot")
 
 
 if __name__ == "__main__":

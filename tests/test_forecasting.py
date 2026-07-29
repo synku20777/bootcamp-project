@@ -94,6 +94,42 @@ class ForecastingTests(unittest.TestCase):
         self.assertTrue(all(point.predicted >= 0 for point in result.forecast))
         self.assertTrue(any("corrections" in caveat for caveat in result.caveats))
 
+    def test_context_values_cannot_change_forecast_output(self) -> None:
+        start = date(2020, 1, 1)
+        rows = [
+            {
+                "COUNTRY": "Latvia",
+                "COUNTRY_ISO2": "LV",
+                "COUNTRY_ISO3": "LVA",
+                "LOCATION_KEY": "LVA",
+                "REPORT_DATE": start + timedelta(days=index),
+                "METRIC_VALUE": 10 + index,
+                "REAL_GDP_PER_CAPITA_2019": 1,
+                "POPULATION_DENSITY_2019": 1,
+                "HEALTH_EXPENDITURE_PER_CAPITA_PPP_2019": 1,
+            }
+            for index in range(42)
+        ]
+        changed = [
+            {
+                **row,
+                "REAL_GDP_PER_CAPITA_2019": 999_999,
+                "POPULATION_DENSITY_2019": 999_999,
+                "HEALTH_EXPENDITURE_PER_CAPITA_PPP_2019": 999_999,
+            }
+            for row in rows
+        ]
+
+        first, _ = CovidService(
+            ForecastRepository(rows), ImmediateCache(), Settings(_env_file=None)
+        ).forecast("LVA", ForecastMetric.NEW_CASES, 7, 42)
+        second, _ = CovidService(
+            ForecastRepository(changed), ImmediateCache(), Settings(_env_file=None)
+        ).forecast("LVA", ForecastMetric.NEW_CASES, 7, 42)
+
+        self.assertEqual(first.forecast, second.forecast)
+        self.assertEqual(first.evaluation, second.evaluation)
+
 
 if __name__ == "__main__":
     unittest.main()
