@@ -425,6 +425,62 @@ class SnowflakeRepository:
             ),
         )
 
+    def fetch_forecast_history(
+        self,
+        identifier: str,
+        metric: Metric,
+        lookback_days: int,
+    ) -> list[dict[str, Any]]:
+        # Limiting in Snowflake keeps the API's modelling cost proportional to the
+        # requested window instead of transferring a country's full history.
+        metric_column = METRIC_COLUMNS[metric]
+        return self._execute(
+            "forecast_history",
+            f"""
+            WITH RESOLVED AS (
+                SELECT
+                    COUNTRY,
+                    COUNTRY_ISO2,
+                    COUNTRY_ISO3,
+                    LOCATION_KEY
+                FROM COVID_ANALYTICS.MARTS.COUNTRY_LATEST_METRICS
+                WHERE UPPER(COUNTRY) = %s
+                   OR UPPER(COALESCE(COUNTRY_ISO2, '')) = %s
+                   OR UPPER(COALESCE(COUNTRY_ISO3, '')) = %s
+                QUALIFY ROW_NUMBER() OVER (
+                    ORDER BY
+                        IFF(UPPER(COALESCE(COUNTRY_ISO2, '')) = %s, 0, 1),
+                        COUNTRY
+                ) = 1
+            ),
+            HISTORY AS (
+                SELECT
+                    resolved.COUNTRY,
+                    resolved.COUNTRY_ISO2,
+                    resolved.COUNTRY_ISO3,
+                    resolved.LOCATION_KEY,
+                    data.REPORT_DATE,
+                    data.{metric_column} AS METRIC_VALUE
+                FROM RESOLVED AS resolved
+                LEFT JOIN COVID_ANALYTICS.MARTS.COVID_ENRICHED AS data
+                    ON data.LOCATION_KEY = resolved.LOCATION_KEY
+                QUALIFY ROW_NUMBER() OVER (
+                    ORDER BY data.REPORT_DATE DESC NULLS LAST
+                ) <= %s
+            )
+            SELECT
+                COUNTRY,
+                COUNTRY_ISO2,
+                COUNTRY_ISO3,
+                LOCATION_KEY,
+                REPORT_DATE,
+                METRIC_VALUE
+            FROM HISTORY
+            ORDER BY REPORT_DATE
+            """,
+            (identifier, identifier, identifier, identifier, lookback_days),
+        )
+
     def fetch_comparison(
         self,
         identifiers: list[str],

@@ -141,3 +141,58 @@ def comparison_figure(
         return empty_figure("No observations in this date range")
     figure.update_layout(title=title)
     return apply_dashboard_chart_layout(figure)
+
+
+def forecast_figure(
+    history: list[dict[str, Any]],
+    forecast: list[dict[str, Any]],
+    title: str,
+) -> go.Figure:
+    if not history or not forecast:
+        return empty_figure("Not enough observations to render a forecast")
+
+    forecast_dates = [point["report_date"] for point in forecast]
+    figure = go.Figure()
+    figure.add_trace(
+        go.Scatter(
+            x=[point["report_date"] for point in history],
+            y=[point.get("value") for point in history],
+            mode="lines",
+            name="Reported",
+            line={"color": COLORS[0], "width": 2},
+        )
+    )
+    figure.add_trace(
+        go.Scatter(
+            x=forecast_dates,
+            y=[point["upper_bound"] for point in forecast],
+            mode="lines",
+            line={"width": 0},
+            hoverinfo="skip",
+            showlegend=False,
+        )
+    )
+    figure.add_trace(
+        go.Scatter(
+            x=forecast_dates,
+            y=[point["lower_bound"] for point in forecast],
+            mode="lines",
+            line={"width": 0},
+            fill="tonexty",
+            fillcolor="rgba(15, 138, 104, 0.18)",
+            name="90% empirical interval",
+            hoverinfo="skip",
+        )
+    )
+    figure.add_trace(
+        go.Scatter(
+            x=forecast_dates,
+            y=[point["predicted"] for point in forecast],
+            mode="lines+markers",
+            name="Forecast",
+            line={"color": COLORS[1], "width": 2, "dash": "dash"},
+            marker={"size": 5},
+        )
+    )
+    figure.update_layout(title=title)
+    return apply_dashboard_chart_layout(figure, height=460)

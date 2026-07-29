@@ -10,10 +10,12 @@ from app.dashboard.app import (
     load_comparison_page,
     load_country_catalog,
     load_country_page,
+    load_forecast_page,
     notify_annotation_saved,
     render_annotation_content,
     render_comparison_content,
     render_country_content,
+    render_forecast_content,
     render_snowflake_status,
     retrieve_snowflake_status,
     server,
@@ -24,6 +26,7 @@ from app.dashboard.layouts import (
     annotation_page,
     comparison_page,
     country_page,
+    forecast_page,
     overview_page,
     status_page,
 )
@@ -104,10 +107,11 @@ class DashboardSmokeTests(unittest.TestCase):
             overview_page(),
             country_page(catalog),
             comparison_page(catalog),
+            forecast_page(catalog),
             annotation_page(catalog),
         ]
 
-        self.assertEqual(len(pages), 5)
+        self.assertEqual(len(pages), 6)
         self.assertEqual(app.layout.__class__.__name__, "MantineProvider")
 
     def test_dmc_component_properties_match_runtime_contracts(self) -> None:
@@ -295,6 +299,55 @@ class DashboardSmokeTests(unittest.TestCase):
         get_json.reset_mock()
         rendered = render_country_content(state)
         self.assertIn("Latvia", str(rendered))
+        get_json.assert_not_called()
+
+    @patch("app.dashboard.app.get_json")
+    def test_forecast_loader_makes_one_request_and_renders_evaluation(
+        self,
+        get_json,
+    ) -> None:
+        get_json.return_value = {
+            "country": "Latvia",
+            "iso2": "LV",
+            "iso3": "LVA",
+            "location_key": "LVA",
+            "metric": "new_cases",
+            "historical_start_date": "2020-09-16",
+            "historical_end_date": "2020-12-14",
+            "horizon_days": 30,
+            "lookback_days": 90,
+            "training_observations": 90,
+            "interval_level_percent": 90,
+            "history": [{"report_date": "2020-12-14", "value": 500}],
+            "forecast": [
+                {
+                    "report_date": "2020-12-15",
+                    "predicted": 510,
+                    "lower_bound": 450,
+                    "upper_bound": 570,
+                }
+            ],
+            "evaluation": {
+                "holdout_start_date": "2020-12-01",
+                "holdout_observations": 14,
+                "moving_average_mae": 80,
+                "moving_average_rmse": 100,
+                "linear_trend_mae": 70,
+                "linear_trend_rmse": 90,
+                "selected_model": "linear_trend",
+                "selected_mae": 70,
+                "selected_rmse": 90,
+            },
+            "caveats": ["Historical demonstration only."],
+        }
+
+        state = load_forecast_page("LV", "new_cases", "30", "90", 0)
+
+        self.assertEqual(get_json.call_count, 1)
+        get_json.reset_mock()
+        rendered = render_forecast_content(state)
+        self.assertIn("Linear Trend", str(rendered))
+        self.assertIn("Temporal validation", str(rendered))
         get_json.assert_not_called()
 
     @patch("app.dashboard.app.ctx")

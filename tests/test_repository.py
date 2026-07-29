@@ -93,6 +93,30 @@ class SnowflakeRepositoryTests(unittest.TestCase):
         )
         self.assertEqual(cursor.execute.call_count, 1)
 
+    @patch("app.repositories.snowflake_repository.snowflake.connector.connect")
+    def test_forecast_history_is_bounded_and_parameterized(self, connect) -> None:
+        cursor = MagicMock()
+        cursor.description = []
+        connection = MagicMock()
+        connection.cursor.return_value = cursor
+        connect.return_value = connection
+        repository = SnowflakeRepository(
+            Settings(
+                _env_file=None,
+                snowflake_account="account",
+                snowflake_user="user",
+                snowflake_password="password",
+            )
+        )
+
+        repository.fetch_forecast_history("LV", Metric.NEW_CASES, 90)
+
+        cursor.execute.assert_called_once()
+        sql, parameters = cursor.execute.call_args.args
+        self.assertNotIn("'LV'", sql)
+        self.assertIn("NEW_CASES_RAW", sql)
+        self.assertEqual(parameters, ("LV", "LV", "LV", "LV", 90))
+
 
 if __name__ == "__main__":
     unittest.main()

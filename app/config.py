@@ -37,6 +37,7 @@ class Settings(BaseSettings):
     cache_ttl_summary_seconds: int = 86_400
     cache_ttl_timeseries_seconds: int = 86_400
     cache_ttl_compare_seconds: int = 86_400
+    cache_ttl_forecast_seconds: int = 21_600
     cache_ttl_country_page_seconds: int = 86_400
     cache_ttl_comparison_page_seconds: int = 86_400
     cache_ttl_annotation_target_seconds: int = 86_400

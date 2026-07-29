@@ -9,11 +9,13 @@ from app.dependencies import CovidServiceDependency
 from app.models.covid import (
     CountryComparison,
     CountryDashboard,
+    CountryForecast,
     CountryIdentity,
     CountrySummary,
     CountryTimeSeries,
     DashboardComparison,
     DashboardOverview,
+    ForecastMetric,
     Metric,
 )
 from app.services.cache_service import CacheStatus
@@ -146,6 +148,26 @@ def compare(
         metric,
         start_date,
         end_date,
+    )
+    _record_cache_status(request, response, cache_status)
+    return result
+
+
+@router.get("/forecast", response_model=CountryForecast)
+def forecast(
+    country: Annotated[str, Query(min_length=1)],
+    request: Request,
+    response: Response,
+    service: CovidServiceDependency,
+    metric: ForecastMetric = ForecastMetric.NEW_CASES,
+    days: Annotated[int, Query(ge=1, le=30)] = 30,
+    lookback_days: Annotated[int, Query(ge=42, le=180)] = 90,
+) -> CountryForecast:
+    result, cache_status = service.forecast(
+        country,
+        metric,
+        days,
+        lookback_days,
     )
     _record_cache_status(request, response, cache_status)
     return result

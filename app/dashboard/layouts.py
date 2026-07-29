@@ -12,7 +12,7 @@ from app.dashboard.components import (
     create_loading_state,
     create_page_header,
 )
-from app.models.covid import Metric
+from app.models.covid import ForecastMetric, Metric
 
 DEFAULT_START_DATE = date(2020, 3, 1)
 DEFAULT_END_DATE = date(2020, 12, 14)
@@ -376,6 +376,87 @@ def comparison_page(catalog_state: dict[str, Any] | None) -> html.Div:
             create_loading_state(
                 html.Div(id="comparison-content"),
                 loading_id="comparison-loading",
+            ),
+        ]
+    )
+
+
+def forecast_page(catalog_state: dict[str, Any] | None) -> html.Div:
+    options = _catalog_options(catalog_state)
+    catalog_error = _catalog_error(catalog_state)
+    return html.Div(
+        [
+            create_page_header(
+                "Forecasting",
+                "Compare transparent baselines using temporal holdout error.",
+            ),
+            catalog_error,
+            dmc.Paper(
+                p="md",
+                radius="md",
+                withBorder=True,
+                mb="lg",
+                children=dmc.Group(
+                    align="flex-end",
+                    children=[
+                        dmc.Select(
+                            id="forecast-country",
+                            label="Country",
+                            data=options,
+                            value=_default_country(options, "LV"),
+                            clearable=False,
+                            disabled=not options,
+                            w=200,
+                        ),
+                        dmc.Select(
+                            id="forecast-metric",
+                            label="Metric",
+                            data=[
+                                {
+                                    "label": metric.value.replace("_", " ").title(),
+                                    "value": metric.value,
+                                }
+                                for metric in ForecastMetric
+                            ],
+                            value=ForecastMetric.NEW_CASES.value,
+                            clearable=False,
+                            w=180,
+                        ),
+                        dmc.Select(
+                            id="forecast-horizon",
+                            label="Forecast horizon",
+                            data=[
+                                {"label": f"{days} days", "value": str(days)}
+                                for days in (7, 14, 21, 30)
+                            ],
+                            value="30",
+                            clearable=False,
+                            w=160,
+                        ),
+                        dmc.Select(
+                            id="forecast-lookback",
+                            label="Training window",
+                            data=[
+                                {"label": f"{days} days", "value": str(days)}
+                                for days in (42, 60, 90, 120, 180)
+                            ],
+                            value="90",
+                            clearable=False,
+                            w=160,
+                        ),
+                        dmc.Button(
+                            RETRY_DATA_LABEL,
+                            id="forecast-retry",
+                            n_clicks=0,
+                            variant="light",
+                            leftSection=DashIconify(icon="tabler:refresh", width=16),
+                        ),
+                    ],
+                ),
+            ),
+            create_loading_state(
+                html.Div(id="forecast-content"),
+                loading_id="forecast-loading",
             ),
         ]
     )

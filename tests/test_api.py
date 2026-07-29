@@ -18,10 +18,15 @@ from app.models.covid import (
     ComparisonSeries,
     CountryComparison,
     CountryDashboard,
+    CountryForecast,
     CountrySummary,
     DashboardComparison,
     DashboardComparisonSeries,
     DashboardOverview,
+    ForecastEvaluation,
+    ForecastMetric,
+    ForecastModel,
+    ForecastPoint,
     Metric,
     MetricPoint,
     MetricSeries,
@@ -157,6 +162,45 @@ class FakeCovidService:
             CacheStatus.MISS,
         )
 
+    def forecast(self, _identifier, metric, horizon_days, lookback_days):
+        return (
+            CountryForecast(
+                country="Latvia",
+                iso2="LV",
+                iso3="LVA",
+                location_key="LVA",
+                metric=metric,
+                historical_start_date=date(2020, 9, 16),
+                historical_end_date=date(2020, 12, 14),
+                horizon_days=horizon_days,
+                lookback_days=lookback_days,
+                training_observations=90,
+                interval_level_percent=90,
+                history=[MetricPoint(report_date=date(2020, 12, 14), value=500)],
+                forecast=[
+                    ForecastPoint(
+                        report_date=date(2020, 12, 15),
+                        predicted=510,
+                        lower_bound=450,
+                        upper_bound=570,
+                    )
+                ],
+                evaluation=ForecastEvaluation(
+                    holdout_start_date=date(2020, 12, 1),
+                    holdout_observations=14,
+                    moving_average_mae=80,
+                    moving_average_rmse=100,
+                    linear_trend_mae=70,
+                    linear_trend_rmse=90,
+                    selected_model=ForecastModel.LINEAR_TREND,
+                    selected_mae=70,
+                    selected_rmse=90,
+                ),
+                caveats=["Historical demonstration only."],
+            ),
+            CacheStatus.MISS,
+        )
+
 
 class HealthySnowflakeRepository:
     calls = 0
@@ -269,6 +313,15 @@ class ApiTests(unittest.TestCase):
                     ("end_date", "2020-12-14"),
                 ],
             )
+            forecast = client.get(
+                "/forecast",
+                params={
+                    "country": "LV",
+                    "metric": ForecastMetric.NEW_CASES.value,
+                    "days": 30,
+                    "lookback_days": 90,
+                },
+            )
 
         self.assertEqual(overview.status_code, 200)
         self.assertEqual(overview.headers["X-Cache"], "MISS")
@@ -287,6 +340,11 @@ class ApiTests(unittest.TestCase):
         self.assertEqual(
             comparison_page.json()["countries_without_data"],
             ["Estonia"],
+        )
+        self.assertEqual(forecast.status_code, 200)
+        self.assertEqual(forecast.headers["X-Cache"], "MISS")
+        self.assertEqual(
+            forecast.json()["evaluation"]["selected_model"], "linear_trend"
         )
 
     def test_country_dashboard_redis_failure_skips_snowflake(self) -> None:

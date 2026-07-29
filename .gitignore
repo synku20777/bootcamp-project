@@ -18,3 +18,4 @@ data/bronze/
 data/curated/
 !reports/spark/
 !reports/spark/**
+!reports/bootcamp_project_report_2026.md

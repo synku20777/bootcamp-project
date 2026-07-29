@@ -46,8 +46,8 @@ def create_app() -> FastAPI:
 
     application = FastAPI(
         title="COVID-19 Analytics API",
-        description="Cached analytical API for the COVID-19 data platform.",
-        version="0.3.0",
+        description="Cached analytics and forecasting API for the COVID-19 platform.",
+        version="0.4.0",
         lifespan=lifespan,
     )
     register_request_middleware(application)

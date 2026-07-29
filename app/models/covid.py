@@ -18,6 +18,16 @@ class Metric(StrEnum):
     MORTALITY_RATE_PERCENT = "mortality_rate_percent"
 
 
+class ForecastMetric(StrEnum):
+    NEW_CASES = "new_cases"
+    NEW_DEATHS = "new_deaths"
+
+
+class ForecastModel(StrEnum):
+    SEVEN_DAY_MEAN = "seven_day_mean"
+    LINEAR_TREND = "linear_trend"
+
+
 class CountryIdentity(BaseModel):
     country: str
     iso2: str | None
@@ -102,3 +112,36 @@ class DashboardComparison(BaseModel):
     end_date: date
     series: list[DashboardComparisonSeries]
     countries_without_data: list[str]
+
+
+class ForecastPoint(BaseModel):
+    report_date: date
+    predicted: float
+    lower_bound: float
+    upper_bound: float
+
+
+class ForecastEvaluation(BaseModel):
+    holdout_start_date: date
+    holdout_observations: int
+    moving_average_mae: float
+    moving_average_rmse: float
+    linear_trend_mae: float
+    linear_trend_rmse: float
+    selected_model: ForecastModel
+    selected_mae: float
+    selected_rmse: float
+
+
+class CountryForecast(CountryIdentity):
+    metric: ForecastMetric
+    historical_start_date: date
+    historical_end_date: date
+    horizon_days: int
+    lookback_days: int
+    training_observations: int
+    interval_level_percent: int
+    history: list[MetricPoint]
+    forecast: list[ForecastPoint]
+    evaluation: ForecastEvaluation
+    caveats: list[str]

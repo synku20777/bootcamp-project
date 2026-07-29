@@ -5,7 +5,7 @@ Snowflake analytics, a FastAPI service, MongoDB, and Redis. The repository
 provides a reproducible development and container environment, Snowflake setup
 and transformations, population ingestion, cached analytical APIs, automated
 exploratory-data-analysis exports, and a responsive analytical dashboard with
-MongoDB annotations.
+MongoDB annotations and evaluated time-series forecasts.
 
 ## Start here: run the project from a new computer
 
@@ -18,7 +18,7 @@ each prerequisite before it changes the next system.
 The finished project has four local Docker services and one remote data system:
 
 - **Dash dashboard** at <http://localhost:8050/overview> for overview, country,
-  comparison, and annotation pages.
+  comparison, forecast, and annotation pages.
 - **FastAPI API** at <http://localhost:8000/docs> for documented HTTP endpoints.
 - **Redis** inside Docker for 24-hour analytical response caching. The API fails
   closed if Redis is unavailable so a broken cache cannot create repeated
@@ -394,18 +394,21 @@ at [Advanced: manual setup and recovery](#advanced-manual-setup-and-recovery).
 - Exposes cheap liveness/readiness routes and an explicit Snowflake check.
 - Serves country, summary, time-series, comparison, and overview data from the
   Snowflake MARTS layer using `COVID_APP_ROLE`.
+- Forecasts daily cases or deaths with a temporally evaluated 7-day mean and
+  linear-trend baseline, an empirical 90% error band, and explicit caveats.
 - Serves combined country and comparison page payloads so charts do not issue
   independent Snowflake-backed requests.
-- Caches successful analytical responses in Redis for 24 hours and prevents
-  concurrent cache misses from duplicating Snowflake queries.
+- Caches stable analytical responses for 24 hours and forecasts for 6 hours,
+  while preventing concurrent misses from duplicating Snowflake queries.
 - Stores canonical country/date annotations in MongoDB with indexed filtering.
 - Emits structured JSON logs with request IDs and contains no native Python
   `print()` calls.
 - Locks Python dependencies with uv and runs Ruff, isort, and Black locally and
   in GitHub Actions.
 
-Forecasting, clustering, authentication, and user preferences are intentionally
-out of scope for this delivery.
+Clustering, authentication, and user preferences are intentionally out of scope
+for this delivery. Clustering is a bonus assignment item; authentication and
+preference persistence are production-hardening opportunities.
 
 ## Architecture
 
@@ -425,7 +428,13 @@ flowchart LR
     Client[API client] --> API
     API --> Redis
     Redis -->|Cache miss only| Marts
+    API --> Forecast[Temporal baseline evaluation]
+    Marts --> Forecast
     API --> Mongo[(MongoDB)]
+
+    Marts --> Export[Immutable source export]
+    Export --> Spark[PySpark Bronze and profiling]
+    Spark --> Evidence[(Quality and benchmark evidence)]
 ```
 
 ## Technology stack
@@ -434,7 +443,7 @@ flowchart LR
 | --------------------- | ---------------------------------------------- |
 | API                   | FastAPI, Uvicorn                               |
 | Web interface         | Plotly Dash and Plotly                         |
-| Analytics             | Snowflake SQL, pandas, Snowflake Connector      |
+| Analytics             | Snowflake SQL, pandas, PySpark 3.5.6            |
 | External data         | World Bank API                                 |
 | Operational data      | MongoDB 7.0                                    |
 | Cache                 | Redis 7.4                                      |
@@ -1244,6 +1253,7 @@ docker compose exec api python --version
 | `GET`  | `/countries/{identifier}/summary` | Latest stored country metrics                     |
 | `GET`  | `/countries/{identifier}/timeseries` | Filtered metric points                         |
 | `GET`  | `/compare`                        | Two-to-ten-country metric comparison              |
+| `GET`  | `/forecast`                       | Evaluated daily cases/deaths forecast              |
 | `POST` | `/annotations`                    | Validate and create a MongoDB annotation           |
 | `GET`  | `/annotations`                    | Filter chronological MongoDB annotations           |
 | `GET`  | `/docs`                           | Swagger UI                                        |
@@ -1264,6 +1274,7 @@ curl -i "http://localhost:8000/dashboard/countries/LV?metric=cases_per_100k&star
 curl -i "http://localhost:8000/dashboard/compare?country=LV&country=EE&start_date=2020-03-01&end_date=2020-12-14"
 curl -i http://localhost:8000/countries/LV/summary
 curl -i "http://localhost:8000/compare?country=LV&country=EE&metric=cases_per_100k&start_date=2020-03-01&end_date=2020-12-14"
+curl -i "http://localhost:8000/forecast?country=LV&metric=new_cases&days=30&lookback_days=90"
 ```
 
 The first overview call should be `MISS`; the second should be `HIT` and should
@@ -1271,9 +1282,10 @@ not query Snowflake.
 
 ### Cache invalidation and query budget
 
-Successful analytical responses are cached for 24 hours. Change
-`CACHE_NAMESPACE` when a deployment changes response semantics, or clear only
-the current project prefix after refreshing the marts:
+Stable analytical responses are cached for 24 hours. Forecasts use a 6-hour TTL
+because model output is derived and more likely to change with model or source
+updates. Change `CACHE_NAMESPACE` when a deployment changes response semantics,
+or clear only the current project prefix after refreshing the marts:
 
 ```bash
 docker compose exec api python -m scripts.clear_cache
@@ -1384,7 +1396,7 @@ Copy `.env.example` to `.env` and configure these values:
 | `MONGODB_URI`         | Local FastAPI      | Local MongoDB connection URI                                    |
 | `REDIS_URL`           | API/cache scripts  | Redis connection URI                                            |
 | `CACHE_NAMESPACE`     | FastAPI            | Versioned prefix; current default is `covid-api:v2`              |
-| `CACHE_TTL_*`         | FastAPI            | Endpoint cache durations; defaults are 86400 seconds            |
+| `CACHE_TTL_*`         | FastAPI            | Endpoint TTLs; 21600 seconds for forecasts, 86400 otherwise     |
 | `DASHBOARD_API_BASE_URL` | Dash             | FastAPI base URL used by the status interface                   |
 | `DASHBOARD_PUBLIC_API_BASE_URL` | Browser      | Host-visible FastAPI URL used by the Swagger link               |
 
@@ -1588,8 +1600,33 @@ create and write tables in the schema. Verify the load with
 The checked-in CSV currently contains 217 country records with ISO-2, ISO-3,
 country name, population, and population year fields.
 
-> **Important:** the loader executes `CREATE OR REPLACE TABLE`, so running it
-> replaces the existing `WORLD_BANK_POPULATION_2020` table.
+> **Important:** the loader validates a uniquely named staging table before an
+> atomic swap or rename. A failed refresh removes only staging data and preserves
+> the last known-good `WORLD_BANK_POPULATION_2020` table.
+
+## Forecasting
+
+The `/forecast` endpoint and dashboard page support `new_cases` and
+`new_deaths`, a 1-to-30-day horizon, and a 42-to-180-observation training
+window. The default compares two intentionally transparent candidates:
+
+- A 7-day mean that absorbs weekly reporting cycles without extrapolating a
+  long-term trend.
+- A least-squares trend fitted to at most the most recent 42 observations so an
+  early-pandemic regime cannot dominate the current window.
+
+The last 14 observations are evaluated with rolling-origin, one-step-ahead
+predictions. The lower-MAE candidate wins; exact ties choose the simpler 7-day
+mean. Both MAE and RMSE are returned. A nearest-rank 90th-percentile holdout
+error, widened by the square root of the horizon, forms a descriptive interval.
+It is an empirical error band rather than a formal probabilistic confidence
+interval.
+
+Negative source corrections remain visible in chart history but are floored to
+zero only in the model's working copy, because a reporting revision is not
+negative incidence. Missing calendar days are not invented as zero observations;
+the trend uses actual date offsets. These choices preserve source fidelity while
+preventing impossible negative forecasts.
 
 ## Exploratory data analysis
 
@@ -1756,7 +1793,7 @@ checks on every push and pull request.
 |   |-- dashboard/                      # Multi-page Dash interface
 |   |-- models/                         # Pydantic response contracts
 |   |-- repositories/                   # Snowflake and MongoDB access
-|   |-- services/                       # Cache, analytics, annotations
+|   |-- services/                       # Cache, analytics, forecasts, annotations
 |   |-- spark_pipeline/                 # Bronze, profiling, transformations
 |   |-- config.py                       # Typed environment settings
 |   |-- logging_config.py               # Structured JSON logging

@@ -17,12 +17,17 @@ from app.models.covid import (
     ComparisonSeries,
     CountryComparison,
     CountryDashboard,
+    CountryForecast,
     CountryIdentity,
     CountrySummary,
     CountryTimeSeries,
     DashboardComparison,
     DashboardComparisonSeries,
     DashboardOverview,
+    ForecastEvaluation,
+    ForecastMetric,
+    ForecastModel,
+    ForecastPoint,
     Metric,
     MetricPoint,
     MetricSeries,
@@ -31,6 +36,11 @@ from app.models.covid import (
 )
 from app.repositories.snowflake_repository import SnowflakeRepository
 from app.services.cache_service import CacheService, CacheStatus
+from app.services.forecasting import (
+    INTERVAL_LEVEL_PERCENT,
+    MINIMUM_OBSERVATIONS,
+    compute_forecast,
+)
 
 
 class CountryList(RootModel[list[CountryIdentity]]):
@@ -522,5 +532,129 @@ class CovidService:
             },
             ttl_seconds=self.settings.cache_ttl_comparison_page_seconds,
             model_type=DashboardComparison,
+            compute=compute,
+        )
+
+    def forecast(
+        self,
+        identifier: str,
+        metric: ForecastMetric,
+        horizon_days: int,
+        lookback_days: int,
+    ) -> tuple[CountryForecast, CacheStatus]:
+        normalized = self._identifier(identifier)
+        if not 1 <= horizon_days <= 30:
+            raise DomainValidationError("horizon_days must be between 1 and 30.")
+        if not MINIMUM_OBSERVATIONS <= lookback_days <= 180:
+            raise DomainValidationError(
+                f"lookback_days must be between {MINIMUM_OBSERVATIONS} and 180."
+            )
+
+        def compute() -> CountryForecast:
+            rows = self.repository.fetch_forecast_history(
+                normalized,
+                Metric(metric.value),
+                lookback_days,
+            )
+            if not rows or rows[0]["COUNTRY"] is None:
+                raise CountryNotFoundError(identifier)
+
+            observed_rows = [
+                row
+                for row in rows
+                if row["REPORT_DATE"] is not None and row["METRIC_VALUE"] is not None
+            ]
+            if len(observed_rows) < MINIMUM_OBSERVATIONS:
+                raise DomainValidationError(
+                    "Forecasting requires at least "
+                    f"{MINIMUM_OBSERVATIONS} non-null daily observations."
+                )
+
+            # A negative reporting correction is not negative incidence. The API
+            # returns the source value for auditability but floors only the model's
+            # working copy so it cannot emit impossible negative counts.
+            modelling_observations = [
+                (
+                    row["REPORT_DATE"],
+                    max(0.0, float(row["METRIC_VALUE"])),
+                )
+                for row in observed_rows
+            ]
+            result = compute_forecast(modelling_observations, horizon_days)
+            selected_scores = (
+                result.linear_trend
+                if result.selected_model == ForecastModel.LINEAR_TREND
+                else result.moving_average
+            )
+            missing_days = sum(
+                max(0, (current["REPORT_DATE"] - previous["REPORT_DATE"]).days - 1)
+                for previous, current in zip(
+                    observed_rows,
+                    observed_rows[1:],
+                    strict=False,
+                )
+            )
+            caveats = [
+                "The 90% interval is an empirical error band from rolling temporal "
+                "validation, not a clinical or probabilistic confidence guarantee.",
+                "The source is historical and ends in 2020; projections demonstrate "
+                "the modelling workflow and are not current public-health guidance.",
+            ]
+            if any(float(row["METRIC_VALUE"]) < 0 for row in observed_rows):
+                caveats.append(
+                    "Negative source corrections remain visible in history but are "
+                    "floored to zero for model fitting."
+                )
+            if missing_days:
+                caveats.append(
+                    f"The selected history contains {missing_days} missing calendar "
+                    "days; models use actual date offsets rather than inventing zeros."
+                )
+
+            first = observed_rows[0]
+            return CountryForecast(
+                **self._identity(first),
+                metric=metric,
+                historical_start_date=first["REPORT_DATE"],
+                historical_end_date=observed_rows[-1]["REPORT_DATE"],
+                horizon_days=horizon_days,
+                lookback_days=lookback_days,
+                training_observations=len(observed_rows),
+                interval_level_percent=INTERVAL_LEVEL_PERCENT,
+                history=self._points(observed_rows, "METRIC_VALUE"),
+                forecast=[
+                    ForecastPoint(
+                        report_date=point.report_date,
+                        predicted=point.predicted,
+                        lower_bound=point.lower_bound,
+                        upper_bound=point.upper_bound,
+                    )
+                    for point in result.forecast
+                ],
+                evaluation=ForecastEvaluation(
+                    holdout_start_date=result.holdout_start_date,
+                    holdout_observations=result.holdout_observations,
+                    moving_average_mae=round(result.moving_average.mae, 3),
+                    moving_average_rmse=round(result.moving_average.rmse, 3),
+                    linear_trend_mae=round(result.linear_trend.mae, 3),
+                    linear_trend_rmse=round(result.linear_trend.rmse, 3),
+                    selected_model=result.selected_model,
+                    selected_mae=round(selected_scores.mae, 3),
+                    selected_rmse=round(selected_scores.rmse, 3),
+                ),
+                caveats=caveats,
+            )
+
+        return self.cache.get_or_compute(
+            endpoint="forecast",
+            key_payload={
+                "identifier": normalized,
+                "metric": metric.value,
+                "horizon_days": horizon_days,
+                "lookback_days": lookback_days,
+                "version": 1,
+            },
+            ttl_seconds=self.settings.cache_ttl_forecast_seconds,
+            model_type=CountryForecast,
             compute=compute,
         )
