@@ -6,6 +6,7 @@ import logging
 import platform
 import shutil
 import time
+from dataclasses import dataclass
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
@@ -53,6 +54,19 @@ class QualityFailure(SparkPipelineError):
     """Quality rules blocked downstream publication."""
 
 
+class SourceValidationError(QualityFailure):
+    """Source files or their manifest failed the pre-Spark contract."""
+
+
+@dataclass(frozen=True, slots=True)
+class BenchmarkSuiteResult:
+    benchmarks: list[dict[str, Any]]
+    curated: DataFrame
+    layout: dict[str, Any]
+    plans: dict[str, Any]
+    context_equivalence: dict[str, Any]
+
+
 def _write_json(path: Path, payload: dict[str, Any]) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(_json_document(payload), encoding="utf-8")
@@ -84,14 +98,170 @@ def _file_sha256(path: Path) -> str:
     return digest.hexdigest()
 
 
-def load_and_verify_source_manifest(source_directory: Path) -> dict[str, Any]:
+def _validation_check(
+    rule: str,
+    *,
+    passed: bool,
+    message: str,
+    dataset: str | None = None,
+    expected_path: str | None = None,
+) -> dict[str, Any]:
+    check: dict[str, Any] = {
+        "rule": rule,
+        "severity": "FAIL",
+        "count": 0 if passed else 1,
+        "passed": passed,
+        "message": message,
+    }
+    if dataset is not None:
+        check["dataset"] = dataset
+    if expected_path is not None:
+        check["expected_path"] = expected_path
+    return check
+
+
+def _inspect_source_manifest(
+    source_directory: Path,
+) -> tuple[dict[str, Any], list[dict[str, Any]]]:
     manifest_path = source_directory / "manifest.json"
-    manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
-    for details in manifest["files"].values():
-        source_path = source_directory / details["filename"]
-        if not source_path.is_file() or _file_sha256(source_path) != details["sha256"]:
-            raise SparkPipelineError("Source batch checksum verification failed.")
-    return manifest
+    present = manifest_path.is_file()
+    checks = [
+        _validation_check(
+            "source_manifest_present",
+            passed=present,
+            message="Every source batch requires a manifest before Spark starts.",
+            dataset="manifest",
+            expected_path=manifest_path.name,
+        )
+    ]
+    if not present:
+        return {}, checks
+
+    try:
+        candidate = json.loads(manifest_path.read_text(encoding="utf-8"))
+    except (OSError, UnicodeError, json.JSONDecodeError):
+        checks.append(
+            _validation_check(
+                "source_manifest_valid",
+                passed=False,
+                message="The source manifest must be readable, valid JSON.",
+                dataset="manifest",
+                expected_path=manifest_path.name,
+            )
+        )
+        return {}, checks
+
+    manifest = candidate if isinstance(candidate, dict) else {}
+    valid = (
+        manifest.get("manifest_version") == 2
+        and manifest.get("source_batch_id") == source_directory.name
+        and isinstance(manifest.get("files"), dict)
+        and isinstance(manifest.get("batch_sha256"), str)
+        and isinstance(manifest.get("world_bank_snapshot_id"), str)
+        and isinstance(manifest.get("snowflake_context_fingerprint"), dict)
+    )
+    checks.append(
+        _validation_check(
+            "source_manifest_valid",
+            passed=valid,
+            message=(
+                "The source manifest must use version 2 and include batch, file, "
+                "and World Bank context metadata."
+            ),
+            dataset="manifest",
+            expected_path=manifest_path.name,
+        )
+    )
+    return manifest, checks
+
+
+def _source_validation_results(
+    source_directory: Path,
+) -> tuple[dict[str, Any], list[dict[str, Any]]]:
+    manifest, checks = _inspect_source_manifest(source_directory)
+    files = manifest.get("files")
+    manifest_files = files if isinstance(files, dict) else {}
+    batch_sha256 = manifest.get("batch_sha256")
+    if isinstance(files, dict) and isinstance(batch_sha256, str):
+        file_checksums: list[str] = []
+        checksum_material_valid = True
+        for _, details in sorted(files.items()):
+            checksum = details.get("sha256") if isinstance(details, dict) else None
+            if not isinstance(checksum, str):
+                checksum_material_valid = False
+                break
+            file_checksums.append(checksum)
+        calculated_batch_sha256 = (
+            hashlib.sha256("".join(file_checksums).encode("ascii")).hexdigest()
+            if checksum_material_valid
+            else None
+        )
+        checks.append(
+            _validation_check(
+                "source_batch_checksum_matches",
+                passed=calculated_batch_sha256 == batch_sha256,
+                message=(
+                    "The batch checksum must match the ordered source-file "
+                    "checksums recorded in the manifest."
+                ),
+                dataset="manifest",
+                expected_path="manifest.json",
+            )
+        )
+
+    for dataset in DATASETS:
+        details = manifest_files.get(dataset.name)
+        declared = (
+            isinstance(details, dict) and details.get("filename") == dataset.filename
+        )
+        checks.append(
+            _validation_check(
+                "required_source_declared",
+                passed=declared,
+                message=(
+                    "Every registered Spark source must use its versioned filename "
+                    "in the batch manifest."
+                ),
+                dataset=dataset.name,
+                expected_path=dataset.filename,
+            )
+        )
+
+        source_path = source_directory / dataset.filename
+        present = source_path.is_file()
+        checks.append(
+            _validation_check(
+                "required_source_file_present",
+                passed=present,
+                message="Every registered Spark source file is mandatory.",
+                dataset=dataset.name,
+                expected_path=dataset.filename,
+            )
+        )
+
+        if declared and present:
+            expected_checksum = details.get("sha256")
+            try:
+                checksum_matches = (
+                    isinstance(expected_checksum, str)
+                    and _file_sha256(source_path) == expected_checksum
+                )
+            except OSError:
+                checksum_matches = False
+            checks.append(
+                _validation_check(
+                    "source_file_checksum_matches",
+                    passed=checksum_matches,
+                    message=(
+                        "Source bytes must match the immutable manifest before "
+                        "schema inspection or Spark ingestion."
+                    ),
+                    dataset=dataset.name,
+                    expected_path=dataset.filename,
+                )
+            )
+
+    return manifest, checks
 
 
 def create_spark_session(
@@ -118,6 +288,23 @@ def create_spark_session(
     return spark
 
 
+def _release_spark_resources(
+    spark: SparkSession,
+    frames: dict[str, DataFrame],
+) -> None:
+    try:
+        for frame in frames.values():
+            frame.unpersist(blocking=True)
+    finally:
+        try:
+            spark.catalog.clearCache()
+        finally:
+            # PySpark 3.5 clears its JVM and Python active/default session
+            # registries inside stop(); keeping it in the outermost finally also
+            # covers failures during DataFrame or cache cleanup.
+            spark.stop()
+
+
 def _header_results(source_directory: Path) -> dict[str, dict[str, Any]]:
     return {
         dataset.name: inspect_header(
@@ -128,14 +315,8 @@ def _header_results(source_directory: Path) -> dict[str, dict[str, Any]]:
     }
 
 
-def _schema_failure_quality(
-    *,
-    headers: dict[str, dict[str, Any]],
-    source_batch_id: str,
-    source_batch_sha256: str,
-    ingestion_id: str,
-) -> dict[str, Any]:
-    checks = [
+def _schema_checks(headers: dict[str, dict[str, Any]]) -> list[dict[str, Any]]:
+    return [
         {
             "rule": f"{name}.schema_exact",
             "severity": "FAIL",
@@ -144,7 +325,34 @@ def _schema_failure_quality(
             "message": "CSV header must exactly match the versioned contract.",
         }
         for name, result in headers.items()
+        if result["present"] and result["readable"]
     ]
+
+
+def _source_readability_checks(
+    headers: dict[str, dict[str, Any]],
+) -> list[dict[str, Any]]:
+    return [
+        _validation_check(
+            "source_file_readable",
+            passed=result["readable"],
+            message="Present source files must be readable before Spark starts.",
+            dataset=name,
+            expected_path=result["expected_path"],
+        )
+        for name, result in headers.items()
+        if result["present"]
+    ]
+
+
+def _pre_spark_failure_quality(
+    *,
+    headers: dict[str, dict[str, Any]],
+    source_batch_id: str,
+    source_batch_sha256: str | None,
+    ingestion_id: str,
+    checks: list[dict[str, Any]],
+) -> dict[str, Any]:
     return _quality_document(
         assessment={
             "ruleset_version": QUALITY_RULESET_VERSION,
@@ -164,7 +372,7 @@ def _quality_document(
     *,
     assessment: dict[str, Any],
     source_batch_id: str,
-    source_batch_sha256: str,
+    source_batch_sha256: str | None,
     ingestion_id: str,
     headers: dict[str, dict[str, Any]],
     profiles: dict[str, dict[str, Any]],
@@ -549,13 +757,7 @@ def _benchmark_suite(
     benchmark_run_id: str,
     run_output: Path,
     snowflake_context_fingerprint: dict[str, Any] | None,
-) -> tuple[
-    list[dict[str, Any]],
-    DataFrame,
-    dict[str, Any],
-    dict[str, Any],
-    dict[str, Any],
-]:
+) -> BenchmarkSuiteResult:
     scratch_root = run_output / "benchmark_scratch"
     runner = BenchmarkRunner(
         spark,
@@ -682,15 +884,15 @@ def _benchmark_suite(
             ),
         )
     )
-    return (
-        benchmarks,
-        optimized_enriched,
-        layout,
-        {
+    return BenchmarkSuiteResult(
+        benchmarks=benchmarks,
+        curated=optimized_enriched,
+        layout=layout,
+        plans={
             "baseline": baseline_plan,
             "optimized": optimized_plan,
         },
-        context_equivalence,
+        context_equivalence=context_equivalence,
     )
 
 
@@ -845,20 +1047,31 @@ def run_ingest_profile(
 ) -> None:
     started = time.perf_counter()
     source_directory = source_root / source_batch_id
-    source_manifest = load_and_verify_source_manifest(source_directory)
-    headers = _header_results(source_directory)
     run_output = output_root / benchmark_run_id
     if run_output.exists():
         raise FileExistsError(f"Benchmark run already exists: {benchmark_run_id}")
     quality_path = run_output / "quality.json"
-    if not all(result["matches"] for result in headers.values()):
-        quality = _schema_failure_quality(
+
+    source_manifest, source_checks = _source_validation_results(source_directory)
+    headers = _header_results(source_directory)
+    source_checks.extend(_source_readability_checks(headers))
+    schema_checks = _schema_checks(headers)
+    source_failed = any(not check["passed"] for check in source_checks)
+    schema_failed = any(not check["passed"] for check in schema_checks)
+    if source_failed or schema_failed:
+        batch_sha256 = source_manifest.get("batch_sha256")
+        quality = _pre_spark_failure_quality(
             headers=headers,
             source_batch_id=source_batch_id,
-            source_batch_sha256=source_manifest["batch_sha256"],
+            source_batch_sha256=(
+                batch_sha256 if isinstance(batch_sha256, str) else None
+            ),
             ingestion_id=ingestion_id,
+            checks=[*source_checks, *schema_checks],
         )
         _write_json(quality_path, quality)
+        if source_failed:
+            raise SourceValidationError("Source validation blocked Bronze publication.")
         raise QualityFailure("Schema drift blocked Bronze publication.")
 
     bronze_target = bronze_root / f"ingestion_id={ingestion_id}"
@@ -871,9 +1084,9 @@ def run_ingest_profile(
         application_name=f"covid-bronze-{ingestion_id}",
         event_log_directory=event_log_directory,
     )
-    environment = _environment(spark)
     frames: dict[str, DataFrame] = {}
     try:
+        environment = _environment(spark)
         ingested_at = datetime.now(UTC)
         frames = _read_sources(
             spark,
@@ -897,6 +1110,7 @@ def run_ingest_profile(
             frames,
             normalized_duplicate_count=normalized_duplicates,
         )
+        assessment["checks"] = [*source_checks, *assessment["checks"]]
         quality = _quality_document(
             assessment=assessment,
             source_batch_id=source_batch_id,
@@ -928,7 +1142,7 @@ def run_ingest_profile(
         if assessment["status"] == "FAIL":
             raise QualityFailure("Quality failures blocked curated publication.")
 
-        benchmarks, curated, layout, plans, context_equivalence = _benchmark_suite(
+        suite = _benchmark_suite(
             spark,
             frames,
             benchmark_run_id=benchmark_run_id,
@@ -938,32 +1152,30 @@ def run_ingest_profile(
             ),
         )
         curated_metrics = _write_curated(
-            curated,
+            suite.curated,
             curated_root=curated_root,
             ingestion_id=ingestion_id,
-            layout=layout,
+            layout=suite.layout,
         )
-        layout["published_output"] = curated_metrics
-        for name, evidence in plans.items():
+        suite.layout["published_output"] = curated_metrics
+        for name, evidence in suite.plans.items():
             (run_output / "plans").mkdir(parents=True, exist_ok=True)
             (run_output / "plans" / f"{name}.txt").write_text(
                 evidence["normalized_plan"],
                 encoding="utf-8",
             )
     finally:
-        for frame in frames.values():
-            frame.unpersist()
-        spark.stop()
+        _release_spark_resources(spark, frames)
 
     event_metrics = parse_event_logs(event_log_directory)
-    benchmarks = summarize_benchmarks(benchmarks, event_metrics)
+    benchmarks = summarize_benchmarks(suite.benchmarks, event_metrics)
     cold_end_to_end_ms = round((time.perf_counter() - started) * 1000, 3)
     optimization = {
         "benchmark_run_id": benchmark_run_id,
         "cold_end_to_end_ms": cold_end_to_end_ms,
         "environment": environment,
-        "layout": layout,
-        "plans": plans,
+        "layout": suite.layout,
+        "plans": suite.plans,
         "benchmarks": benchmarks,
     }
     _write_json(run_output / "optimization_metrics.json", optimization)
@@ -973,11 +1185,11 @@ def run_ingest_profile(
         ingestion_id=ingestion_id,
         benchmark_run_id=benchmark_run_id,
         benchmarks=benchmarks,
-        layout=layout,
-        plans=plans,
+        layout=suite.layout,
+        plans=suite.plans,
         quality=quality_summary,
         cold_end_to_end_ms=cold_end_to_end_ms,
-        context_equivalence=context_equivalence,
+        context_equivalence=suite.context_equivalence,
     )
     _write_json_atomic(evidence_path, evidence)
     logger.info(
@@ -1013,10 +1225,11 @@ def run_benchmark(
         application_name=f"covid-benchmark-{benchmark_run_id}",
         event_log_directory=event_log_directory,
     )
-    environment = _environment(spark)
-    frames = _read_bronze(spark, ingestion_directory)
+    frames: dict[str, DataFrame] = {}
     try:
-        benchmarks, _curated, layout, plans, context_equivalence = _benchmark_suite(
+        environment = _environment(spark)
+        frames = _read_bronze(spark, ingestion_directory)
+        suite = _benchmark_suite(
             spark,
             frames,
             benchmark_run_id=benchmark_run_id,
@@ -1026,11 +1239,9 @@ def run_benchmark(
             ),
         )
     finally:
-        for frame in frames.values():
-            frame.unpersist()
-        spark.stop()
+        _release_spark_resources(spark, frames)
     benchmarks = summarize_benchmarks(
-        benchmarks,
+        suite.benchmarks,
         parse_event_logs(event_log_directory),
     )
     source_manifest = {
@@ -1046,11 +1257,11 @@ def run_benchmark(
         ingestion_id=ingestion_id,
         benchmark_run_id=benchmark_run_id,
         benchmarks=benchmarks,
-        layout=layout,
-        plans=plans,
+        layout=suite.layout,
+        plans=suite.plans,
         quality=quality,
         cold_end_to_end_ms=cold_end_to_end_ms,
-        context_equivalence=context_equivalence,
+        context_equivalence=suite.context_equivalence,
     )
     _write_json(run_output / "optimization_metrics.json", evidence)
     _write_json_atomic(evidence_path, evidence)

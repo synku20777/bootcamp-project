@@ -14,11 +14,16 @@ from app.spark_pipeline.benchmark import (
     dataframe_fingerprint,
 )
 from app.spark_pipeline.pipeline import _cache_correctness, _write_correctness
+from spark_tests.spark_test_support import (
+    install_pyspark_socket_warning_filter,
+    stop_test_spark_session,
+)
 
 
 class BenchmarkCorrectnessTests(unittest.TestCase):
     @classmethod
     def setUpClass(cls) -> None:
+        install_pyspark_socket_warning_filter()
         cls.spark = (
             SparkSession.builder.master("local[2]")
             .appName("benchmark-correctness-tests")
@@ -26,11 +31,8 @@ class BenchmarkCorrectnessTests(unittest.TestCase):
             .config("spark.sql.session.timeZone", "UTC")
             .getOrCreate()
         )
+        cls.addClassCleanup(stop_test_spark_session, cls.spark)
         cls.spark.sparkContext.setLogLevel("ERROR")
-
-    @classmethod
-    def tearDownClass(cls) -> None:
-        cls.spark.stop()
 
     def test_fingerprint_is_order_independent_and_duplicate_sensitive(self) -> None:
         dataframe = self.spark.createDataFrame(

@@ -8,6 +8,7 @@ from unittest.mock import MagicMock, patch
 
 from app.spark_pipeline.benchmark import BenchmarkCorrectnessError
 from app.spark_pipeline.pipeline import (
+    BenchmarkSuiteResult,
     SparkPipelineError,
     _document_sha256,
     _quality_from_bronze_manifest,
@@ -23,7 +24,7 @@ def _manifest() -> dict[str, object]:
         "source_batch_sha256": "a" * 64,
         "source_files": {},
         "ingestion_id": "bronze-fixture",
-        "datasets": ["ecdc", "mapping", "population"],
+        "datasets": ["ecdc", "indicators", "mapping", "population"],
         "quality_summary": {
             "ruleset_version": "bronze-quality-v1",
             "status": "WARN",
@@ -80,6 +81,10 @@ class BenchmarkOnlyManifestTests(unittest.TestCase):
                 "pyspark": "3.5.6",
                 "java": "17.0.19",
             }
+            context_equivalence = {
+                "status": "PASS",
+                "spark": {"row_count": 1, "sha256": "a" * 64},
+            }
 
             with (
                 patch(
@@ -92,7 +97,13 @@ class BenchmarkOnlyManifestTests(unittest.TestCase):
                 patch("app.spark_pipeline.pipeline._read_bronze", return_value={}),
                 patch(
                     "app.spark_pipeline.pipeline._benchmark_suite",
-                    return_value=(_benchmark_result(), None, {}, {}),
+                    return_value=BenchmarkSuiteResult(
+                        benchmarks=_benchmark_result(),
+                        curated=MagicMock(),
+                        layout={},
+                        plans={},
+                        context_equivalence=context_equivalence,
+                    ),
                 ),
                 patch("app.spark_pipeline.pipeline.parse_event_logs", return_value={}),
             ):
@@ -105,9 +116,14 @@ class BenchmarkOnlyManifestTests(unittest.TestCase):
                 )
 
             evidence = json.loads(evidence_path.read_text(encoding="utf-8"))
-            self.assertEqual(evidence["evidence_version"], 2)
+            self.assertEqual(evidence["evidence_version"], 3)
             self.assertEqual(evidence["quality"], _manifest()["quality_summary"])
+            self.assertEqual(
+                evidence["country_context_equivalence"], context_equivalence
+            )
             self.assertFalse(any((root / "outputs").rglob("quality.json")))
+            fake_spark.catalog.clearCache.assert_called_once_with()
+            fake_spark.stop.assert_called_once_with()
 
     def test_legacy_manifest_is_rejected_before_spark_initialization(self) -> None:
         manifest = _manifest()
@@ -154,6 +170,8 @@ class BenchmarkOnlyManifestTests(unittest.TestCase):
                     )
 
             self.assertEqual(evidence_path.read_text(encoding="utf-8"), "authoritative")
+            fake_spark.catalog.clearCache.assert_called_once_with()
+            fake_spark.stop.assert_called_once_with()
 
 
 if __name__ == "__main__":

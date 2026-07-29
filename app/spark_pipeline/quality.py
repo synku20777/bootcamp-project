@@ -21,15 +21,30 @@ APPROX_DISTINCT_RSD = 0.02
 
 
 def inspect_header(path: Path, expected: tuple[str, ...]) -> dict[str, Any]:
-    with path.open("r", encoding="utf-8-sig", newline="") as source:
-        actual = tuple(next(csv.reader(source), []))
+    present = path.is_file()
+    readable = False
+    error: str | None = None
+    actual: tuple[str, ...] = ()
+    if present:
+        try:
+            with path.open("r", encoding="utf-8-sig", newline="") as source:
+                actual = tuple(next(csv.reader(source), []))
+            readable = True
+        except (OSError, UnicodeError, csv.Error) as exc:
+            # Source-contract failures must be represented in pre-Spark quality
+            # evidence; leaking filesystem/parser exceptions would skip that audit trail.
+            error = type(exc).__name__
     return {
+        "expected_path": path.name,
+        "present": present,
+        "readable": readable,
+        "error": error,
         "expected": list(expected),
         "actual": list(actual),
         "missing": [name for name in expected if name not in actual],
         "unexpected": [name for name in actual if name not in expected],
         "reordered": set(actual) == set(expected) and actual != expected,
-        "matches": actual == expected,
+        "matches": readable and actual == expected,
     }
 
 

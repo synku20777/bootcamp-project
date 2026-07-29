@@ -23,11 +23,16 @@ from app.spark_pipeline.transformations import (
 )
 from app.spark_pipeline.world_bank_checksum import spark_observation_checksum
 from app.world_bank import observation_checksum
+from spark_tests.spark_test_support import (
+    install_pyspark_socket_warning_filter,
+    stop_test_spark_session,
+)
 
 
 class SparkPipelineTests(unittest.TestCase):
     @classmethod
     def setUpClass(cls) -> None:
+        install_pyspark_socket_warning_filter()
         cls.spark = (
             SparkSession.builder.master("local[2]")
             .appName("spark-pipeline-tests")
@@ -36,11 +41,8 @@ class SparkPipelineTests(unittest.TestCase):
             .config("spark.sql.autoBroadcastJoinThreshold", -1)
             .getOrCreate()
         )
+        cls.addClassCleanup(stop_test_spark_session, cls.spark)
         cls.spark.sparkContext.setLogLevel("ERROR")
-
-    @classmethod
-    def tearDownClass(cls) -> None:
-        cls.spark.stop()
 
     def _ecdc(self):
         schema = T.StructType(
@@ -367,6 +369,7 @@ class SparkPipelineTests(unittest.TestCase):
             target = _publish_bronze(
                 {
                     "ecdc": dataframe,
+                    "indicators": dataframe,
                     "population": dataframe,
                     "mapping": dataframe,
                 },
@@ -387,6 +390,10 @@ class SparkPipelineTests(unittest.TestCase):
             self.assertEqual(manifest["manifest_version"], 2)
             self.assertEqual(manifest["quality_summary"], quality_summary)
             self.assertEqual(manifest["world_bank_snapshot_id"], "snapshot")
+            self.assertEqual(
+                set(manifest["datasets"]),
+                {"ecdc", "indicators", "mapping", "population"},
+            )
 
 
 if __name__ == "__main__":
