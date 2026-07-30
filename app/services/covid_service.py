@@ -36,6 +36,7 @@ from app.models.covid import (
     MetricSeries,
     OverviewLocation,
     OverviewTotals,
+    WorldBankBaselineContext,
 )
 from app.repositories.snowflake_repository import SnowflakeRepository
 from app.services.cache_service import CacheService, CacheStatus
@@ -242,6 +243,68 @@ class CovidService:
         )
 
     @classmethod
+    def _world_bank_baseline_context(
+        cls,
+        row: dict[str, Any],
+        expected_snapshot_id: str,
+    ) -> WorldBankBaselineContext:
+        active_snapshot_id = row.get("CONTEXT_SNAPSHOT_ID") or row.get("SNAPSHOT_ID")
+        if active_snapshot_id != expected_snapshot_id:
+            raise DataSourceUnavailableError(
+                "World Bank context",
+                code="context_data_unavailable",
+                message="Country context data is temporarily unavailable.",
+            )
+        return WorldBankBaselineContext(
+            population_2020_context=cls._context_indicator(
+                row,
+                "POPULATION_2020_CONTEXT",
+                "POPULATION_2020_STATUS",
+                2020,
+                "people",
+                "SP.POP.TOTL",
+                expected_snapshot_id,
+            ),
+            population_density_2019=cls._context_indicator(
+                row,
+                "POPULATION_DENSITY_2019",
+                "POPULATION_DENSITY_2019_STATUS",
+                2019,
+                "people per sq. km of land area",
+                "EN.POP.DNST",
+                expected_snapshot_id,
+            ),
+            population_age_65_plus_pct_2019=cls._context_indicator(
+                row,
+                "POPULATION_AGE_65_PLUS_PCT_2019",
+                "AGE_65_PLUS_2019_STATUS",
+                2019,
+                "% of total population",
+                "SP.POP.65UP.TO.ZS",
+                expected_snapshot_id,
+            ),
+            real_gdp_per_capita_2019=cls._context_indicator(
+                row,
+                "REAL_GDP_PER_CAPITA_2019",
+                "REAL_GDP_PER_CAPITA_2019_STATUS",
+                2019,
+                "constant 2015 US$",
+                "NY.GDP.PCAP.KD",
+                expected_snapshot_id,
+            ),
+            health_expenditure_per_capita_ppp_2019=cls._context_indicator(
+                row,
+                "HEALTH_EXPENDITURE_PER_CAPITA_PPP_2019",
+                "HEALTH_EXPENDITURE_PPP_2019_STATUS",
+                2019,
+                "current international $",
+                "SH.XPD.CHEX.PP.CD",
+                expected_snapshot_id,
+            ),
+            snapshot_id=expected_snapshot_id,
+        )
+
+    @classmethod
     def _normalize_comparison_identifiers(
         cls,
         identifiers: list[str],
@@ -317,12 +380,24 @@ class CovidService:
         cls,
         country_rows: list[dict[str, Any]],
         seen_locations: set[str],
+        expected_snapshot_id: str,
     ) -> tuple[DashboardComparisonSeries, str | None]:
         first = country_rows[0]
         cls._register_location(first, seen_locations)
         missing_country = (
             None if cls._has_observations(country_rows) else first["COUNTRY"]
         )
+        try:
+            world_bank_context = cls._world_bank_baseline_context(
+                first,
+                expected_snapshot_id,
+            )
+            world_bank_context_status = "available"
+        except DataSourceUnavailableError:
+            # WDI is optional context. Missing publication state must not turn an
+            # otherwise valid multi-country COVID comparison into an outage.
+            world_bank_context = None
+            world_bank_context_status = "context_data_unavailable"
         return (
             DashboardComparisonSeries(
                 **cls._identity(first),
@@ -338,6 +413,8 @@ class CovidService:
                     metric=Metric.MORTALITY_RATE_PERCENT,
                     points=cls._points(country_rows, "MORTALITY_RATE_PERCENT"),
                 ),
+                world_bank_context=world_bank_context,
+                world_bank_context_status=world_bank_context_status,
             ),
             missing_country,
         )
@@ -389,6 +466,7 @@ class CovidService:
         normalized: list[str],
         start_date: date,
         end_date: date,
+        expected_snapshot_id: str,
     ) -> DashboardComparison:
         rows = self.repository.fetch_dashboard_comparison(
             normalized,
@@ -409,6 +487,7 @@ class CovidService:
             country_series, missing_country = self._dashboard_comparison_series(
                 country_rows,
                 seen_locations,
+                expected_snapshot_id,
             )
             series.append(country_series)
             if missing_country is not None:
@@ -665,12 +744,14 @@ class CovidService:
     ) -> tuple[DashboardComparison, CacheStatus]:
         self._validate_dates(start_date, end_date)
         normalized = self._normalize_comparison_identifiers(identifiers)
+        snapshot_id = committed_snapshot_id(self.settings.world_bank_manifest_path)
         compute = partial(
             self._load_dashboard_comparison,
             identifiers,
             normalized,
             start_date,
             end_date,
+            snapshot_id,
         )
 
         return self.cache.get_or_compute(
@@ -679,7 +760,10 @@ class CovidService:
                 "identifiers": normalized,
                 "start_date": start_date.isoformat(),
                 "end_date": end_date.isoformat(),
-                "version": 1,
+                # A context publication changes the page even when the requested
+                # countries and COVID dates do not, so it belongs in cache identity.
+                "version": 2,
+                "context_snapshot_id": snapshot_id,
             },
             ttl_seconds=self.settings.cache_ttl_comparison_page_seconds,
             model_type=DashboardComparison,

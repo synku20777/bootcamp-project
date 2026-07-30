@@ -22,6 +22,7 @@ from app.dashboard.app import (
     server,
     update_annotation_page,
     update_app_shell_navbar,
+    update_world_bank_comparison_chart,
 )
 from app.dashboard.layouts import (
     annotation_page,
@@ -193,6 +194,53 @@ def country_dashboard_payload(
         "mortality": {"metric": "mortality_rate_percent", "points": point},
         "context": context,
         "context_status": "available" if context else "context_data_unavailable",
+    }
+
+
+def baseline_context(context: dict[str, object]) -> dict[str, object]:
+    keys = (
+        "population_2020_context",
+        "population_density_2019",
+        "population_age_65_plus_pct_2019",
+        "real_gdp_per_capita_2019",
+        "health_expenditure_per_capita_ppp_2019",
+        "snapshot_id",
+    )
+    return {key: deepcopy(context[key]) for key in keys}
+
+
+def comparison_series(
+    country: str,
+    iso2: str,
+    iso3: str,
+    context: dict[str, object] | None,
+    *,
+    value: float = 1.0,
+) -> dict[str, object]:
+    points = [{"report_date": "2020-12-14", "value": value}]
+    return {
+        "country": country,
+        "iso2": iso2,
+        "iso3": iso3,
+        "location_key": iso3,
+        "cases_per_100k": {"metric": "cases_per_100k", "points": points},
+        "deaths_per_100k": {"metric": "deaths_per_100k", "points": points},
+        "mortality": {"metric": "mortality_rate_percent", "points": points},
+        "world_bank_context": context,
+        "world_bank_context_status": (
+            "available" if context else "context_data_unavailable"
+        ),
+    }
+
+
+def comparison_payload(
+    series: list[dict[str, object]],
+) -> dict[str, object]:
+    return {
+        "start_date": "2020-03-01",
+        "end_date": "2020-12-14",
+        "series": series,
+        "countries_without_data": [],
     }
 
 
@@ -380,6 +428,260 @@ class DashboardSmokeTests(unittest.TestCase):
             "Choose between 2 and 10", str(render_comparison_content(state))
         )
         get_json.assert_not_called()
+
+    @patch("app.dashboard.app.get_json")
+    def test_comparison_loader_makes_one_request_and_both_renderers_make_none(
+        self,
+        get_json,
+    ) -> None:
+        payload = comparison_payload(
+            [
+                comparison_series(
+                    "Latvia", "LV", "LVA", baseline_context(latvia_context())
+                ),
+                comparison_series(
+                    "Estonia", "EE", "EST", baseline_context(latvia_context())
+                ),
+            ]
+        )
+        get_json.return_value = payload
+
+        state = load_comparison_page(
+            ["LV", "EE"],
+            "2020-03-01",
+            "2020-12-14",
+            0,
+            self._catalog_state(),
+        )
+
+        get_json.assert_called_once()
+        get_json.reset_mock()
+        render_comparison_content(state)
+        update_world_bank_comparison_chart("real_gdp_per_capita_2019", state)
+        get_json.assert_not_called()
+
+    def test_comparison_renderer_adds_complete_wdi_baselines_after_covid(self) -> None:
+        latvia = baseline_context(latvia_context())
+        estonia = baseline_context(latvia_context())
+        estonia["population_2020_context"]["value"] = 1_329_479
+        estonia["population_density_2019"]["value"] = 30.59281987
+        state = {
+            "state": "success",
+            "payload": comparison_payload(
+                [
+                    comparison_series("Latvia", "LV", "LVA", latvia),
+                    comparison_series("Estonia", "EE", "EST", estonia),
+                ]
+            ),
+        }
+        rendered = render_comparison_content(state)
+        rendered_text = str(rendered)
+
+        selector = component_by_id(rendered, "comparison-world-bank-metric")
+        self.assertEqual(selector.value, "population_density_2019")
+        self.assertEqual(
+            [option["value"] for option in selector.data],
+            [
+                "population_2020_context",
+                "population_density_2019",
+                "population_age_65_plus_pct_2019",
+                "real_gdp_per_capita_2019",
+                "health_expenditure_per_capita_ppp_2019",
+            ],
+        )
+        for expected in (
+            "1,900,449",
+            "30.8",
+            "20.4%",
+            "$15,328",
+            "$2,203",
+            "2020 · SP.POP.TOTL · people",
+            "2019 · EN.POP.DNST · people/km²",
+            "2019 · SP.POP.65UP.TO.ZS · % of population",
+            "2019 · NY.GDP.PCAP.KD · constant 2015 US$",
+            "2019 · SH.XPD.CHEX.PP.CD · current international $",
+            "WDI population is context only",
+        ):
+            self.assertIn(expected, rendered_text)
+
+        footer = "World Development Indicators · Snapshot: " f"{WORLD_BANK_SNAPSHOT_ID}"
+        self.assertEqual(rendered_text.count(footer), 1)
+        self.assertNotIn("GDP change", rendered_text)
+        self.assertNotIn("Real GDP per capita, 2019-2021", rendered_text)
+
+        components = list(walk_components(rendered))
+        graph_titles = [
+            component.figure.layout.title.text
+            for component in components
+            if component.__class__.__name__ == "Graph"
+        ]
+        self.assertEqual(
+            graph_titles,
+            [
+                "Cases per 100,000",
+                "Deaths per 100,000",
+                "Mortality rate (%)",
+                "Population density, 2019",
+            ],
+        )
+        wdi_graph = component_by_id(rendered, "comparison-world-bank-chart")
+        self.assertEqual(wdi_graph.figure.data[0].orientation, "h")
+        self.assertEqual(list(wdi_graph.figure.data[0].y), ["Latvia", "Estonia"])
+        self.assertEqual(list(wdi_graph.figure.data[0].text), ["30.8", "30.6"])
+        self.assertEqual(wdi_graph.figure.layout.xaxis.rangemode, "tozero")
+        self.assertIn("%{customdata}", wdi_graph.figure.data[0].hovertemplate)
+        gdp_figure = update_world_bank_comparison_chart(
+            "real_gdp_per_capita_2019",
+            state,
+        )
+        self.assertEqual(
+            list(gdp_figure.data[0].marker.color),
+            list(wdi_graph.figure.data[0].marker.color),
+        )
+        available_matrix_value = next(
+            component
+            for component in components
+            if getattr(component, "children", None) == "1,900,449"
+        )
+        self.assertNotIn("c", available_matrix_value.to_plotly_json()["props"])
+
+    def test_comparison_renderer_preserves_missing_observations_without_zeroes(
+        self,
+    ) -> None:
+        aruba = baseline_context(latvia_context())
+        aruba["health_expenditure_per_capita_ppp_2019"] = context_indicator(
+            None,
+            2019,
+            "current international $",
+            "SH.XPD.CHEX.PP.CD",
+        )
+        eritrea = baseline_context(latvia_context())
+        eritrea["real_gdp_per_capita_2019"] = context_indicator(
+            None,
+            2019,
+            "constant 2015 US$",
+            "NY.GDP.PCAP.KD",
+        )
+        kosovo = baseline_context(latvia_context())
+        kosovo["population_density_2019"] = context_indicator(
+            None,
+            2019,
+            "people per sq. km of land area",
+            "EN.POP.DNST",
+        )
+        kosovo["health_expenditure_per_capita_ppp_2019"] = context_indicator(
+            None,
+            2019,
+            "current international $",
+            "SH.XPD.CHEX.PP.CD",
+        )
+        isolated_density = baseline_context(latvia_context())
+        isolated_density["population_density_2019"] = context_indicator(
+            None,
+            2019,
+            "people per sq. km of land area",
+            "EN.POP.DNST",
+        )
+        series = [
+            comparison_series("Aruba", "AW", "ABW", aruba),
+            comparison_series("Eritrea", "ER", "ERI", eritrea),
+            comparison_series("Kosovo", "XK", "XKX", kosovo),
+            comparison_series(
+                "Synthetic isolated density",
+                "ZZ",
+                "ZZZ",
+                isolated_density,
+            ),
+        ]
+        state = {"state": "success", "payload": comparison_payload(series)}
+
+        rendered_text = str(render_comparison_content(state))
+        # Five matrix cells are missing, and the default density chart adds one
+        # collective annotation for countries omitted from its bars.
+        self.assertEqual(rendered_text.count("Not available"), 6)
+        density_figure = update_world_bank_comparison_chart(
+            "population_density_2019",
+            state,
+        )
+        self.assertEqual(list(density_figure.data[0].y), ["Aruba", "Eritrea"])
+        self.assertIn("Kosovo", density_figure.layout.annotations[0].text)
+        self.assertIn(
+            "Synthetic isolated density",
+            density_figure.layout.annotations[0].text,
+        )
+        health_figure = update_world_bank_comparison_chart(
+            "health_expenditure_per_capita_ppp_2019",
+            state,
+        )
+        self.assertIn("Aruba", health_figure.layout.annotations[0].text)
+        self.assertIn("Kosovo", health_figure.layout.annotations[0].text)
+        self.assertNotIn("0", list(health_figure.data[0].text))
+
+        all_gdp_missing = {
+            "state": "success",
+            "payload": comparison_payload(
+                [
+                    comparison_series("Eritrea", "ER", "ERI", eritrea),
+                    comparison_series("Unavailable", "ZZ", "ZZZ", None),
+                ]
+            ),
+        }
+        empty_figure = update_world_bank_comparison_chart(
+            "real_gdp_per_capita_2019",
+            all_gdp_missing,
+        )
+        self.assertEqual(len(empty_figure.data), 0)
+        self.assertIn(
+            "Real GDP per capita is not available",
+            empty_figure.layout.annotations[0].text,
+        )
+
+    def test_comparison_renderer_isolates_partial_and_complete_context_failure(
+        self,
+    ) -> None:
+        valid = comparison_series(
+            "Latvia",
+            "LV",
+            "LVA",
+            baseline_context(latvia_context()),
+        )
+        unavailable = comparison_series("Estonia", "EE", "EST", None)
+        partial = render_comparison_content(
+            {
+                "state": "success",
+                "payload": comparison_payload([valid, unavailable]),
+            }
+        )
+        partial_text = str(partial)
+        self.assertIn("World Bank context is unavailable for: Estonia.", partial_text)
+        self.assertEqual(
+            partial_text.count("World Development Indicators · Snapshot:"),
+            1,
+        )
+
+        unavailable_all = render_comparison_content(
+            {
+                "state": "success",
+                "payload": comparison_payload(
+                    [
+                        comparison_series("Latvia", "LV", "LVA", None),
+                        unavailable,
+                    ]
+                ),
+            }
+        )
+        unavailable_text = str(unavailable_all)
+        self.assertIn(
+            "World Bank context is unavailable for the selected countries or active snapshot.",
+            unavailable_text,
+        )
+        self.assertNotIn("World Development Indicators · Snapshot:", unavailable_text)
+        graphs = [
+            component
+            for component in walk_components(unavailable_all)
+            if component.__class__.__name__ == "Graph"
+        ]
+        self.assertEqual(len(graphs), 3)
 
     @patch("app.dashboard.app.ctx")
     @patch("app.dashboard.app.get_json")

@@ -76,19 +76,22 @@ def create_context_metric_card(
     )
 
 
-def create_chart_card(figure: Any) -> dmc.Paper:
+def create_chart_card(figure: Any, *, graph_id: str | None = None) -> dmc.Paper:
     """Wraps Plotly figures in a themed Mantine card."""
+    graph_options = {
+        "figure": figure,
+        "config": GRAPH_CONFIG,
+        "responsive": True,
+        "style": {"width": "100%"},
+    }
+    if graph_id is not None:
+        graph_options["id"] = graph_id
     return dmc.Paper(
         p="md",
         radius="md",
         withBorder=True,
         miw=0,
-        children=dcc.Graph(
-            figure=figure,
-            config=GRAPH_CONFIG,
-            responsive=True,
-            style={"width": "100%"},
-        ),
+        children=dcc.Graph(**graph_options),
     )
 
 

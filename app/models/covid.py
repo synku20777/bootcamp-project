@@ -141,10 +141,21 @@ class CountryDashboard(CountryIdentity):
     context_status: str = "available"
 
 
+class WorldBankBaselineContext(BaseModel):
+    population_2020_context: ContextIndicator
+    population_density_2019: ContextIndicator
+    population_age_65_plus_pct_2019: ContextIndicator
+    real_gdp_per_capita_2019: ContextIndicator
+    health_expenditure_per_capita_ppp_2019: ContextIndicator
+    snapshot_id: str
+
+
 class DashboardComparisonSeries(CountryIdentity):
     cases_per_100k: MetricSeries
     deaths_per_100k: MetricSeries
     mortality: MetricSeries
+    world_bank_context: WorldBankBaselineContext | None = None
+    world_bank_context_status: str = "context_data_unavailable"
 
 
 class DashboardComparison(BaseModel):

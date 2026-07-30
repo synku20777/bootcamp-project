@@ -669,6 +669,9 @@ class SnowflakeRepository:
             parameters.extend((identifier, request_order))
         parameters.extend((start_date, end_date))
 
+        # The baseline view is one row per ISO3. Joining it into the existing
+        # comparison statement preserves the daily COVID grain while avoiding up
+        # to ten additional Snowflake queries for one page render.
         return self._execute(
             "dashboard_comparison",
             f"""
@@ -715,11 +718,24 @@ class SnowflakeRepository:
                 data.REPORT_DATE,
                 data.CASES_PER_100K,
                 data.DEATHS_PER_100K,
-                data.MORTALITY_RATE_PERCENT
+                data.MORTALITY_RATE_PERCENT,
+                context.POPULATION_2020_CONTEXT,
+                context.POPULATION_2020_STATUS,
+                context.POPULATION_DENSITY_2019,
+                context.POPULATION_DENSITY_2019_STATUS,
+                context.POPULATION_AGE_65_PLUS_PCT_2019,
+                context.AGE_65_PLUS_2019_STATUS,
+                context.REAL_GDP_PER_CAPITA_2019,
+                context.REAL_GDP_PER_CAPITA_2019_STATUS,
+                context.HEALTH_EXPENDITURE_PER_CAPITA_PPP_2019,
+                context.HEALTH_EXPENDITURE_PPP_2019_STATUS,
+                context.SNAPSHOT_ID AS CONTEXT_SNAPSHOT_ID
             FROM RESOLVED AS resolved
             LEFT JOIN COVID_ANALYTICS.MARTS.COVID_ENRICHED AS data
                 ON data.LOCATION_KEY = resolved.LOCATION_KEY
                AND data.REPORT_DATE BETWEEN %s AND %s
+            LEFT JOIN COVID_ANALYTICS.MARTS.COUNTRY_CONTEXT_ANALYSIS AS context
+                ON resolved.COUNTRY_ISO3 = context.ISO3
             ORDER BY resolved.REQUEST_ORDER, data.REPORT_DATE
             """,
             parameters,

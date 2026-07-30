@@ -35,6 +35,7 @@ from app.models.covid import (
     MetricSeries,
     OverviewLocation,
     OverviewTotals,
+    WorldBankBaselineContext,
 )
 from app.services.cache_service import CacheStatus
 
@@ -108,6 +109,19 @@ LATVIA_CONTEXT = CountryContext(
     ),
     covid_latest_report_date=date(2020, 12, 14),
     snapshot_id=SNAPSHOT_ID,
+)
+
+LATVIA_BASELINE_CONTEXT = WorldBankBaselineContext(
+    **LATVIA_CONTEXT.model_dump(
+        include={
+            "population_2020_context",
+            "population_density_2019",
+            "population_age_65_plus_pct_2019",
+            "real_gdp_per_capita_2019",
+            "health_expenditure_per_capita_ppp_2019",
+            "snapshot_id",
+        }
+    )
 )
 
 
@@ -194,7 +208,7 @@ class FakeCovidService:
     def dashboard_comparison(self, _identifiers, start_date, end_date):
         point = MetricPoint(report_date=date(2020, 3, 1), value=1.2)
 
-        def series(country, iso2, iso3, location_key, points):
+        def series(country, iso2, iso3, location_key, points, context=None):
             return DashboardComparisonSeries(
                 country=country,
                 iso2=iso2,
@@ -212,6 +226,10 @@ class FakeCovidService:
                     metric=Metric.MORTALITY_RATE_PERCENT,
                     points=points,
                 ),
+                world_bank_context=context,
+                world_bank_context_status=(
+                    "available" if context else "context_data_unavailable"
+                ),
             )
 
         return (
@@ -219,7 +237,14 @@ class FakeCovidService:
                 start_date=start_date,
                 end_date=end_date,
                 series=[
-                    series("Latvia", "LV", "LVA", "LVA", [point]),
+                    series(
+                        "Latvia",
+                        "LV",
+                        "LVA",
+                        "LVA",
+                        [point],
+                        LATVIA_BASELINE_CONTEXT,
+                    ),
                     series("Estonia", "EE", "EST", "EST", []),
                 ],
                 countries_without_data=["Estonia"],
@@ -412,6 +437,26 @@ class ApiTests(unittest.TestCase):
         self.assertEqual(
             comparison_page.json()["countries_without_data"],
             ["Estonia"],
+        )
+        comparison_series = comparison_page.json()["series"]
+        self.assertEqual(
+            comparison_series[0]["world_bank_context"]["population_2020_context"][
+                "indicator_code"
+            ],
+            "SP.POP.TOTL",
+        )
+        self.assertEqual(
+            comparison_series[0]["world_bank_context"]["snapshot_id"],
+            SNAPSHOT_ID,
+        )
+        self.assertEqual(
+            comparison_series[0]["world_bank_context_status"],
+            "available",
+        )
+        self.assertIsNone(comparison_series[1]["world_bank_context"])
+        self.assertEqual(
+            comparison_series[1]["world_bank_context_status"],
+            "context_data_unavailable",
         )
         self.assertEqual(forecast.status_code, 200)
         self.assertEqual(forecast.headers["X-Cache"], "MISS")

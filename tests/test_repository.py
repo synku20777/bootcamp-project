@@ -92,6 +92,17 @@ class SnowflakeRepositoryTests(unittest.TestCase):
             ("LV", 0, "EE", 1, "2020-03-01", "2020-12-14"),
         )
         self.assertEqual(cursor.execute.call_count, 1)
+        self.assertIn("COUNTRY_CONTEXT_ANALYSIS", comparison_sql)
+        self.assertIn("resolved.COUNTRY_ISO3 = context.ISO3", comparison_sql)
+        for required_column in (
+            "POPULATION_2020_CONTEXT",
+            "POPULATION_DENSITY_2019",
+            "POPULATION_AGE_65_PLUS_PCT_2019",
+            "REAL_GDP_PER_CAPITA_2019",
+            "HEALTH_EXPENDITURE_PER_CAPITA_PPP_2019",
+            "CONTEXT_SNAPSHOT_ID",
+        ):
+            self.assertIn(required_column, comparison_sql)
 
     @patch("app.repositories.snowflake_repository.snowflake.connector.connect")
     def test_forecast_history_is_bounded_and_parameterized(self, connect) -> None:

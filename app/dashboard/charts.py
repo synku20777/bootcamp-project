@@ -5,6 +5,12 @@ from typing import Any
 import dash_mantine_components as dmc
 import plotly.graph_objects as go
 
+from app.dashboard.world_bank import (
+    WorldBankMetricDefinition,
+    format_world_bank_indicator,
+    indicator_is_available,
+)
+
 dmc.add_figure_templates(default="mantine_dark")
 
 COLORS = ["#315fd4", "#0f8a68", "#d26a3f", "#805ad5", "#c13f66"]
@@ -141,6 +147,93 @@ def comparison_figure(
         return empty_figure("No observations in this date range")
     figure.update_layout(title=title)
     return apply_dashboard_chart_layout(figure)
+
+
+def world_bank_comparison_figure(
+    series: list[dict[str, Any]],
+    definition: WorldBankMetricDefinition,
+) -> go.Figure:
+    available: list[tuple[int, dict[str, Any], dict[str, Any]]] = []
+    missing: list[str] = []
+    for index, country in enumerate(series):
+        context = country.get("world_bank_context")
+        indicator = context.get(definition.key) if context else None
+        if indicator_is_available(indicator):
+            available.append((index, country, indicator))
+        else:
+            missing.append(country["country"])
+
+    title = f"{definition.title}, {definition.year}"
+    if not available:
+        figure = empty_figure(f"{definition.title} is not available")
+        figure.update_layout(title=title)
+        return figure
+
+    countries = [country["country"] for _, country, _ in available]
+    values = [indicator["value"] for _, _, indicator in available]
+    display_values = [
+        format_world_bank_indicator(indicator, definition)
+        for _, _, indicator in available
+    ]
+    figure = go.Figure(
+        go.Bar(
+            x=values,
+            y=countries,
+            orientation="h",
+            marker_color=[COLORS[index % len(COLORS)] for index, _, _ in available],
+            text=display_values,
+            textposition="outside",
+            cliponaxis=False,
+            customdata=display_values,
+            hovertemplate=(
+                f"%{{y}}<br>{definition.title}: %{{customdata}}<extra></extra>"
+            ),
+        )
+    )
+    figure.update_layout(title=title, showlegend=False, hovermode="closest")
+    xaxis: dict[str, Any] = {
+        "rangemode": "tozero",
+        "title_text": definition.unit,
+    }
+    if definition.display in {"population", "currency"}:
+        xaxis["tickformat"] = ",.0f"
+    elif definition.display == "density":
+        xaxis["tickformat"] = ",.1f"
+    else:
+        xaxis["tickformat"] = ".1f"
+    if definition.display == "currency":
+        xaxis["tickprefix"] = "$"
+    if definition.display == "percentage":
+        xaxis["ticksuffix"] = "%"
+    figure.update_xaxes(**xaxis)
+    # The table and COVID charts use selected-country order. Retaining it here
+    # keeps country colors stable instead of changing identity when metrics switch.
+    figure.update_yaxes(
+        autorange="reversed",
+        categoryorder="array",
+        categoryarray=countries,
+        title_text=None,
+    )
+    if missing:
+        figure.add_annotation(
+            text="Not available: " + ", ".join(missing),
+            x=0,
+            y=-0.18,
+            xref="paper",
+            yref="paper",
+            showarrow=False,
+            xanchor="left",
+            yanchor="top",
+            font={"color": "#9aa3b2", "size": 12},
+        )
+    figure = apply_dashboard_chart_layout(
+        figure,
+        height=max(360, 54 * len(series) + 140),
+    )
+    figure.update_layout(
+        margin={"l": 120, "r": 96, "t": 48, "b": 72 if missing else 48}
+    )
+    return figure
 
 
 def world_bank_gdp_figure(indicators: list[dict[str, Any]]) -> go.Figure:

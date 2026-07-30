@@ -19,6 +19,7 @@ from app.dashboard.charts import (
     metric_figure,
     overview_bar,
     overview_map,
+    world_bank_comparison_figure,
     world_bank_gdp_figure,
 )
 from app.dashboard.components import (
@@ -40,6 +41,13 @@ from app.dashboard.layouts import (
     status_page,
 )
 from app.dashboard.theme import DASHBOARD_THEME
+from app.dashboard.world_bank import (
+    DEFAULT_WORLD_BANK_COMPARISON_METRIC,
+    WORLD_BANK_BASELINE_METRICS,
+    format_world_bank_indicator,
+    indicator_is_available,
+    world_bank_metric,
+)
 from app.logging_config import configure_logging
 
 settings = get_dashboard_settings()
@@ -390,21 +398,6 @@ def _format_rate(value: int | float | None) -> str:
     return "—" if value is None else f"{value:,.2f}%"
 
 
-def _context_value(indicator: dict[str, Any], display: str) -> str:
-    value = indicator.get("value")
-    if indicator.get("status") != "available" or value is None:
-        return "Not available"
-    if display == "population":
-        return f"{value:,.0f}"
-    if display == "density":
-        return f"{value:,.1f}"
-    if display == "percentage":
-        return f"{value:,.1f}%"
-    if display == "currency":
-        return f"${value:,.0f}"
-    raise ValueError(f"Unsupported context display: {display}")
-
-
 def _context_change_value(change: dict[str, Any]) -> str:
     value = change.get("value")
     if change.get("status") != "available" or value is None:
@@ -421,59 +414,17 @@ def _context_change_detail(change: dict[str, Any]) -> str | None:
 
 
 def _world_bank_context_cards(context: dict[str, Any]) -> dmc.Box:
-    definitions = (
-        (
-            "population_2020_context",
-            "WDI population",
-            "population",
-            "people",
-            "tabler:users-group",
-            "Context only; not used as the COVID rate denominator.",
-        ),
-        (
-            "population_density_2019",
-            "Population density",
-            "density",
-            "people/km²",
-            "tabler:map-pin",
-            None,
-        ),
-        (
-            "population_age_65_plus_pct_2019",
-            "Population aged 65+",
-            "percentage",
-            "% of population",
-            "tabler:accessible",
-            None,
-        ),
-        (
-            "real_gdp_per_capita_2019",
-            "Real GDP per capita",
-            "currency",
-            "constant 2015 US$",
-            "tabler:currency-dollar",
-            None,
-        ),
-        (
-            "health_expenditure_per_capita_ppp_2019",
-            "Health expenditure per person, PPP",
-            "currency",
-            "current international $",
-            "tabler:building-hospital",
-            None,
-        ),
-    )
     cards = []
-    for key, title, display, unit, icon, note in definitions:
-        indicator = context[key]
+    for definition in WORLD_BANK_BASELINE_METRICS:
+        indicator = context[definition.key]
         cards.append(
             create_context_metric_card(
-                title,
-                _context_value(indicator, display),
-                f"{indicator['year']} · {indicator['indicator_code']} · {unit}",
+                definition.title,
+                format_world_bank_indicator(indicator, definition),
+                definition.metadata,
                 indicator["status"],
-                icon,
-                note=note,
+                definition.icon,
+                note=definition.note,
             )
         )
     return dmc.Box(
@@ -866,6 +817,197 @@ def render_country_content(state: dict[str, Any] | None) -> html.Div:
     )
 
 
+def _world_bank_comparison_table(series: list[dict[str, Any]]) -> dmc.ScrollArea:
+    header_cells = [
+        dmc.TableTh(
+            dmc.Text("Country", size="sm", fw=600),
+            miw=160,
+        )
+    ]
+    header_cells.extend(
+        dmc.TableTh(
+            dmc.Stack(
+                gap=2,
+                miw=190,
+                children=[
+                    dmc.Text(definition.title, size="sm", fw=600),
+                    dmc.Text(definition.metadata, size="xs", c="dimmed"),
+                ],
+            )
+        )
+        for definition in WORLD_BANK_BASELINE_METRICS
+    )
+
+    rows = []
+    for index, country in enumerate(series):
+        context = country.get("world_bank_context")
+        value_cells = []
+        for definition in WORLD_BANK_BASELINE_METRICS:
+            indicator = context.get(definition.key) if context else None
+            available = indicator_is_available(indicator)
+            text_options = {
+                "children": format_world_bank_indicator(indicator, definition),
+                "size": "sm",
+                "fw": 600 if available else 500,
+            }
+            # Mantine treats an explicit null color as a responsive-style object
+            # in the browser. Omitting the property preserves the theme color and
+            # avoids a console error for every available matrix cell.
+            if not available:
+                text_options["c"] = "dimmed"
+            value_cells.append(dmc.TableTd(dmc.Text(**text_options)))
+        rows.append(
+            dmc.TableTr(
+                [
+                    dmc.TableTd(
+                        dmc.Group(
+                            gap="xs",
+                            wrap="nowrap",
+                            children=[
+                                dmc.Box(
+                                    w=8,
+                                    h=8,
+                                    bg=COLORS[index % len(COLORS)],
+                                    style={"borderRadius": "999px", "flex": "0 0 auto"},
+                                ),
+                                dmc.Text(country["country"], size="sm", fw=600),
+                            ],
+                        )
+                    ),
+                    *value_cells,
+                ]
+            )
+        )
+
+    return dmc.ScrollArea(
+        scrollbars="x",
+        type="always",
+        offsetScrollbars="x",
+        w="100%",
+        children=dmc.Table(
+            miw=1160,
+            withTableBorder=True,
+            withColumnBorders=True,
+            striped=True,
+            highlightOnHover=True,
+            tabularNums=True,
+            verticalSpacing="sm",
+            children=[
+                dmc.TableThead(dmc.TableTr(header_cells)),
+                dmc.TableTbody(rows),
+            ],
+        ),
+    )
+
+
+def _world_bank_comparison_section(payload: dict[str, Any]) -> dmc.Box:
+    series = payload["series"]
+    available_contexts = [
+        country["world_bank_context"]
+        for country in series
+        if country.get("world_bank_context")
+    ]
+    unavailable_countries = [
+        country["country"]
+        for country in series
+        if not country.get("world_bank_context")
+    ]
+    heading = dmc.Group(
+        justify="space-between",
+        align="center",
+        mb="xs",
+        children=[
+            dmc.Title("World Bank baseline comparison", order=3),
+            dmc.Badge("Baseline context", variant="light", color="blue"),
+        ],
+    )
+    if not available_contexts:
+        return dmc.Box(
+            mt="xl",
+            children=[
+                heading,
+                create_alert(
+                    "World Bank context is unavailable for the selected countries "
+                    "or active snapshot.",
+                    "warning",
+                ),
+            ],
+        )
+
+    selected_definition = world_bank_metric(DEFAULT_WORLD_BANK_COMPARISON_METRIC)
+    return dmc.Box(
+        mt="xl",
+        children=[
+            heading,
+            dmc.Text(
+                "Compare source-faithful country baselines without treating them "
+                "as causes of COVID outcomes.",
+                size="sm",
+                c="dimmed",
+                mb="md",
+            ),
+            (
+                create_alert(
+                    "World Bank context is unavailable for: "
+                    + ", ".join(unavailable_countries)
+                    + ".",
+                    "warning",
+                )
+                if unavailable_countries
+                else None
+            ),
+            dmc.Select(
+                id="comparison-world-bank-metric",
+                label="World Bank metric",
+                data=[
+                    {
+                        "label": definition.selector_label,
+                        "value": definition.key,
+                    }
+                    for definition in WORLD_BANK_BASELINE_METRICS
+                ],
+                value=DEFAULT_WORLD_BANK_COMPARISON_METRIC,
+                clearable=False,
+                w={"base": "100%", "sm": 360},
+                mb="md",
+            ),
+            create_chart_card(
+                world_bank_comparison_figure(series, selected_definition),
+                graph_id="comparison-world-bank-chart",
+            ),
+            dmc.Title("Exact baseline values", order=4, mt="lg", mb="sm"),
+            dmc.Paper(
+                p="md",
+                radius="md",
+                withBorder=True,
+                children=_world_bank_comparison_table(series),
+            ),
+            dmc.Text(
+                "WDI population is context only; it is not the frozen COVID rate "
+                "denominator.",
+                size="xs",
+                c="dimmed",
+                mt="sm",
+            ),
+            dmc.Box(
+                mt="md",
+                children=create_alert(
+                    "These baseline indicators are descriptive country context. "
+                    "They do not establish causes of COVID outcomes.",
+                    "info",
+                ),
+            ),
+            dmc.Divider(mt="md", mb="sm"),
+            dmc.Text(
+                "World Development Indicators · Snapshot: "
+                f"{available_contexts[0]['snapshot_id']}",
+                size="xs",
+                c="dimmed",
+            ),
+        ],
+    )
+
+
 @callback(
     Output("comparison-page-data", "data"),
     Input("comparison-countries", "value", allow_optional=True),
@@ -978,7 +1120,28 @@ def render_comparison_content(state: dict[str, Any] | None) -> html.Div:
                 ],
                 mt="md" if missing else 0,
             ),
+            _world_bank_comparison_section(payload),
         ]
+    )
+
+
+@callback(
+    Output("comparison-world-bank-chart", "figure"),
+    Input("comparison-world-bank-metric", "value", allow_optional=True),
+    State("comparison-page-data", "data"),
+    prevent_initial_call=True,
+)
+def update_world_bank_comparison_chart(
+    metric_key: str | None,
+    state: dict[str, Any] | None,
+):
+    if not state or state.get("state") != "success":
+        raise PreventUpdate
+    # The selector reuses the page store. Keeping it independent from the loader
+    # prevents a presentation-only choice from issuing another API or warehouse call.
+    return world_bank_comparison_figure(
+        state["payload"]["series"],
+        world_bank_metric(metric_key),
     )
 
 

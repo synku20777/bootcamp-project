@@ -252,7 +252,7 @@ Open <http://localhost:8050/overview>.
 | Status | Check API, MongoDB, Redis, and Snowflake status |
 | Overview | Review global totals, rankings, and the map |
 | Country Explorer | Review COVID metrics and pre-pandemic country context |
-| Comparison | Compare normalized metrics for two to ten countries |
+| Comparison | Compare COVID outcomes first, then five WDI country baselines |
 | Forecast | Compare forecast candidates and error measures |
 | Annotations | Add and review country-date notes |
 
@@ -642,6 +642,13 @@ Open <http://localhost:8050/overview>. Confirm that the Overview page contains d
 | `GET` | `/annotations` | Get filtered annotations |
 | `GET` | `/docs` | Open Swagger UI |
 
+The `/dashboard/compare` response keeps the existing COVID series and adds an
+optional `world_bank_context` object to each country. The object contains the five
+baseline indicators and the active snapshot ID. Its companion
+`world_bank_context_status` is `available` or `context_data_unavailable`. Missing or
+stale WDI context does not remove COVID results. `countries_without_data` continues
+to mean that the requested date range has no COVID observations.
+
 ### Acceptance requests
 
 ```bash
@@ -661,7 +668,7 @@ The first overview response should include `X-Cache: MISS`. The second equal req
 
 ### Cache policy
 
-Stable analytical responses use a 24-hour time to live. Forecasts use a six-hour time to live.
+Stable analytical responses use a 24-hour time to live. Forecasts use a six-hour time to live. Comparison cache keys use contract version 2 and include the committed WDI snapshot ID. Therefore, a new WDI publication cannot reuse a response from an older snapshot.
 
 Context cache keys include the active WDI snapshot identifier. This rule prevents cached context from crossing snapshot versions.
 
