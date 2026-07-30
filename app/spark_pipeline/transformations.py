@@ -4,6 +4,7 @@ from typing import Any
 
 from pyspark.sql import Column, DataFrame
 from pyspark.sql import functions as F
+from pyspark.sql.window import Window
 
 
 def _clean_code(column: Column) -> Column:
@@ -149,8 +150,8 @@ def enrich_with_population(
     )
     return daily_with_key.join(lookup, "population_lookup_key", "left").select(
         "country",
-        "country_iso2",
-        "country_iso3",
+        F.coalesce("country_iso2", "population_iso2").alias("country_iso2"),
+        F.coalesce("country_iso3", "population_iso3").alias("country_iso3"),
         "location_key",
         "report_date",
         "new_cases_raw",
@@ -222,6 +223,46 @@ def country_baseline(indicators: DataFrame) -> DataFrame:
             )
         ).alias("health_expenditure_per_capita_ppp_2019"),
         F.max("SNAPSHOT_ID").alias("context_snapshot_id"),
+    )
+
+
+def context_eligible_country_baseline(
+    population_enriched_daily: DataFrame,
+    baseline: DataFrame,
+    *,
+    broadcast_baseline: bool,
+) -> DataFrame:
+    """Mirror Snowflake's context-eligible country baseline for fingerprinting."""
+    # Snowflake fingerprints the eligible country dimension after a left join
+    # to WDI. Starting from WDI matches would silently discard valid countries
+    # with missing indicators, so identity eligibility is derived first.
+    latest_country = (
+        population_enriched_daily.withColumn(
+            "_country_rank",
+            F.row_number().over(
+                Window.partitionBy("location_key").orderBy(
+                    F.col("report_date").desc(),
+                    F.col("country").asc(),
+                )
+            ),
+        )
+        .where(F.col("_country_rank") == 1)
+        .select(F.col("country_iso3").alias("context_eligible_iso3"))
+        .where(F.col("context_eligible_iso3").isNotNull())
+    )
+    dimension = F.broadcast(baseline) if broadcast_baseline else baseline
+    return latest_country.join(
+        dimension,
+        F.col("context_eligible_iso3") == F.col("context_iso3"),
+        "left",
+    ).select(
+        F.col("context_eligible_iso3").alias("context_iso3"),
+        "population_2020_context",
+        "population_density_2019",
+        "population_age_65_plus_pct_2019",
+        "real_gdp_per_capita_2019",
+        "health_expenditure_per_capita_ppp_2019",
+        "context_snapshot_id",
     )
 
 

@@ -3,9 +3,9 @@
 Implementation report
 
 **Student:** Nestor Kulik  
-**Date:** 29 July 2026  
+**Date:** 30 July 2026<br>
 **Repository:** https://github.com/synku20777/bootcamp-project  
-**Reviewed branch and commit:** `api-works`, base commit `84f8376` plus this implementation working tree
+**Reviewed branch and commit:** `extended_0.8`, base commit `de76bb5e9e48d193769014a587b736085a23918b` plus this implementation working tree
 
 ## 1. Executive summary
 
@@ -13,9 +13,9 @@ This project integrates the free Snowflake Marketplace COVID-19 Epidemiological 
 
 The implementation now covers every required in-repository functional task. Forecasting was the final missing requirement and is implemented as a transparent comparison between a 7-day mean and a recent linear trend. The selected model is chosen by rolling temporal holdout MAE, reports both MAE and RMSE, and returns a descriptive 90% empirical error band. Clustering remains unimplemented because it is explicitly a bonus item. Final submission publication and clean-environment acceptance evidence remain release steps rather than code gaps.
 
-The strongest engineering qualities are reproducibility, explicit data contracts, least-privilege access, source-correction fidelity, bounded warehouse queries, fail-closed cache protection, and unusually careful Spark evidence. The project does not claim Spark is faster at this data volume: three common “optimizations” measured slower, while caching a reused frame and writing one appropriately sized Parquet file measured faster.
+The strongest engineering qualities are reproducibility, explicit data contracts, least-privilege access, source-correction fidelity, bounded warehouse queries, fail-closed cache protection, and unusually careful Spark evidence. The project does not claim Spark is generally faster at this data volume: early projection, AQE, and caching a reused frame measured slower, while three explicit broadcasts and one appropriately sized Parquet file measured faster.
 
-At review time, 90 application, API, dashboard, repository, ingestion, checksum, export, denominator-lifecycle, and forecasting tests passed. Ruff, isort, and Black passed. Docker Compose configuration parsed successfully. Live Snowflake publication, mart verification, API smoke testing, and row-level migration reconciliation passed. A fresh Spark test run was not completed on the review host because Java was not installed and Docker Desktop was stopped; historical Spark timing evidence is therefore separated from the new, executable WDI equivalence gate. A final submission should commit and push the working tree and perform one clean-VM acceptance run.
+At review time, 101 application, API, dashboard, repository, ingestion, checksum, export, denominator-lifecycle, and forecasting tests passed. The rebuilt pinned Spark image passed all 22 Spark tests. Ruff, isort, Black, and Docker Compose validation passed. Committed dated artifacts record the Snowflake publication, mart verification, API smoke test, and 61,836-row migration reconciliation; no new Snowflake query or credit use was required for this Spark run. Evidence version 3 passed the four-source, quality, correctness, three-broadcast plan, curated-publication, and Snowflake/Spark context-equivalence gates. A final submission should commit and push the working tree and perform one clean-VM acceptance run of the complete platform.
 
 ## 2. Requirement compliance
 
@@ -222,21 +222,29 @@ No clustering key, materialized view, or Search Optimization Service is configur
 
 ### 11.2 Spark optimization evidence
 
-The previously committed evidence was generated on 26 July 2026 with Python 3.12.13, PySpark 3.5.6, Java 17.0.19, `local[2]`, adaptive execution enabled, and 32 shuffle partitions. It predates the versioned WDI integration and is retained only as historical optimization evidence. The new pipeline additionally profiles 3,255 WDI observations, validates candidate grain and scope, derives a narrow one-row-per-country baseline, and broadcasts that projection rather than the long-form history. Source export now records the live Snowflake baseline fingerprint: 213 rows, 20,199 canonical bytes, SHA-256 `6fa8fc8208d748a8dfbd2b4d606eb09cf2faae59869dfa52c62f3b3913872d83`. Spark publication fails unless its typed ISO projection produces the same fingerprint. Executing that final comparison remains a release gate because the review host has no Java runtime.
+Evidence version 3 was generated on 30 July 2026 in the rebuilt pinned image with Python 3.12.13, PySpark 3.5.6, Java 17.0.19, `local[2]`, adaptive execution enabled, and 32 shuffle partitions. It uses immutable source batch `wdi-context-qa-v1`: 61,900 ECDC rows, 217 frozen population rows, 14 explicit mapping rows, and 3,255 WDI observations from snapshot `wdi2-2019-2021-372906f371e0391f`. All four file checksums and the combined batch checksum passed before Spark initialization.
+
+Spark derives the same context-eligible country universe as Snowflake before left joining the WDI baseline. This distinction retains countries that have a valid ISO3 identity but no WDI observation instead of silently shrinking the comparison to matched rows. The resulting projection matched the accepted Snowflake artifact exactly: 213 rows, 20,199 canonical bytes, and SHA-256 `6fa8fc8208d748a8dfbd2b4d606eb09cf2faae59869dfa52c62f3b3913872d83`. The optimized physical plan recorded three build-right broadcast hash joins for country mapping, frozen population, and the narrow one-row-per-country WDI baseline.
 
 | Comparison | Baseline median | Candidate median | Result | Engineering conclusion |
 | --- | ---: | ---: | --- | --- |
-| Early projection/filter | 309.199 ms | 342.216 ms | 10.7% slower | Keep projection for schema and network discipline, not as a local-speed claim |
-| Broadcast mapping/frozen denominator | 708.043 ms | 766.993 ms | 8.3% slower | Historical physical plan improved to two build-right broadcast hash joins, but tiny local input did not amortize setup; the new narrow context broadcast must be remeasured |
-| Adaptive duplicate aggregation | 445.400 ms | 586.483 ms | 31.7% slower | AQE remains a scale-safety setting; do not claim a speedup for this fixture |
-| Reused-frame cache | 651.562 ms | 512.305 ms | 21.4% faster | Persist only the frame reused by profiling and transformation, then unpersist in `finally` |
-| File layout | 3,659.314 ms | 1,932.798 ms | 47.2% faster | One output file avoids small-file overhead at this measured size |
+| Early projection/filter | 183.939 ms | 216.075 ms | Candidate was not faster | Keep projection for contract discipline and reduced downstream width, not as a local-speed claim |
+| Three broadcast joins | 762.517 ms | 561.944 ms | Candidate was faster | Broadcasting all three narrow dimensions avoided shuffle work on this fixture; revalidate when a dimension approaches the broadcast threshold |
+| Adaptive duplicate aggregation | 347.056 ms | 426.586 ms | Candidate was not faster | AQE remains a scale-safety setting; do not claim a speedup for this fixture |
+| Reused-frame cache | 323.322 ms | 372.224 ms | Candidate was not faster | Cache only when reuse, recomputation cost, and memory pressure justify materialization; this run does not justify it |
+| File layout | 2,787.065 ms | 1,645.820 ms | Candidate was faster | One output file avoids small-file overhead at this measured size |
 
-The final Parquet output measured 733,769 bytes. Thirteen monthly partitions had a median of only 74,313 bytes, far below the 128 MiB target. The pipeline therefore writes an unpartitioned dataset and coalesces to one file. Partitioning by country or date would create tiny files and scheduler overhead. The decision is recalculated from measured bytes rather than hard-coded as a universal rule.
+Every comparison passed schema, row-count, and row-multiset checksum gates before timing and used one warm-up plus five measured repetitions per variant. Broadcast joins and file layout were the only faster candidates in this run. Early projection, AQE, and caching were slower and are not presented as elapsed-time optimizations.
+
+The calibrated output measured 1,891,286 bytes. Thirteen hypothetical monthly partitions had a median of only 191,542 bytes, far below the 128 MiB target. The pipeline therefore published one unpartitioned 421,412-byte Parquet file. Partitioning by country or date would create tiny files and scheduler overhead. The decision is recalculated from measured bytes rather than hard-coded as a universal rule.
+
+The evidence path now consolidates joined-row and unmatched-location metrics into one post-benchmark aggregate and reuses the bounded 213-row fingerprint input to derive snapshot IDs. This removes redundant Spark actions without changing timed variants. It deliberately does not cache the enriched frame: pre-materialization would warm the file-layout input, undermine comparison isolation, and contradict the measured cache tradeoff for this workload.
 
 Explicit schemas and header inspection fail before Bronze publication on drift. The WDI schema uses fixed decimal precision and the canonical `\N` null token. Corrupt rows, duplicate WDI keys, out-of-scope indicators/years and quality failures are retained as run-local evidence. Immutable source, snapshot, ingestion and benchmark IDs prevent silent overwrite. The Bronze manifest records the WDI snapshot ID, Snowflake context fingerprint, source checksums, ruleset, quality status and quality-document checksum. Benchmark evidence version 3 adds baseline rows, canonical broadcast-projection bytes, joined COVID rows, unmatched identities and the Snowflake/Spark fingerprint comparison; it is published atomically only if correctness gates pass.
 
-The key lesson is that Spark optimization is workload-specific. Broadcast and AQE are architecturally sensible at scale but slower here. The report therefore separates physical-plan improvement from elapsed-time improvement and keeps Snowflake SQL/pandas as the production path for the current volume.
+The quality status was `WARN`, not `FAIL`: 339 ECDC rows lacked a source ISO value, and 18 negative case corrections plus 8 negative death corrections were retained. These are expected policy classifications; every fail-severity gate passed and curated publication succeeded. Atomic publication replaced the authoritative evidence only after these checks, the cross-engine fingerprint, all five correctness gates, and physical-plan validation passed.
+
+The key lesson is that Spark optimization is workload-specific. This run supports broadcast joins and consolidated file layout at the captured scale, but not projection, AQE, or caching as speed claims. The evidence remains a local-mode engineering comparison, not a cluster-throughput result, and Snowflake SQL remains the production path for the current volume.
 
 ## 12. COVID-19 insights
 
@@ -256,23 +264,23 @@ Confirmed cases are not infections. Countries differed in testing availability, 
 
 The codebase separates API routes, Pydantic contracts, services, repositories, dashboard components, Spark transformations, SQL, setup scripts, and tests. Non-obvious comments explain why decisions exist: fail-closed cache behavior, immutable publication, source corrections, atomic swaps, temporal validation, empirical intervals, bounded history, broadcast choice, persistence, and file layout. Comments avoid narrating readable syntax.
 
-Dependencies are declared in `pyproject.toml` and resolved in `uv.lock`. Python 3.12 patch compatibility is declared in package metadata, while `.python-version` and Docker pin 3.12.13. Java and PySpark live only in the optional Spark image/group. GitHub Actions runs lock verification, isort, Black, Ruff, 90 application tests, and the Spark fixture suite.
+Dependencies are declared in `pyproject.toml` and resolved in `uv.lock`. Python 3.12 patch compatibility is declared in package metadata, while `.python-version` and Docker pin 3.12.13. Java and PySpark live only in the optional Spark image/group. GitHub Actions runs lock verification, isort, Black, Ruff, the application suite, and the Spark fixture suite.
 
-Verification on 29 July 2026:
+Verification on 30 July 2026:
 
 | Check | Result |
 | --- | --- |
-| Application/unit/contract tests | 90 passed |
+| Application/unit/contract tests | 101 passed |
 | Ruff | Passed |
-| isort and Black | Passed with a repository-local Black cache |
+| isort and Black | Passed |
 | Compose configuration | Parsed successfully |
-| Live Snowflake WDI publication and mart verification | Passed; evidence in `reports/world_bank/snowflake_verification.json` |
-| Legacy/new COVID reconciliation | Passed; 61,836 exact canonical rows and zero tolerance failures |
-| Live context/API smoke | Passed with `COVID_APP_ROLE`; combined page context available |
-| Snowflake context export fingerprint | Passed; 213 baseline rows captured |
-| Docker runtime | Not run; Docker Desktop engine was stopped |
-| Fresh local Spark suite | Not completed; review host had no Java runtime |
-| Committed Spark evidence | Version 2; all five correctness gates passed in the recorded run |
+| Dated Snowflake WDI publication and mart verification | Passed; committed evidence in `reports/world_bank/snowflake_verification.json` |
+| Dated legacy/new COVID reconciliation | Passed; 61,836 exact canonical rows and zero tolerance failures |
+| Dated context/API smoke | Passed with `COVID_APP_ROLE`; combined page context available |
+| Snowflake context export fingerprint | Passed; immutable batch records 213 baseline rows |
+| Pinned Docker Spark image | Built successfully |
+| Containerized Spark suite | 22 passed in the rebuilt pinned image |
+| Committed Spark evidence | Version 3; four source checksums, five correctness gates, three broadcasts, 213-row cross-engine match, and curated publication passed |
 
 The normal supervisor path requires only Docker plus a Snowflake account. `setup.ps1` or `setup.sh` invokes the containerized bootstrap, validates prerequisites and postconditions, publishes the committed WDI snapshot without a network request, preserves or seeds the frozen denominator, deploys marts, starts dependencies, creates MongoDB indexes, and performs smoke checks. Manual recovery instructions are also documented.
 
@@ -280,9 +288,9 @@ The normal supervisor path requires only Docker plus a Snowflake account. `setup
 
 Before submission:
 
-1. Confirm the spelling of the student name, commit all working-tree changes, push `api-works`, and replace the base commit reference with the final hash.
+1. Confirm the spelling of the student name, commit all working-tree changes, push `extended_0.8`, and replace the base commit reference with the final hash.
 2. Run the documented setup on a clean virtual machine with Docker Desktop/Engine and capture healthy API, annotation round-trip, forecast, and dashboard evidence.
-3. Re-run the Spark fixture suite through the pinned Docker service and retain the CI link or terminal summary.
+3. Retain the final CI link and Spark evidence artifact with the submitted commit.
 
 Engineering follow-ups:
 
@@ -316,7 +324,7 @@ uv run python -m scripts.world_bank_indicators publish
 
 # Spark quality and benchmark path
 docker compose --profile spark run --rm spark ingest-profile \
-  --source-batch-id ecdc-2020-v1 \
+  --source-batch-id wdi-context-v1 \
   --ingestion-id bronze-v1 \
   --benchmark-run-id benchmark-v1
 

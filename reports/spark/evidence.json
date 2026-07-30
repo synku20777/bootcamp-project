@@ -1,5 +1,5 @@
 {
-  "benchmark_run_id": "benchmark-v5",
+  "benchmark_run_id": "benchmark-wdi-v4",
   "benchmarks": [
     {
       "correctness": {
@@ -76,9 +76,9 @@
         "after": [
           {
             "column_count": 5,
-            "duration_ms": 375.476,
-            "input_bytes": 207039,
-            "job_group": "benchmark-v5:early_projection_filter:after:0",
+            "duration_ms": 222.3,
+            "input_bytes": 2134232,
+            "job_group": "benchmark-wdi-v4:early_projection_filter:after:0",
             "partitions": 1,
             "repetition": 0,
             "row_count": 61900,
@@ -87,9 +87,9 @@
           },
           {
             "column_count": 5,
-            "duration_ms": 365.089,
-            "input_bytes": 207039,
-            "job_group": "benchmark-v5:early_projection_filter:after:1",
+            "duration_ms": 216.075,
+            "input_bytes": 2134232,
+            "job_group": "benchmark-wdi-v4:early_projection_filter:after:1",
             "partitions": 1,
             "repetition": 1,
             "row_count": 61900,
@@ -98,9 +98,9 @@
           },
           {
             "column_count": 5,
-            "duration_ms": 342.216,
-            "input_bytes": 207039,
-            "job_group": "benchmark-v5:early_projection_filter:after:2",
+            "duration_ms": 211.503,
+            "input_bytes": 2134232,
+            "job_group": "benchmark-wdi-v4:early_projection_filter:after:2",
             "partitions": 1,
             "repetition": 2,
             "row_count": 61900,
@@ -109,9 +109,9 @@
           },
           {
             "column_count": 5,
-            "duration_ms": 319.302,
-            "input_bytes": 207039,
-            "job_group": "benchmark-v5:early_projection_filter:after:3",
+            "duration_ms": 219.479,
+            "input_bytes": 2134232,
+            "job_group": "benchmark-wdi-v4:early_projection_filter:after:3",
             "partitions": 1,
             "repetition": 3,
             "row_count": 61900,
@@ -120,9 +120,9 @@
           },
           {
             "column_count": 5,
-            "duration_ms": 331.748,
-            "input_bytes": 207039,
-            "job_group": "benchmark-v5:early_projection_filter:after:4",
+            "duration_ms": 198.295,
+            "input_bytes": 2134232,
+            "job_group": "benchmark-wdi-v4:early_projection_filter:after:4",
             "partitions": 1,
             "repetition": 4,
             "row_count": 61900,
@@ -133,9 +133,9 @@
         "before": [
           {
             "column_count": 10,
-            "duration_ms": 327.096,
-            "input_bytes": 182073,
-            "job_group": "benchmark-v5:early_projection_filter:before:0",
+            "duration_ms": 183.939,
+            "input_bytes": 2134232,
+            "job_group": "benchmark-wdi-v4:early_projection_filter:before:0",
             "partitions": 1,
             "repetition": 0,
             "row_count": 61900,
@@ -144,9 +144,9 @@
           },
           {
             "column_count": 10,
-            "duration_ms": 298.447,
-            "input_bytes": 182073,
-            "job_group": "benchmark-v5:early_projection_filter:before:1",
+            "duration_ms": 169.678,
+            "input_bytes": 2134232,
+            "job_group": "benchmark-wdi-v4:early_projection_filter:before:1",
             "partitions": 1,
             "repetition": 1,
             "row_count": 61900,
@@ -155,9 +155,9 @@
           },
           {
             "column_count": 10,
-            "duration_ms": 309.402,
-            "input_bytes": 182073,
-            "job_group": "benchmark-v5:early_projection_filter:before:2",
+            "duration_ms": 169.968,
+            "input_bytes": 2134232,
+            "job_group": "benchmark-wdi-v4:early_projection_filter:before:2",
             "partitions": 1,
             "repetition": 2,
             "row_count": 61900,
@@ -166,9 +166,9 @@
           },
           {
             "column_count": 10,
-            "duration_ms": 309.199,
-            "input_bytes": 182073,
-            "job_group": "benchmark-v5:early_projection_filter:before:3",
+            "duration_ms": 185.193,
+            "input_bytes": 2134232,
+            "job_group": "benchmark-wdi-v4:early_projection_filter:before:3",
             "partitions": 1,
             "repetition": 3,
             "row_count": 61900,
@@ -177,9 +177,9 @@
           },
           {
             "column_count": 10,
-            "duration_ms": 282.9,
-            "input_bytes": 182073,
-            "job_group": "benchmark-v5:early_projection_filter:before:4",
+            "duration_ms": 191.009,
+            "input_bytes": 2134232,
+            "job_group": "benchmark-wdi-v4:early_projection_filter:before:4",
             "partitions": 1,
             "repetition": 4,
             "row_count": 61900,
@@ -192,14 +192,14 @@
       "summary": {
         "after": {
           "duration_ms": {
-            "maximum": 375.476,
-            "median": 342.216,
-            "minimum": 319.302
+            "maximum": 222.3,
+            "median": 216.075,
+            "minimum": 198.295
           },
           "input_bytes": {
-            "maximum": 207039,
-            "median": 207039,
-            "minimum": 207039
+            "maximum": 2134232,
+            "median": 2134232,
+            "minimum": 2134232
           },
           "shuffle_read_bytes": {
             "maximum": 72,
@@ -214,14 +214,14 @@
         },
         "before": {
           "duration_ms": {
-            "maximum": 327.096,
-            "median": 309.199,
-            "minimum": 282.9
+            "maximum": 191.009,
+            "median": 183.939,
+            "minimum": 169.678
           },
           "input_bytes": {
-            "maximum": 182073,
-            "median": 182073,
-            "minimum": 182073
+            "maximum": 2134232,
+            "median": 2134232,
+            "minimum": 2134232
           },
           "shuffle_read_bytes": {
             "maximum": 72,
@@ -242,7 +242,7 @@
         "datasets": [
           {
             "after": {
-              "content_sha256": "7acdf0718bc5af665d2f9165e3ca6ab1dabd217cdd813f3320b99bea6e8cf0a0",
+              "content_sha256": "24b6d110ee6137ae55e4743d22fba8b50402f6311ea3ea3549f4bbb0abfdf722",
               "distinct_row_hash_count": 61900,
               "row_count": 61900,
               "schema": [
@@ -333,13 +333,13 @@
                 {
                   "metadata": {},
                   "name": "_source_batch_id",
-                  "nullable": true,
+                  "nullable": false,
                   "type": "string"
                 },
                 {
                   "metadata": {},
                   "name": "_ingestion_id",
-                  "nullable": true,
+                  "nullable": false,
                   "type": "string"
                 },
                 {
@@ -353,12 +353,54 @@
                   "name": "_source_files",
                   "nullable": false,
                   "type": "string"
+                },
+                {
+                  "metadata": {},
+                  "name": "context_iso3",
+                  "nullable": true,
+                  "type": "string"
+                },
+                {
+                  "metadata": {},
+                  "name": "population_2020_context",
+                  "nullable": true,
+                  "type": "decimal(38,9)"
+                },
+                {
+                  "metadata": {},
+                  "name": "population_density_2019",
+                  "nullable": true,
+                  "type": "decimal(38,9)"
+                },
+                {
+                  "metadata": {},
+                  "name": "population_age_65_plus_pct_2019",
+                  "nullable": true,
+                  "type": "decimal(38,9)"
+                },
+                {
+                  "metadata": {},
+                  "name": "real_gdp_per_capita_2019",
+                  "nullable": true,
+                  "type": "decimal(38,9)"
+                },
+                {
+                  "metadata": {},
+                  "name": "health_expenditure_per_capita_ppp_2019",
+                  "nullable": true,
+                  "type": "decimal(38,9)"
+                },
+                {
+                  "metadata": {},
+                  "name": "context_snapshot_id",
+                  "nullable": true,
+                  "type": "string"
                 }
               ],
-              "schema_sha256": "db03106142810bbb90c98b04647e47db7428f54de49d58766a6839b50f3a480c"
+              "schema_sha256": "6d3861afa3a7ee5735b6eedba587e09e9c09396518e5c0585d5a378403a95b0a"
             },
             "before": {
-              "content_sha256": "7acdf0718bc5af665d2f9165e3ca6ab1dabd217cdd813f3320b99bea6e8cf0a0",
+              "content_sha256": "24b6d110ee6137ae55e4743d22fba8b50402f6311ea3ea3549f4bbb0abfdf722",
               "distinct_row_hash_count": 61900,
               "row_count": 61900,
               "schema": [
@@ -449,13 +491,13 @@
                 {
                   "metadata": {},
                   "name": "_source_batch_id",
-                  "nullable": true,
+                  "nullable": false,
                   "type": "string"
                 },
                 {
                   "metadata": {},
                   "name": "_ingestion_id",
-                  "nullable": true,
+                  "nullable": false,
                   "type": "string"
                 },
                 {
@@ -469,9 +511,51 @@
                   "name": "_source_files",
                   "nullable": false,
                   "type": "string"
+                },
+                {
+                  "metadata": {},
+                  "name": "context_iso3",
+                  "nullable": true,
+                  "type": "string"
+                },
+                {
+                  "metadata": {},
+                  "name": "population_2020_context",
+                  "nullable": true,
+                  "type": "decimal(38,9)"
+                },
+                {
+                  "metadata": {},
+                  "name": "population_density_2019",
+                  "nullable": true,
+                  "type": "decimal(38,9)"
+                },
+                {
+                  "metadata": {},
+                  "name": "population_age_65_plus_pct_2019",
+                  "nullable": true,
+                  "type": "decimal(38,9)"
+                },
+                {
+                  "metadata": {},
+                  "name": "real_gdp_per_capita_2019",
+                  "nullable": true,
+                  "type": "decimal(38,9)"
+                },
+                {
+                  "metadata": {},
+                  "name": "health_expenditure_per_capita_ppp_2019",
+                  "nullable": true,
+                  "type": "decimal(38,9)"
+                },
+                {
+                  "metadata": {},
+                  "name": "context_snapshot_id",
+                  "nullable": true,
+                  "type": "string"
                 }
               ],
-              "schema_sha256": "db03106142810bbb90c98b04647e47db7428f54de49d58766a6839b50f3a480c"
+              "schema_sha256": "6d3861afa3a7ee5735b6eedba587e09e9c09396518e5c0585d5a378403a95b0a"
             },
             "content_checksum_match": true,
             "dataset": "enriched",
@@ -491,106 +575,106 @@
       "measurements": {
         "after": [
           {
-            "duration_ms": 747.738,
-            "input_bytes": 104166,
-            "job_group": "benchmark-v5:broadcast_joins:after:0",
+            "duration_ms": 648.46,
+            "input_bytes": 3028695,
+            "job_group": "benchmark-wdi-v4:broadcast_joins:after:0",
             "partitions": 1,
             "repetition": 0,
             "row_count": 61900,
-            "shuffle_read_bytes": 1623726,
-            "shuffle_write_bytes": 1623726
+            "shuffle_read_bytes": 1646361,
+            "shuffle_write_bytes": 1646361
           },
           {
-            "duration_ms": 790.696,
-            "input_bytes": 104166,
-            "job_group": "benchmark-v5:broadcast_joins:after:1",
+            "duration_ms": 521.223,
+            "input_bytes": 3028695,
+            "job_group": "benchmark-wdi-v4:broadcast_joins:after:1",
             "partitions": 1,
             "repetition": 1,
             "row_count": 61900,
-            "shuffle_read_bytes": 1623726,
-            "shuffle_write_bytes": 1623726
+            "shuffle_read_bytes": 1646361,
+            "shuffle_write_bytes": 1646361
           },
           {
-            "duration_ms": 923.461,
-            "input_bytes": 104166,
-            "job_group": "benchmark-v5:broadcast_joins:after:2",
+            "duration_ms": 561.944,
+            "input_bytes": 3028695,
+            "job_group": "benchmark-wdi-v4:broadcast_joins:after:2",
             "partitions": 1,
             "repetition": 2,
             "row_count": 61900,
-            "shuffle_read_bytes": 1623726,
-            "shuffle_write_bytes": 1623726
+            "shuffle_read_bytes": 1646361,
+            "shuffle_write_bytes": 1646361
           },
           {
-            "duration_ms": 695.982,
-            "input_bytes": 104166,
-            "job_group": "benchmark-v5:broadcast_joins:after:3",
+            "duration_ms": 477.199,
+            "input_bytes": 3028695,
+            "job_group": "benchmark-wdi-v4:broadcast_joins:after:3",
             "partitions": 1,
             "repetition": 3,
             "row_count": 61900,
-            "shuffle_read_bytes": 1623726,
-            "shuffle_write_bytes": 1623726
+            "shuffle_read_bytes": 1646361,
+            "shuffle_write_bytes": 1646361
           },
           {
-            "duration_ms": 766.993,
-            "input_bytes": 104166,
-            "job_group": "benchmark-v5:broadcast_joins:after:4",
+            "duration_ms": 577.508,
+            "input_bytes": 3028695,
+            "job_group": "benchmark-wdi-v4:broadcast_joins:after:4",
             "partitions": 1,
             "repetition": 4,
             "row_count": 61900,
-            "shuffle_read_bytes": 1623726,
-            "shuffle_write_bytes": 1623726
+            "shuffle_read_bytes": 1646361,
+            "shuffle_write_bytes": 1646361
           }
         ],
         "before": [
           {
-            "duration_ms": 960.457,
-            "input_bytes": 104166,
-            "job_group": "benchmark-v5:broadcast_joins:before:0",
+            "duration_ms": 1066.446,
+            "input_bytes": 3028695,
+            "job_group": "benchmark-wdi-v4:broadcast_joins:before:0",
             "partitions": 1,
             "repetition": 0,
             "row_count": 61900,
-            "shuffle_read_bytes": 1363205,
-            "shuffle_write_bytes": 1363205
+            "shuffle_read_bytes": 1274038,
+            "shuffle_write_bytes": 1274038
           },
           {
-            "duration_ms": 726.588,
-            "input_bytes": 104166,
-            "job_group": "benchmark-v5:broadcast_joins:before:1",
+            "duration_ms": 886.004,
+            "input_bytes": 3028695,
+            "job_group": "benchmark-wdi-v4:broadcast_joins:before:1",
             "partitions": 1,
             "repetition": 1,
             "row_count": 61900,
-            "shuffle_read_bytes": 1363205,
-            "shuffle_write_bytes": 1363205
+            "shuffle_read_bytes": 1274038,
+            "shuffle_write_bytes": 1274038
           },
           {
-            "duration_ms": 703.086,
-            "input_bytes": 104166,
-            "job_group": "benchmark-v5:broadcast_joins:before:2",
+            "duration_ms": 744.86,
+            "input_bytes": 3028695,
+            "job_group": "benchmark-wdi-v4:broadcast_joins:before:2",
             "partitions": 1,
             "repetition": 2,
             "row_count": 61900,
-            "shuffle_read_bytes": 1363205,
-            "shuffle_write_bytes": 1363205
+            "shuffle_read_bytes": 1274038,
+            "shuffle_write_bytes": 1274038
           },
           {
-            "duration_ms": 627.459,
-            "input_bytes": 104166,
-            "job_group": "benchmark-v5:broadcast_joins:before:3",
+            "duration_ms": 762.517,
+            "input_bytes": 3028695,
+            "job_group": "benchmark-wdi-v4:broadcast_joins:before:3",
             "partitions": 1,
             "repetition": 3,
             "row_count": 61900,
-            "shuffle_read_bytes": 1363205,
-            "shuffle_write_bytes": 1363205
+            "shuffle_read_bytes": 1274038,
+            "shuffle_write_bytes": 1274038
           },
           {
-            "duration_ms": 708.043,
-            "input_bytes": 104166,
-            "job_group": "benchmark-v5:broadcast_joins:before:4",
+            "duration_ms": 706.652,
+            "input_bytes": 3028695,
+            "job_group": "benchmark-wdi-v4:broadcast_joins:before:4",
             "partitions": 1,
             "repetition": 4,
             "row_count": 61900,
-            "shuffle_read_bytes": 1363205,
-            "shuffle_write_bytes": 1363205
+            "shuffle_read_bytes": 1274038,
+            "shuffle_write_bytes": 1274038
           }
         ]
       },
@@ -598,46 +682,46 @@
       "summary": {
         "after": {
           "duration_ms": {
-            "maximum": 923.461,
-            "median": 766.993,
-            "minimum": 695.982
+            "maximum": 648.46,
+            "median": 561.944,
+            "minimum": 477.199
           },
           "input_bytes": {
-            "maximum": 104166,
-            "median": 104166,
-            "minimum": 104166
+            "maximum": 3028695,
+            "median": 3028695,
+            "minimum": 3028695
           },
           "shuffle_read_bytes": {
-            "maximum": 1623726,
-            "median": 1623726,
-            "minimum": 1623726
+            "maximum": 1646361,
+            "median": 1646361,
+            "minimum": 1646361
           },
           "shuffle_write_bytes": {
-            "maximum": 1623726,
-            "median": 1623726,
-            "minimum": 1623726
+            "maximum": 1646361,
+            "median": 1646361,
+            "minimum": 1646361
           }
         },
         "before": {
           "duration_ms": {
-            "maximum": 960.457,
-            "median": 708.043,
-            "minimum": 627.459
+            "maximum": 1066.446,
+            "median": 762.517,
+            "minimum": 706.652
           },
           "input_bytes": {
-            "maximum": 104166,
-            "median": 104166,
-            "minimum": 104166
+            "maximum": 3028695,
+            "median": 3028695,
+            "minimum": 3028695
           },
           "shuffle_read_bytes": {
-            "maximum": 1363205,
-            "median": 1363205,
-            "minimum": 1363205
+            "maximum": 1274038,
+            "median": 1274038,
+            "minimum": 1274038
           },
           "shuffle_write_bytes": {
-            "maximum": 1363205,
-            "median": 1363205,
-            "minimum": 1363205
+            "maximum": 1274038,
+            "median": 1274038,
+            "minimum": 1274038
           }
         }
       },
@@ -729,9 +813,9 @@
       "measurements": {
         "after": [
           {
-            "duration_ms": 704.634,
-            "input_bytes": 271535,
-            "job_group": "benchmark-v5:adaptive_duplicate_aggregation:after:0",
+            "duration_ms": 427.352,
+            "input_bytes": 4268464,
+            "job_group": "benchmark-wdi-v4:adaptive_duplicate_aggregation:after:0",
             "partitions": 1,
             "repetition": 0,
             "row_count": 61900,
@@ -739,9 +823,9 @@
             "shuffle_write_bytes": 1898262
           },
           {
-            "duration_ms": 586.483,
-            "input_bytes": 271535,
-            "job_group": "benchmark-v5:adaptive_duplicate_aggregation:after:1",
+            "duration_ms": 426.586,
+            "input_bytes": 4268464,
+            "job_group": "benchmark-wdi-v4:adaptive_duplicate_aggregation:after:1",
             "partitions": 1,
             "repetition": 1,
             "row_count": 61900,
@@ -749,9 +833,9 @@
             "shuffle_write_bytes": 1898262
           },
           {
-            "duration_ms": 594.323,
-            "input_bytes": 271535,
-            "job_group": "benchmark-v5:adaptive_duplicate_aggregation:after:2",
+            "duration_ms": 424.53,
+            "input_bytes": 4268464,
+            "job_group": "benchmark-wdi-v4:adaptive_duplicate_aggregation:after:2",
             "partitions": 1,
             "repetition": 2,
             "row_count": 61900,
@@ -759,9 +843,9 @@
             "shuffle_write_bytes": 1898262
           },
           {
-            "duration_ms": 523.26,
-            "input_bytes": 271535,
-            "job_group": "benchmark-v5:adaptive_duplicate_aggregation:after:3",
+            "duration_ms": 403.742,
+            "input_bytes": 4268464,
+            "job_group": "benchmark-wdi-v4:adaptive_duplicate_aggregation:after:3",
             "partitions": 1,
             "repetition": 3,
             "row_count": 61900,
@@ -769,9 +853,9 @@
             "shuffle_write_bytes": 1898262
           },
           {
-            "duration_ms": 542.391,
-            "input_bytes": 271535,
-            "job_group": "benchmark-v5:adaptive_duplicate_aggregation:after:4",
+            "duration_ms": 428.393,
+            "input_bytes": 4268464,
+            "job_group": "benchmark-wdi-v4:adaptive_duplicate_aggregation:after:4",
             "partitions": 1,
             "repetition": 4,
             "row_count": 61900,
@@ -781,9 +865,9 @@
         ],
         "before": [
           {
-            "duration_ms": 486.307,
-            "input_bytes": 72054,
-            "job_group": "benchmark-v5:adaptive_duplicate_aggregation:before:0",
+            "duration_ms": 391.643,
+            "input_bytes": 2134232,
+            "job_group": "benchmark-wdi-v4:adaptive_duplicate_aggregation:before:0",
             "partitions": 32,
             "repetition": 0,
             "row_count": 61900,
@@ -791,9 +875,9 @@
             "shuffle_write_bytes": 796630
           },
           {
-            "duration_ms": 456.947,
-            "input_bytes": 72054,
-            "job_group": "benchmark-v5:adaptive_duplicate_aggregation:before:1",
+            "duration_ms": 351.3,
+            "input_bytes": 2134232,
+            "job_group": "benchmark-wdi-v4:adaptive_duplicate_aggregation:before:1",
             "partitions": 32,
             "repetition": 1,
             "row_count": 61900,
@@ -801,9 +885,9 @@
             "shuffle_write_bytes": 796630
           },
           {
-            "duration_ms": 445.4,
-            "input_bytes": 72054,
-            "job_group": "benchmark-v5:adaptive_duplicate_aggregation:before:2",
+            "duration_ms": 347.056,
+            "input_bytes": 2134232,
+            "job_group": "benchmark-wdi-v4:adaptive_duplicate_aggregation:before:2",
             "partitions": 32,
             "repetition": 2,
             "row_count": 61900,
@@ -811,9 +895,9 @@
             "shuffle_write_bytes": 796630
           },
           {
-            "duration_ms": 417.239,
-            "input_bytes": 72054,
-            "job_group": "benchmark-v5:adaptive_duplicate_aggregation:before:3",
+            "duration_ms": 342.158,
+            "input_bytes": 2134232,
+            "job_group": "benchmark-wdi-v4:adaptive_duplicate_aggregation:before:3",
             "partitions": 32,
             "repetition": 3,
             "row_count": 61900,
@@ -821,9 +905,9 @@
             "shuffle_write_bytes": 796630
           },
           {
-            "duration_ms": 428.796,
-            "input_bytes": 72054,
-            "job_group": "benchmark-v5:adaptive_duplicate_aggregation:before:4",
+            "duration_ms": 318.55,
+            "input_bytes": 2134232,
+            "job_group": "benchmark-wdi-v4:adaptive_duplicate_aggregation:before:4",
             "partitions": 32,
             "repetition": 4,
             "row_count": 61900,
@@ -836,14 +920,14 @@
       "summary": {
         "after": {
           "duration_ms": {
-            "maximum": 704.634,
-            "median": 586.483,
-            "minimum": 523.26
+            "maximum": 428.393,
+            "median": 426.586,
+            "minimum": 403.742
           },
           "input_bytes": {
-            "maximum": 271535,
-            "median": 271535,
-            "minimum": 271535
+            "maximum": 4268464,
+            "median": 4268464,
+            "minimum": 4268464
           },
           "shuffle_read_bytes": {
             "maximum": 794801,
@@ -858,14 +942,14 @@
         },
         "before": {
           "duration_ms": {
-            "maximum": 486.307,
-            "median": 445.4,
-            "minimum": 417.239
+            "maximum": 391.643,
+            "median": 347.056,
+            "minimum": 318.55
           },
           "input_bytes": {
-            "maximum": 72054,
-            "median": 72054,
-            "minimum": 72054
+            "maximum": 2134232,
+            "median": 2134232,
+            "minimum": 2134232
           },
           "shuffle_read_bytes": {
             "maximum": 796630,
@@ -990,9 +1074,9 @@
       "measurements": {
         "after": [
           {
-            "duration_ms": 487.66,
-            "input_bytes": 1142537,
-            "job_group": "benchmark-v5:reused_frame_cache:after:0",
+            "duration_ms": 356.547,
+            "input_bytes": 3077288,
+            "job_group": "benchmark-wdi-v4:reused_frame_cache:after:0",
             "partitions": 1,
             "repetition": 0,
             "reuse_count": 2,
@@ -1000,9 +1084,9 @@
             "shuffle_write_bytes": 7098
           },
           {
-            "duration_ms": 475.161,
-            "input_bytes": 1142537,
-            "job_group": "benchmark-v5:reused_frame_cache:after:1",
+            "duration_ms": 381.274,
+            "input_bytes": 3077288,
+            "job_group": "benchmark-wdi-v4:reused_frame_cache:after:1",
             "partitions": 1,
             "repetition": 1,
             "reuse_count": 2,
@@ -1010,9 +1094,9 @@
             "shuffle_write_bytes": 7098
           },
           {
-            "duration_ms": 717.213,
-            "input_bytes": 1142537,
-            "job_group": "benchmark-v5:reused_frame_cache:after:2",
+            "duration_ms": 361.562,
+            "input_bytes": 3077288,
+            "job_group": "benchmark-wdi-v4:reused_frame_cache:after:2",
             "partitions": 1,
             "repetition": 2,
             "reuse_count": 2,
@@ -1020,9 +1104,9 @@
             "shuffle_write_bytes": 7098
           },
           {
-            "duration_ms": 713.37,
-            "input_bytes": 1142537,
-            "job_group": "benchmark-v5:reused_frame_cache:after:3",
+            "duration_ms": 381.377,
+            "input_bytes": 3077288,
+            "job_group": "benchmark-wdi-v4:reused_frame_cache:after:3",
             "partitions": 1,
             "repetition": 3,
             "reuse_count": 2,
@@ -1030,9 +1114,9 @@
             "shuffle_write_bytes": 7098
           },
           {
-            "duration_ms": 512.305,
-            "input_bytes": 1142537,
-            "job_group": "benchmark-v5:reused_frame_cache:after:4",
+            "duration_ms": 372.224,
+            "input_bytes": 3077288,
+            "job_group": "benchmark-wdi-v4:reused_frame_cache:after:4",
             "partitions": 1,
             "repetition": 4,
             "reuse_count": 2,
@@ -1042,9 +1126,9 @@
         ],
         "before": [
           {
-            "duration_ms": 494.221,
-            "input_bytes": 254127,
-            "job_group": "benchmark-v5:reused_frame_cache:before:0",
+            "duration_ms": 312.745,
+            "input_bytes": 4268464,
+            "job_group": "benchmark-wdi-v4:reused_frame_cache:before:0",
             "partitions": 1,
             "repetition": 0,
             "reuse_count": 2,
@@ -1052,9 +1136,9 @@
             "shuffle_write_bytes": 7039
           },
           {
-            "duration_ms": 494.882,
-            "input_bytes": 254127,
-            "job_group": "benchmark-v5:reused_frame_cache:before:1",
+            "duration_ms": 379.394,
+            "input_bytes": 4268464,
+            "job_group": "benchmark-wdi-v4:reused_frame_cache:before:1",
             "partitions": 1,
             "repetition": 1,
             "reuse_count": 2,
@@ -1062,9 +1146,9 @@
             "shuffle_write_bytes": 7039
           },
           {
-            "duration_ms": 676.14,
-            "input_bytes": 254127,
-            "job_group": "benchmark-v5:reused_frame_cache:before:2",
+            "duration_ms": 319.957,
+            "input_bytes": 4268464,
+            "job_group": "benchmark-wdi-v4:reused_frame_cache:before:2",
             "partitions": 1,
             "repetition": 2,
             "reuse_count": 2,
@@ -1072,9 +1156,9 @@
             "shuffle_write_bytes": 7039
           },
           {
-            "duration_ms": 651.562,
-            "input_bytes": 254127,
-            "job_group": "benchmark-v5:reused_frame_cache:before:3",
+            "duration_ms": 329.407,
+            "input_bytes": 4268464,
+            "job_group": "benchmark-wdi-v4:reused_frame_cache:before:3",
             "partitions": 1,
             "repetition": 3,
             "reuse_count": 2,
@@ -1082,9 +1166,9 @@
             "shuffle_write_bytes": 7039
           },
           {
-            "duration_ms": 667.198,
-            "input_bytes": 254127,
-            "job_group": "benchmark-v5:reused_frame_cache:before:4",
+            "duration_ms": 323.322,
+            "input_bytes": 4268464,
+            "job_group": "benchmark-wdi-v4:reused_frame_cache:before:4",
             "partitions": 1,
             "repetition": 4,
             "reuse_count": 2,
@@ -1097,14 +1181,14 @@
       "summary": {
         "after": {
           "duration_ms": {
-            "maximum": 717.213,
-            "median": 512.305,
-            "minimum": 475.161
+            "maximum": 381.377,
+            "median": 372.224,
+            "minimum": 356.547
           },
           "input_bytes": {
-            "maximum": 1142537,
-            "median": 1142537,
-            "minimum": 1142537
+            "maximum": 3077288,
+            "median": 3077288,
+            "minimum": 3077288
           },
           "shuffle_read_bytes": {
             "maximum": 7098,
@@ -1119,14 +1203,14 @@
         },
         "before": {
           "duration_ms": {
-            "maximum": 676.14,
-            "median": 651.562,
-            "minimum": 494.221
+            "maximum": 379.394,
+            "median": 323.322,
+            "minimum": 312.745
           },
           "input_bytes": {
-            "maximum": 254127,
-            "median": 254127,
-            "minimum": 254127
+            "maximum": 4268464,
+            "median": 4268464,
+            "minimum": 4268464
           },
           "shuffle_read_bytes": {
             "maximum": 7039,
@@ -1147,7 +1231,7 @@
         "datasets": [
           {
             "after": {
-              "content_sha256": "7acdf0718bc5af665d2f9165e3ca6ab1dabd217cdd813f3320b99bea6e8cf0a0",
+              "content_sha256": "24b6d110ee6137ae55e4743d22fba8b50402f6311ea3ea3549f4bbb0abfdf722",
               "distinct_row_hash_count": 61900,
               "row_count": 61900,
               "schema": [
@@ -1258,12 +1342,54 @@
                   "name": "_source_files",
                   "nullable": true,
                   "type": "string"
+                },
+                {
+                  "metadata": {},
+                  "name": "context_iso3",
+                  "nullable": true,
+                  "type": "string"
+                },
+                {
+                  "metadata": {},
+                  "name": "population_2020_context",
+                  "nullable": true,
+                  "type": "decimal(38,9)"
+                },
+                {
+                  "metadata": {},
+                  "name": "population_density_2019",
+                  "nullable": true,
+                  "type": "decimal(38,9)"
+                },
+                {
+                  "metadata": {},
+                  "name": "population_age_65_plus_pct_2019",
+                  "nullable": true,
+                  "type": "decimal(38,9)"
+                },
+                {
+                  "metadata": {},
+                  "name": "real_gdp_per_capita_2019",
+                  "nullable": true,
+                  "type": "decimal(38,9)"
+                },
+                {
+                  "metadata": {},
+                  "name": "health_expenditure_per_capita_ppp_2019",
+                  "nullable": true,
+                  "type": "decimal(38,9)"
+                },
+                {
+                  "metadata": {},
+                  "name": "context_snapshot_id",
+                  "nullable": true,
+                  "type": "string"
                 }
               ],
-              "schema_sha256": "1dbb50df17d6d7af0e529630a168d2dc2d5873aed63203bb00ed379a24c95e69"
+              "schema_sha256": "d89dfeeebd9a9ab4b176eaff093d8adba605d0af92372a40fa5a8edbb21cde1d"
             },
             "before": {
-              "content_sha256": "7acdf0718bc5af665d2f9165e3ca6ab1dabd217cdd813f3320b99bea6e8cf0a0",
+              "content_sha256": "24b6d110ee6137ae55e4743d22fba8b50402f6311ea3ea3549f4bbb0abfdf722",
               "distinct_row_hash_count": 61900,
               "row_count": 61900,
               "schema": [
@@ -1374,9 +1500,51 @@
                   "name": "_source_files",
                   "nullable": true,
                   "type": "string"
+                },
+                {
+                  "metadata": {},
+                  "name": "context_iso3",
+                  "nullable": true,
+                  "type": "string"
+                },
+                {
+                  "metadata": {},
+                  "name": "population_2020_context",
+                  "nullable": true,
+                  "type": "decimal(38,9)"
+                },
+                {
+                  "metadata": {},
+                  "name": "population_density_2019",
+                  "nullable": true,
+                  "type": "decimal(38,9)"
+                },
+                {
+                  "metadata": {},
+                  "name": "population_age_65_plus_pct_2019",
+                  "nullable": true,
+                  "type": "decimal(38,9)"
+                },
+                {
+                  "metadata": {},
+                  "name": "real_gdp_per_capita_2019",
+                  "nullable": true,
+                  "type": "decimal(38,9)"
+                },
+                {
+                  "metadata": {},
+                  "name": "health_expenditure_per_capita_ppp_2019",
+                  "nullable": true,
+                  "type": "decimal(38,9)"
+                },
+                {
+                  "metadata": {},
+                  "name": "context_snapshot_id",
+                  "nullable": true,
+                  "type": "string"
                 }
               ],
-              "schema_sha256": "1dbb50df17d6d7af0e529630a168d2dc2d5873aed63203bb00ed379a24c95e69"
+              "schema_sha256": "d89dfeeebd9a9ab4b176eaff093d8adba605d0af92372a40fa5a8edbb21cde1d"
             },
             "content_checksum_match": true,
             "dataset": "parquet_read_back",
@@ -1396,116 +1564,116 @@
       "measurements": {
         "after": [
           {
-            "duration_ms": 1932.798,
-            "input_bytes": 226534,
-            "job_group": "benchmark-v5:file_layout:after:0",
-            "output_bytes": 184491,
+            "duration_ms": 1642.287,
+            "input_bytes": 3028695,
+            "job_group": "benchmark-wdi-v4:file_layout:after:0",
+            "output_bytes": 421412,
             "output_file_count": 1,
             "partitions": 1,
             "repetition": 0,
-            "shuffle_read_bytes": 1589882,
-            "shuffle_write_bytes": 1589882
+            "shuffle_read_bytes": 1635523,
+            "shuffle_write_bytes": 1635523
           },
           {
-            "duration_ms": 2232.92,
-            "input_bytes": 226534,
-            "job_group": "benchmark-v5:file_layout:after:1",
-            "output_bytes": 184491,
+            "duration_ms": 1590.378,
+            "input_bytes": 3028695,
+            "job_group": "benchmark-wdi-v4:file_layout:after:1",
+            "output_bytes": 421412,
             "output_file_count": 1,
             "partitions": 1,
             "repetition": 1,
-            "shuffle_read_bytes": 1589882,
-            "shuffle_write_bytes": 1589882
+            "shuffle_read_bytes": 1635523,
+            "shuffle_write_bytes": 1635523
           },
           {
-            "duration_ms": 1785.925,
-            "input_bytes": 226534,
-            "job_group": "benchmark-v5:file_layout:after:2",
-            "output_bytes": 184491,
+            "duration_ms": 1668.818,
+            "input_bytes": 3028695,
+            "job_group": "benchmark-wdi-v4:file_layout:after:2",
+            "output_bytes": 421412,
             "output_file_count": 1,
             "partitions": 1,
             "repetition": 2,
-            "shuffle_read_bytes": 1589882,
-            "shuffle_write_bytes": 1589882
+            "shuffle_read_bytes": 1635523,
+            "shuffle_write_bytes": 1635523
           },
           {
-            "duration_ms": 1986.31,
-            "input_bytes": 226534,
-            "job_group": "benchmark-v5:file_layout:after:3",
-            "output_bytes": 184491,
+            "duration_ms": 1655.172,
+            "input_bytes": 3028695,
+            "job_group": "benchmark-wdi-v4:file_layout:after:3",
+            "output_bytes": 421412,
             "output_file_count": 1,
             "partitions": 1,
             "repetition": 3,
-            "shuffle_read_bytes": 1589882,
-            "shuffle_write_bytes": 1589882
+            "shuffle_read_bytes": 1635523,
+            "shuffle_write_bytes": 1635523
           },
           {
-            "duration_ms": 1805.502,
-            "input_bytes": 226534,
-            "job_group": "benchmark-v5:file_layout:after:4",
-            "output_bytes": 184491,
+            "duration_ms": 1645.82,
+            "input_bytes": 3028695,
+            "job_group": "benchmark-wdi-v4:file_layout:after:4",
+            "output_bytes": 421412,
             "output_file_count": 1,
             "partitions": 1,
             "repetition": 4,
-            "shuffle_read_bytes": 1589882,
-            "shuffle_write_bytes": 1589882
+            "shuffle_read_bytes": 1635523,
+            "shuffle_write_bytes": 1635523
           }
         ],
         "before": [
           {
-            "duration_ms": 3855.141,
-            "input_bytes": 226534,
-            "job_group": "benchmark-v5:file_layout:before:0",
-            "output_bytes": 733769,
+            "duration_ms": 2613.754,
+            "input_bytes": 3028695,
+            "job_group": "benchmark-wdi-v4:file_layout:before:0",
+            "output_bytes": 1891286,
             "output_file_count": 8,
             "partitions": 8,
             "repetition": 0,
-            "shuffle_read_bytes": 5368541,
-            "shuffle_write_bytes": 5368541
+            "shuffle_read_bytes": 9851941,
+            "shuffle_write_bytes": 9851941
           },
           {
-            "duration_ms": 3543.776,
-            "input_bytes": 226534,
-            "job_group": "benchmark-v5:file_layout:before:1",
-            "output_bytes": 733769,
+            "duration_ms": 2992.038,
+            "input_bytes": 3028695,
+            "job_group": "benchmark-wdi-v4:file_layout:before:1",
+            "output_bytes": 1891286,
             "output_file_count": 8,
             "partitions": 8,
             "repetition": 1,
-            "shuffle_read_bytes": 5368541,
-            "shuffle_write_bytes": 5368541
+            "shuffle_read_bytes": 9851941,
+            "shuffle_write_bytes": 9851941
           },
           {
-            "duration_ms": 3594.678,
-            "input_bytes": 226534,
-            "job_group": "benchmark-v5:file_layout:before:2",
-            "output_bytes": 733769,
+            "duration_ms": 2787.065,
+            "input_bytes": 3028695,
+            "job_group": "benchmark-wdi-v4:file_layout:before:2",
+            "output_bytes": 1891286,
             "output_file_count": 8,
             "partitions": 8,
             "repetition": 2,
-            "shuffle_read_bytes": 5368541,
-            "shuffle_write_bytes": 5368541
+            "shuffle_read_bytes": 9851941,
+            "shuffle_write_bytes": 9851941
           },
           {
-            "duration_ms": 3696.325,
-            "input_bytes": 226534,
-            "job_group": "benchmark-v5:file_layout:before:3",
-            "output_bytes": 733769,
+            "duration_ms": 2718.901,
+            "input_bytes": 3028695,
+            "job_group": "benchmark-wdi-v4:file_layout:before:3",
+            "output_bytes": 1891286,
             "output_file_count": 8,
             "partitions": 8,
             "repetition": 3,
-            "shuffle_read_bytes": 5368541,
-            "shuffle_write_bytes": 5368541
+            "shuffle_read_bytes": 9851941,
+            "shuffle_write_bytes": 9851941
           },
           {
-            "duration_ms": 3659.314,
-            "input_bytes": 226534,
-            "job_group": "benchmark-v5:file_layout:before:4",
-            "output_bytes": 733769,
+            "duration_ms": 3069.288,
+            "input_bytes": 3028695,
+            "job_group": "benchmark-wdi-v4:file_layout:before:4",
+            "output_bytes": 1891286,
             "output_file_count": 8,
             "partitions": 8,
             "repetition": 4,
-            "shuffle_read_bytes": 5368541,
-            "shuffle_write_bytes": 5368541
+            "shuffle_read_bytes": 9851941,
+            "shuffle_write_bytes": 9851941
           }
         ]
       },
@@ -1513,60 +1681,82 @@
       "summary": {
         "after": {
           "duration_ms": {
-            "maximum": 2232.92,
-            "median": 1932.798,
-            "minimum": 1785.925
+            "maximum": 1668.818,
+            "median": 1645.82,
+            "minimum": 1590.378
           },
           "input_bytes": {
-            "maximum": 226534,
-            "median": 226534,
-            "minimum": 226534
+            "maximum": 3028695,
+            "median": 3028695,
+            "minimum": 3028695
           },
           "shuffle_read_bytes": {
-            "maximum": 1589882,
-            "median": 1589882,
-            "minimum": 1589882
+            "maximum": 1635523,
+            "median": 1635523,
+            "minimum": 1635523
           },
           "shuffle_write_bytes": {
-            "maximum": 1589882,
-            "median": 1589882,
-            "minimum": 1589882
+            "maximum": 1635523,
+            "median": 1635523,
+            "minimum": 1635523
           }
         },
         "before": {
           "duration_ms": {
-            "maximum": 3855.141,
-            "median": 3659.314,
-            "minimum": 3543.776
+            "maximum": 3069.288,
+            "median": 2787.065,
+            "minimum": 2613.754
           },
           "input_bytes": {
-            "maximum": 226534,
-            "median": 226534,
-            "minimum": 226534
+            "maximum": 3028695,
+            "median": 3028695,
+            "minimum": 3028695
           },
           "shuffle_read_bytes": {
-            "maximum": 5368541,
-            "median": 5368541,
-            "minimum": 5368541
+            "maximum": 9851941,
+            "median": 9851941,
+            "minimum": 9851941
           },
           "shuffle_write_bytes": {
-            "maximum": 5368541,
-            "median": 5368541,
-            "minimum": 5368541
+            "maximum": 9851941,
+            "median": 9851941,
+            "minimum": 9851941
           }
         }
       },
       "warmup_repetitions": 1
     }
   ],
-  "cold_end_to_end_ms": 124697.522,
+  "cold_end_to_end_ms": 121929.932,
   "conclusions": [
-    "early_projection_filter: optimized median was not faster (342.216 ms versus 309.199 ms).",
-    "broadcast_joins: optimized median was not faster (766.993 ms versus 708.043 ms).",
-    "adaptive_duplicate_aggregation: optimized median was not faster (586.483 ms versus 445.4 ms).",
-    "reused_frame_cache: optimized median was faster (512.305 ms versus 651.562 ms).",
-    "file_layout: optimized median was faster (1932.798 ms versus 3659.314 ms)."
+    "early_projection_filter: optimized median was not faster (216.075 ms versus 183.939 ms).",
+    "broadcast_joins: optimized median was faster (561.944 ms versus 762.517 ms).",
+    "adaptive_duplicate_aggregation: optimized median was not faster (426.586 ms versus 347.056 ms).",
+    "reused_frame_cache: optimized median was not faster (372.224 ms versus 323.322 ms).",
+    "file_layout: optimized median was faster (1645.82 ms versus 2787.065 ms)."
   ],
+  "country_context_equivalence": {
+    "baseline_projection_canonical_bytes": 20199,
+    "baseline_rows": 213,
+    "fingerprints_match": true,
+    "joined_covid_rows": 61900,
+    "snapshot_ids": [
+      "wdi2-2019-2021-372906f371e0391f"
+    ],
+    "snowflake": {
+      "canonical_bytes": 20199,
+      "content_sha256": "6fa8fc8208d748a8dfbd2b4d606eb09cf2faae59869dfa52c62f3b3913872d83",
+      "protocol": "country-context-csv-sha256-v1",
+      "row_count": 213
+    },
+    "spark": {
+      "canonical_bytes": 20199,
+      "content_sha256": "6fa8fc8208d748a8dfbd2b4d606eb09cf2faae59869dfa52c62f3b3913872d83",
+      "protocol": "country-context-csv-sha256-v1",
+      "row_count": 213
+    },
+    "unmatched_location_count": 11
+  },
   "environment": {
     "adaptive_enabled": "true",
     "java": "17.0.19",
@@ -1576,22 +1766,26 @@
     "python": "3.12.13",
     "python_image": "python:3.12.13-slim-bookworm",
     "shuffle_partitions": "32",
-    "spark_application_id": "local-1785094560535",
+    "spark_application_id": "local-1785427322022",
     "uv": "0.11.29"
   },
-  "evidence_version": 2,
+  "evidence_version": 3,
   "fingerprint_protocol": {
     "algorithm": "sha256-row-multiset-v1",
     "canonicalization": "spark-scalar-json-v1",
     "fingerprint_version": 1
   },
-  "generated_at_utc": "2026-07-26T19:38:01.037815+00:00",
-  "ingestion_id": "bronze-v3",
+  "generated_at_utc": "2026-07-30T16:04:00.772805+00:00",
+  "ingestion_id": "bronze-wdi-v4",
   "layout": {
-    "measured_parquet_bytes": 733769,
-    "median_month_parquet_bytes": 74313,
+    "measured_parquet_bytes": 1891286,
+    "median_month_parquet_bytes": 191542,
     "month_count": 13,
     "partition_columns": [],
+    "published_output": {
+      "output_bytes": 421412,
+      "output_file_count": 1
+    },
     "reason": "unpartitioned output avoids tiny month directories",
     "target_file_bytes": 134217728,
     "target_file_count": 1
@@ -1608,38 +1802,45 @@
       "broadcast_hash_join_count": 0,
       "build_right_count": 0,
       "join_operators": [
-        "+- *(10) SortMergeJoin [population_lookup_key#<id>], [population_lookup_key#<id>], LeftOuter",
-        ":                                +- *(7) SortMergeJoin [source_name_key#<id>, coalesce(source_code_key#<id>, ), isnull(source_code_key#<id>)], [mapping_name_key#<id>, coalesce(mapping_code_key#<id>, ), isnull(mapping_code_key#<id>)], LeftOuter"
+        "+- *(16) SortMergeJoin [context_lookup_key#<id>], [context_lookup_key#<id>], LeftOuter",
+        ":                 +- *(13) SortMergeJoin [population_lookup_key#<id>], [population_lookup_key#<id>], LeftOuter",
+        ":                    :                                +- *(10) SortMergeJoin [source_name_key#<id>, coalesce(source_code_key#<id>, ), isnull(source_code_key#<id>)], [mapping_name_key#<id>, coalesce(mapping_code_key#<id>, ), isnull(mapping_code_key#<id>)], LeftOuter"
       ],
       "null_safe_mapping_key_present": false,
-      "sha256": "d526373eea582c81cde0a3cc25f745bea9e7bddb47e564a3505d96f58b0afa12",
+      "sha256": "7fc8db8e98be82feb90b63e4ed44700b9b595a7dd6a654e7d740f9a3989e6678",
       "typed_population_key_present": true
     },
     "optimized": {
       "adaptive_final": true,
-      "broadcast_hash_join_count": 2,
-      "build_right_count": 2,
+      "broadcast_hash_join_count": 3,
+      "build_right_count": 3,
       "join_operators": [
-        "+- *(5) BroadcastHashJoin [population_lookup_key#<id>], [population_lookup_key#<id>], LeftOuter, BuildRight, false",
-        ":                    +- *(4) BroadcastHashJoin [source_name_key#<id>, coalesce(source_code_key#<id>, ), isnull(source_code_key#<id>)], [mapping_name_key#<id>, coalesce(mapping_code_key#<id>, ), isnull(mapping_code_key#<id>)], LeftOuter, BuildRight, false"
+        "+- *(8) BroadcastHashJoin [context_lookup_key#<id>], [context_lookup_key#<id>], LeftOuter, BuildRight, false",
+        ":     +- *(8) BroadcastHashJoin [population_lookup_key#<id>], [population_lookup_key#<id>], LeftOuter, BuildRight, false",
+        ":        :                    +- *(5) BroadcastHashJoin [source_name_key#<id>, coalesce(source_code_key#<id>, ), isnull(source_code_key#<id>)], [mapping_name_key#<id>, coalesce(mapping_code_key#<id>, ), isnull(mapping_code_key#<id>)], LeftOuter, BuildRight, false"
       ],
       "null_safe_mapping_key_present": true,
-      "sha256": "9118e07d8213b22e9729bab166fe142b5119c45f6bf8803641116e244d27b7ec",
+      "sha256": "55123164a6554b7fc79ccf98845e899d9f8396197bbca8532284d7a621a06d40",
       "typed_population_key_present": true
     }
   },
   "quality": {
-    "quality_document_sha256": "7468c94de05333e682a01dab1a82b82857070dda1e2371cab2b7b8bc9350f30d",
+    "quality_document_sha256": "6eaf6ce3753b85077e2caaa882de895bebb626ac742d6f010ec4554501f2c266",
     "ruleset_version": "bronze-quality-v1",
     "status": "WARN"
   },
   "source_batch": {
-    "batch_sha256": "f0e2029bea81bb971772866c2965f27fb36d71c5d1f889b7a828187deb75125b",
+    "batch_sha256": "bac38faba547a89eaf8a2b0b1ec2028df6bf2ee2618bcef091d8acbfe440ddb8",
     "files": {
       "ecdc": {
         "byte_count": 2134232,
         "row_count": 61900,
         "sha256": "58577b72e4c95c928bf8caa6c5002c3a4bb07284dc5678003f4c1f5eae6c2115"
+      },
+      "indicators": {
+        "byte_count": 886648,
+        "row_count": 3255,
+        "sha256": "fa8402989dec83ec43b71e8c7629b10dd99327bd820e324830dace71f92ec380"
       },
       "mapping": {
         "byte_count": 801,
@@ -1652,6 +1853,7 @@
         "sha256": "d2e5e910d7107d04da11faef4b9940bf91930ee282a5b72c628b4ad41f0d1ba6"
       }
     },
-    "source_batch_id": "ecdc-2020-v1"
+    "source_batch_id": "wdi-context-qa-v1",
+    "world_bank_snapshot_id": "wdi2-2019-2021-372906f371e0391f"
   }
 }

@@ -869,12 +869,12 @@ Complete the Snowflake setup first. Configure `.env` for `COVID_PROJECT_ADMIN`.
 
 ```bash
 uv run python scripts/export_spark_sources.py \
-  --source-batch-id ecdc-2020-v1
+  --source-batch-id wdi-context-v1
 ```
 
 This is the only Spark step that contacts Snowflake. It writes one immutable batch under `data/source/`.
 
-The batch manifest includes row counts, byte counts, and SHA-256 checksums. The exporter never overwrites an existing batch identifier.
+The four-file contract contains ECDC daily data, the frozen 2020 population denominator, explicit country mappings, and the active versioned WDI observations. The batch manifest includes their row counts, byte counts, SHA-256 checksums, the WDI snapshot ID, and the accepted Snowflake country-context fingerprint. The exporter never overwrites an existing batch identifier.
 
 ### 2. Run Bronze ingestion and profiling
 
@@ -882,7 +882,7 @@ The batch manifest includes row counts, byte counts, and SHA-256 checksums. The 
 docker compose --profile spark build spark
 
 docker compose --profile spark run --rm spark ingest-profile \
-  --source-batch-id ecdc-2020-v1 \
+  --source-batch-id wdi-context-v1 \
   --ingestion-id bronze-v1 \
   --benchmark-run-id benchmark-v1
 ```
@@ -931,7 +931,17 @@ The benchmark covers these decisions:
 
 The measured fixture does not prove that every common optimization is faster. The report separates plan changes from elapsed-time changes.
 
-The final Parquet size is below the 128 MiB target. The pipeline therefore uses one unpartitioned file instead of many small partitions.
+Current evidence version 3 uses source batch `wdi-context-qa-v1` and WDI snapshot `wdi2-2019-2021-372906f371e0391f`. Spark reproduced the Snowflake context baseline exactly: 213 rows, 20,199 canonical bytes, and SHA-256 `6fa8fc8208d748a8dfbd2b4d606eb09cf2faae59869dfa52c62f3b3913872d83`. The optimized plan contains three build-right broadcast hash joins for country mapping, frozen population, and the narrow WDI baseline.
+
+| Comparison | Baseline median | Candidate median | Result |
+| --- | ---: | ---: | --- |
+| Early projection/filter | 183.939 ms | 216.075 ms | Candidate was not faster |
+| Three broadcast joins | 762.517 ms | 561.944 ms | Candidate was faster |
+| Adaptive duplicate aggregation | 347.056 ms | 426.586 ms | Candidate was not faster |
+| Reused-frame cache | 323.322 ms | 372.224 ms | Candidate was not faster |
+| File layout | 2,787.065 ms | 1,645.820 ms | Candidate was faster |
+
+The final published Parquet size is 421,412 bytes, below the 128 MiB target. The pipeline therefore uses one unpartitioned file instead of many small partitions.
 
 ### 4. Run Spark tests
 

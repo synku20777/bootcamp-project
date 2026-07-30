@@ -11,10 +11,16 @@ from pyspark.sql import SparkSession
 from pyspark.sql import types as T
 
 from app.spark_pipeline.benchmark import layout_decision, plan_evidence
-from app.spark_pipeline.pipeline import _publish_bronze, _quality_summary
+from app.spark_pipeline.pipeline import (
+    _country_context_equivalence,
+    _enriched_context_metrics,
+    _publish_bronze,
+    _quality_summary,
+)
 from app.spark_pipeline.quality import inspect_header, read_bronze_source
 from app.spark_pipeline.schemas import ECDC
 from app.spark_pipeline.transformations import (
+    context_eligible_country_baseline,
     country_baseline,
     duplicate_population_keys,
     enrich_with_country_context,
@@ -196,6 +202,42 @@ class SparkPipelineTests(unittest.TestCase):
         self.assertEqual(plan.count(), 2)
         self.assertEqual(plan.select("context_snapshot_id").distinct().count(), 1)
 
+    def test_context_baseline_preserves_eligible_countries_without_wdi(self) -> None:
+        daily = normalized_daily(
+            self._ecdc(),
+            self._mapping(),
+            broadcast_mapping=True,
+        )
+        population_enriched = enrich_with_population(
+            daily,
+            self._population(),
+            broadcast_population=True,
+        )
+        baseline = context_eligible_country_baseline(
+            population_enriched,
+            country_baseline(self._indicators()),
+            broadcast_baseline=True,
+        )
+        rows = {row["context_iso3"]: row.asDict() for row in baseline.collect()}
+
+        self.assertEqual(set(rows), {"LVA", "NAM"})
+        self.assertEqual(rows["LVA"]["context_snapshot_id"], "snapshot")
+        self.assertIsNone(rows["NAM"]["context_snapshot_id"])
+
+        enriched = enrich_with_country_context(
+            population_enriched,
+            country_baseline(self._indicators()),
+            broadcast_baseline=True,
+        )
+        evidence = _country_context_equivalence(
+            baseline,
+            _enriched_context_metrics(enriched),
+            None,
+        )
+        self.assertEqual(evidence["baseline_rows"], 2)
+        self.assertEqual(evidence["joined_covid_rows"], 3)
+        self.assertEqual(evidence["unmatched_location_count"], 2)
+
     def test_world_bank_checksum_matches_python_golden_protocol(self) -> None:
         source = {
             "CANONICAL_ISO2": "LV",
@@ -303,6 +345,7 @@ class SparkPipelineTests(unittest.TestCase):
 
         self.assertEqual(latvia["population_lookup_key"], "ISO2:LV")
         self.assertEqual(latvia["population"], 1_900_000)
+        self.assertEqual(latvia["country_iso3"], "LVA")
         self.assertEqual(duplicate_population_keys(self._population()), [])
         self.assertGreaterEqual(evidence["broadcast_hash_join_count"], 2)
         self.assertGreaterEqual(evidence["build_right_count"], 2)

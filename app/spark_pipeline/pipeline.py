@@ -36,6 +36,7 @@ from app.spark_pipeline.quality import (
 )
 from app.spark_pipeline.schemas import CORRUPT_RECORD_COLUMN, DATASETS
 from app.spark_pipeline.transformations import (
+    context_eligible_country_baseline,
     country_baseline,
     duplicate_count,
     enrich_with_country_context,
@@ -513,37 +514,37 @@ def _single_output(name: str, dataframe: DataFrame) -> CorrectnessOutputs:
 
 
 def _country_context_equivalence(
-    enriched: DataFrame,
+    context_baseline: DataFrame,
+    enriched_metrics: dict[str, int],
     expected: dict[str, Any] | None,
 ) -> dict[str, Any]:
-    projection = (
-        enriched.where(F.col("context_iso3").isNotNull())
-        .select(
-            F.col("context_iso3").alias("ISO3"),
-            F.col("population_2020_context").alias("POPULATION_2020_CONTEXT"),
-            F.col("population_density_2019").alias("POPULATION_DENSITY_2019"),
-            F.col("population_age_65_plus_pct_2019").alias(
-                "POPULATION_AGE_65_PLUS_PCT_2019"
-            ),
-            F.col("real_gdp_per_capita_2019").alias("REAL_GDP_PER_CAPITA_2019"),
-            F.col("health_expenditure_per_capita_ppp_2019").alias(
-                "HEALTH_EXPENDITURE_PER_CAPITA_PPP_2019"
-            ),
-            F.col("context_snapshot_id").alias("SNAPSHOT_ID"),
-        )
-        .dropDuplicates(["ISO3"])
+    projection = context_baseline.select(
+        F.col("context_iso3").alias("ISO3"),
+        F.col("population_2020_context").alias("POPULATION_2020_CONTEXT"),
+        F.col("population_density_2019").alias("POPULATION_DENSITY_2019"),
+        F.col("population_age_65_plus_pct_2019").alias(
+            "POPULATION_AGE_65_PLUS_PCT_2019"
+        ),
+        F.col("real_gdp_per_capita_2019").alias("REAL_GDP_PER_CAPITA_2019"),
+        F.col("health_expenditure_per_capita_ppp_2019").alias(
+            "HEALTH_EXPENDITURE_PER_CAPITA_PPP_2019"
+        ),
+        F.col("context_snapshot_id").alias("SNAPSHOT_ID"),
     )
-    actual = country_context_fingerprint(
+    # This projection is bounded to one row per eligible country. Materialize
+    # it once because the shared Python fingerprint protocol needs the rows and
+    # a second Spark DISTINCT action would add work without improving scale.
+    projection_rows = [
         row.asDict(recursive=True) for row in projection.toLocalIterator()
-    )
+    ]
+    actual = country_context_fingerprint(projection_rows)
     matches = expected is None or actual == expected
     if not matches:
         raise SparkPipelineError(
             "Spark country context does not match the Snowflake baseline fingerprint."
         )
     snapshot_ids = sorted(
-        str(row["SNAPSHOT_ID"])
-        for row in projection.select("SNAPSHOT_ID").distinct().collect()
+        {str(row["SNAPSHOT_ID"]) for row in projection_rows if row["SNAPSHOT_ID"]}
     )
     return {
         "snowflake": expected,
@@ -552,13 +553,23 @@ def _country_context_equivalence(
         "snapshot_ids": snapshot_ids,
         "baseline_rows": actual["row_count"],
         "baseline_projection_canonical_bytes": actual["canonical_bytes"],
-        "joined_covid_rows": enriched.count(),
-        "unmatched_location_count": enriched.where(
-            F.col("context_snapshot_id").isNull()
-        )
-        .select("location_key")
-        .distinct()
-        .count(),
+        **enriched_metrics,
+    }
+
+
+def _enriched_context_metrics(enriched: DataFrame) -> dict[str, int]:
+    row = enriched.agg(
+        F.count(F.lit(1)).alias("joined_covid_rows"),
+        F.countDistinct(
+            F.when(
+                F.col("context_snapshot_id").isNull(),
+                F.col("location_key"),
+            )
+        ).alias("unmatched_location_count"),
+    ).first()
+    return {
+        "joined_covid_rows": int(row["joined_covid_rows"]),
+        "unmatched_location_count": int(row["unmatched_location_count"]),
     }
 
 
@@ -772,21 +783,28 @@ def _benchmark_suite(
 
     baseline_daily = normalized_daily(ecdc, mapping, broadcast_mapping=False)
     optimized_daily = normalized_daily(ecdc, mapping, broadcast_mapping=True)
+    baseline_population_enriched = enrich_with_population(
+        baseline_daily,
+        population,
+        broadcast_population=False,
+    )
+    optimized_population_enriched = enrich_with_population(
+        optimized_daily,
+        population,
+        broadcast_population=True,
+    )
     baseline_enriched = enrich_with_country_context(
-        enrich_with_population(
-            baseline_daily,
-            population,
-            broadcast_population=False,
-        ),
+        baseline_population_enriched,
         baseline,
         broadcast_baseline=False,
     )
     optimized_enriched = enrich_with_country_context(
-        enrich_with_population(
-            optimized_daily,
-            population,
-            broadcast_population=True,
-        ),
+        optimized_population_enriched,
+        baseline,
+        broadcast_baseline=True,
+    )
+    context_baseline = context_eligible_country_baseline(
+        optimized_population_enriched,
         baseline,
         broadcast_baseline=True,
     )
@@ -832,14 +850,21 @@ def _benchmark_suite(
         ),
     ]
     spark.conf.set("spark.sql.adaptive.enabled", "true")
-    optimized_enriched.count()
+    # Collect both audit metrics in one post-benchmark action. Persisting the
+    # frame here would make the later file-layout comparison measure a warmed
+    # cache instead of the declared layouts, and this workload did not justify
+    # that memory tradeoff in its dedicated cache benchmark.
+    optimized_metrics = _enriched_context_metrics(optimized_enriched)
     baseline_enriched.count()
     optimized_plan = plan_evidence(optimized_enriched)
     baseline_plan = plan_evidence(baseline_enriched)
     context_equivalence = _country_context_equivalence(
-        optimized_enriched,
+        context_baseline,
+        optimized_metrics,
         snowflake_context_fingerprint,
     )
+    if not optimized_plan["adaptive_final"]:
+        raise SparkPipelineError("Optimized plan did not reach its final AQE state.")
     if optimized_plan["broadcast_hash_join_count"] < 3:
         raise SparkPipelineError(
             "Optimized plan did not use all three broadcast joins."

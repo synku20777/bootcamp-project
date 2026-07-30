@@ -7,13 +7,17 @@ REPOSITORY_ROOT = Path(__file__).resolve().parents[1]
 
 
 class OnboardingDocumentationTests(unittest.TestCase):
-    def test_beginner_start_path_precedes_architecture(self) -> None:
+    def test_beginner_path_is_complete_and_precedes_architecture(self) -> None:
         readme = (REPOSITORY_ROOT / "README.md").read_text(encoding="utf-8")
+        primary_path = readme.split("## Current capabilities", maxsplit=1)[0]
 
         start = readme.index("## Start here: run the project from a new computer")
         architecture = readme.index("## Architecture")
 
         self.assertLess(start, architecture)
+        self.assertIn("requires **Docker only**", primary_path)
+        self.assertIn("do not need to install Python, uv", primary_path)
+        self.assertIn("private Python/uv environment", primary_path)
         self.assertIn("## Advanced: manual setup and recovery", readme)
         self.assertIn("COVID19_EPIDEMIOLOGICAL_DATA.PUBLIC.ECDC_GLOBAL", readme)
         self.assertIn("Set-ExecutionPolicy -Scope Process Bypass", readme)
@@ -32,20 +36,6 @@ class OnboardingDocumentationTests(unittest.TestCase):
         self.assertIn("SNOWFLAKE_ROLE=COVID_PROJECT_ADMIN", example)
         self.assertIn("SNOWFLAKE_API_ROLE=COVID_APP_ROLE", example)
         self.assertNotIn("https://", _environment_value(example, "SNOWFLAKE_ACCOUNT"))
-
-    # def test_web_onboarding_decision_preserves_bootstrap_authority(self) -> None:
-    #     decision = (
-    #         REPOSITORY_ROOT / "docs" / "architecture" / "web-onboarding-feasibility.md"
-    #     ).read_text(encoding="utf-8")
-
-    #     self.assertIn("localhost-only", decision)
-    #     self.assertIn("CSRF", decision)
-    #     self.assertIn("one-time, short-lived setup token", decision)
-    #     self.assertIn(
-    #         "Keep `scripts/bootstrap.py` as the only setup authority", decision
-    #     )
-    #     self.assertIn("Do not\nmount the Docker socket", decision)
-    #     self.assertIn("setup page inside the production dashboard", decision)
 
     def test_setup_wrappers_propagate_failures_with_guidance(self) -> None:
         powershell = (REPOSITORY_ROOT / "setup.ps1").read_text(encoding="utf-8")
@@ -76,14 +66,6 @@ class OnboardingDocumentationTests(unittest.TestCase):
         self.assertIn(".env\n", dockerignore)
         self.assertIn(".env.backup-*", dockerignore)
         self.assertIn(".setup-state.json", dockerignore)
-
-    def test_normal_user_path_explicitly_requires_no_local_python_or_uv(self) -> None:
-        readme = (REPOSITORY_ROOT / "README.md").read_text(encoding="utf-8")
-        primary_path = readme.split("## Current capabilities", maxsplit=1)[0]
-
-        self.assertIn("requires **Docker only**", primary_path)
-        self.assertIn("do not need to install Python, uv", primary_path)
-        self.assertIn("private Python/uv environment", primary_path)
 
 
 def _environment_value(content: str, key: str) -> str:
