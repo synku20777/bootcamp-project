@@ -67,6 +67,139 @@ class BootstrapTests(unittest.TestCase):
         )
         self.assertEqual(parsed["VALUE"], value)
 
+    def test_missing_checksum_input_reports_the_repository_path(self) -> None:
+        missing = (self._temporary_root() / "missing.sql").resolve()
+
+        with self.assertRaises(bootstrap.BootstrapError) as raised:
+            bootstrap._input_checksum(missing)
+
+        expected_path = bootstrap._repository_path_label(missing)
+        self.assertIn(expected_path, str(raised.exception))
+        self.assertEqual(raised.exception.technical_reference, expected_path)
+        self.assertIn("Restore", raised.exception.fixes[0])
+
+    def test_mart_checksum_uses_committed_world_bank_inputs_not_runtime_receipt(
+        self,
+    ) -> None:
+        root = self._temporary_root().resolve()
+        population_manifest = root / "population-source.manifest.json"
+        wdi_manifest = root / "wdi-source.manifest.json"
+        publication_support = root / "publication-support.py"
+        mart_sql = root / "mart.sql"
+        for path, content in (
+            (population_manifest, "population-v1"),
+            (wdi_manifest, "wdi-v1"),
+            (publication_support, "loader-v1"),
+            (mart_sql, "select 1"),
+        ):
+            path.write_text(content, encoding="utf-8")
+        missing_runtime_receipt = root / "population-manifest.json"
+
+        with (
+            patch.object(
+                bootstrap,
+                "WORLD_BANK_PUBLICATION_INPUTS",
+                (population_manifest, wdi_manifest, publication_support),
+            ),
+            patch.object(bootstrap, "ANALYTICAL_MART_INPUTS", (mart_sql,)),
+            patch.object(
+                bootstrap,
+                "POPULATION_MANIFEST_PATH",
+                missing_runtime_receipt,
+            ),
+        ):
+            publication_v1 = bootstrap._world_bank_publication_checksum()
+            marts_v1 = bootstrap._analytical_marts_checksum(publication_v1)
+            self.assertFalse(missing_runtime_receipt.exists())
+
+            population_manifest.write_text("population-v2", encoding="utf-8")
+            publication_population_changed = (
+                bootstrap._world_bank_publication_checksum()
+            )
+            marts_population_changed = bootstrap._analytical_marts_checksum(
+                publication_population_changed
+            )
+            self.assertNotEqual(publication_v1, publication_population_changed)
+            self.assertNotEqual(marts_v1, marts_population_changed)
+
+            population_manifest.write_text("population-v1", encoding="utf-8")
+            wdi_manifest.write_text("wdi-v2", encoding="utf-8")
+            publication_wdi_changed = bootstrap._world_bank_publication_checksum()
+            marts_wdi_changed = bootstrap._analytical_marts_checksum(
+                publication_wdi_changed
+            )
+            self.assertNotEqual(publication_v1, publication_wdi_changed)
+            self.assertNotEqual(marts_v1, marts_wdi_changed)
+
+    def test_clean_workspace_reuses_frozen_denominator_without_runtime_receipt(
+        self,
+    ) -> None:
+        root = self._temporary_root().resolve()
+        missing_runtime_receipt = root / "population-manifest.json"
+        values = {
+            "SNOWFLAKE_ACCOUNT": "organization-account",
+            "SNOWFLAKE_USER": "bootcamp-user",
+            "SNOWFLAKE_DATABASE": "COVID_ANALYTICS",
+            "SNOWFLAKE_BOOTSTRAP_ROLE": "ACCOUNTADMIN",
+            "SNOWFLAKE_ROLE": "COVID_PROJECT_ADMIN",
+            "SNOWFLAKE_WAREHOUSE": "COVID_WH",
+        }
+        bootstrap_connection = MagicMock()
+        admin_connection = MagicMock()
+
+        def run_selected_steps(**kwargs) -> None:
+            if kwargs["name"] in {
+                "world_bank_snapshot_publication",
+                "population_verification_and_marts",
+            }:
+                kwargs["action"]()
+
+        with (
+            patch.object(
+                bootstrap,
+                "POPULATION_MANIFEST_PATH",
+                missing_runtime_receipt,
+            ),
+            patch("scripts.bootstrap.SetupState", return_value=MagicMock()),
+            patch("scripts.bootstrap.doctor_container_workspace"),
+            patch("scripts.bootstrap.configure_environment", return_value=values),
+            patch("scripts.bootstrap.doctor_configured"),
+            patch(
+                "scripts.bootstrap.connect_snowflake",
+                side_effect=(bootstrap_connection, admin_connection),
+            ),
+            patch("scripts.bootstrap._setup_progress"),
+            patch("scripts.bootstrap._run_step", side_effect=run_selected_steps),
+            patch("scripts.bootstrap._frozen_denominator_ready", return_value=True),
+            patch("scripts.bootstrap.refresh_population") as refresh_population,
+            patch("scripts.bootstrap.publish_wdi_snapshot") as publish_wdi_snapshot,
+            patch("scripts.bootstrap.execute_sql_file") as execute_sql_file,
+            patch("scripts.bootstrap.console"),
+        ):
+            bootstrap.setup(
+                resume=True,
+                non_interactive=True,
+                audit_path=root / "audit.jsonl",
+                container_data_only=True,
+            )
+
+        self.assertFalse(missing_runtime_receipt.exists())
+        refresh_population.assert_not_called()
+        publish_wdi_snapshot.assert_called_once_with(
+            admin_connection,
+            bootstrap.WDI_SNAPSHOT_PATH,
+            bootstrap.WDI_SNAPSHOT_MANIFEST_PATH,
+        )
+        self.assertEqual(
+            [call.args[1] for call in execute_sql_file.call_args_list],
+            [
+                bootstrap.SQL_FILES["population_verify"],
+                bootstrap.SQL_FILES["world_bank_context"],
+                bootstrap.SQL_FILES["mart"],
+                bootstrap.SQL_FILES["reporting"],
+            ],
+        )
+
     def test_state_resume_requires_context_checksum_and_postcondition(self) -> None:
         state = bootstrap.SetupState(self._temporary_root() / "state.json")
         context = {

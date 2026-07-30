@@ -1,145 +1,70 @@
 # COVID-19 Analytics Platform
 
-A bootcamp data-engineering project that combines versioned World Development
-Indicators country context and a separately frozen COVID population denominator,
-Snowflake analytics, a FastAPI service, MongoDB, and Redis. The repository
-provides a reproducible development and container environment, Snowflake setup
-and transformations, deterministic snapshot ingestion, cached analytical APIs, automated
-exploratory-data-analysis exports, and a responsive analytical dashboard with
-MongoDB annotations and evaluated time-series forecasts.
+This bootcamp project builds a COVID-19 data platform with Snowflake, FastAPI, Dash, MongoDB, Redis, and PySpark.
 
-The current World Bank architecture is documented in
-[`docs/architecture/world-bank-context.md`](docs/architecture/world-bank-context.md).
-It supersedes the older population-only design while retaining that snapshot as
-the explicit frozen denominator for backward-compatible per-capita rates.
+The platform uses ECDC data from Snowflake Marketplace. It adds versioned World Development Indicators (WDI) for country context.
+
+The project keeps the WDI context separate from the frozen 2020 population denominator. This rule prevents source revisions from changing published COVID rates.
+
+See [World Bank country context](docs/architecture/world-bank-context.md) for the complete WDI architecture and migration policy.
 
 ## Start here: run the project from a new computer
 
-This is the primary setup path. You do not need to read the source code or run
-individual SQL files. Follow the sections in order; the guided command validates
-each prerequisite before it changes the next system.
+Use this section for the normal setup. Run the steps in order from the repository root.
 
-### What this project starts
+The normal workflow requires **Docker only**. You do not need to install Python, uv, Java, MongoDB, Redis, or Snowflake command-line tools.
 
-The finished project has four local Docker services and one remote data system:
+Setup builds a private Python/uv environment inside Docker. The application then runs in four local containers.
 
-- **Dash dashboard** at <http://localhost:8050/overview> for overview, country,
-  comparison, forecast, and annotation pages.
-- **FastAPI API** at <http://localhost:8000/docs> for documented HTTP endpoints.
-- **Redis** inside Docker for 24-hour analytical response caching. The API fails
-  closed if Redis is unavailable so a broken cache cannot create repeated
-  Snowflake queries and consume trial credits.
-- **MongoDB** at host port `27017` for annotations.
-- **Snowflake** in your trial account for Marketplace source data and the
-  analytical marts queried by the API.
+### What the project starts
 
-The terminal is the text-based application used to run commands. On Windows,
-use PowerShell; on macOS or Linux, use Terminal. The **repository root** is the
-downloaded project folder containing `README.md`, `compose.yaml`, `setup.ps1`,
-and `setup.sh`. Run every command below from that folder.
+| System | Address | Purpose |
+| --- | --- | --- |
+| Dash | <http://localhost:8050/overview> | Interactive dashboard |
+| FastAPI | <http://localhost:8000/docs> | API and Swagger UI |
+| MongoDB | `127.0.0.1:27017` | User annotations |
+| Redis | Docker network only | API cache and query-budget protection |
+| Snowflake | Remote trial account | Marketplace data and analytical marts |
 
-### Data-source scope and rationale
+Redis is a required dependency for analytical routes. The API does not query Snowflake when Redis is unavailable.
 
-The Snowflake Marketplace listing exposes many epidemiological tables, but this
-project intentionally reads only
-`COVID19_EPIDEMIOLOGICAL_DATA.PUBLIC.ECDC_GLOBAL`. Its country/date grain and
-daily case/death measures match the assignment's global comparison, per-capita
-normalization, pattern detection and forecasting questions. Joining unrelated
-provider tables with different geographic or event grains would multiply rows
-and expand the analytical scope without a defined question. The source table is
-therefore allowlisted in SQL, bootstrap checks and Spark export code.
-
-World Development Indicators are a separate external integration, not a
-replacement for fields already available in Snowflake. The project adds only
-non-duplicate analytical context: population density, population aged 65+, real
-GDP per capita and PPP health expenditure, plus source-faithful annual
-population. See the [versioned WDI decision record](docs/architecture/world-bank-context.md)
-for the exact indicators, temporal rationale, coverage gates and why 2019
-baseline values are kept separate from 2019–2021 descriptive change.
+This fail-closed rule protects Snowflake trial credits. It also prevents concurrent cache misses from creating duplicate warehouse queries.
 
 ### 1. Create the Snowflake account
 
-Create a Snowflake trial account before installing the local application:
-
 1. Open the [Snowflake trial registration page](https://signup.snowflake.com/).
-2. Choose **Amazon Web Services (AWS)** as the cloud provider.
-3. Choose the **Europe (Stockholm)** region. Other regions may work, but the
-   project onboarding contract and tested example use AWS Stockholm.
-4. Finish account creation and sign in to Snowsight.
-5. Record these values in a password manager:
-   - organization name;
-   - account name;
-   - Snowflake username;
-   - Snowflake password.
+2. Select **Amazon Web Services (AWS)**.
+3. Select **Europe (Stockholm)**.
+4. Create the account.
+5. Sign in to Snowsight.
+6. Save the organization name, account name, username, and password in a password manager.
 
-The connector needs `SNOWFLAKE_ACCOUNT` in `organization-account` form, for
-example `acme-xy12345`. Find this account identifier in Snowsight account
-details. Do **not** use the Snowsight browser URL, `https://`, a regional
-hostname, or a value ending in `snowflakecomputing.com`.
+Use `organization-account` for `SNOWFLAKE_ACCOUNT`. Do not use a URL, regional hostname, or `snowflakecomputing.com` hostname.
 
-### 2. Add the required Marketplace database
+### 2. Add the Marketplace database
 
-While signed in to the same Snowflake account:
+1. Open **Data Products** or **Marketplace** in Snowsight.
+2. Find the free **COVID-19 Epidemiological Data** listing.
+3. Add the listing to the current account.
+4. Name the database `COVID19_EPIDEMIOLOGICAL_DATA`.
+5. Open a Snowsight worksheet.
+6. Run this query:
 
-1. Open **Data Products** / **Marketplace** in Snowsight.
-2. Find the free COVID-19 epidemiological data listing that contains ECDC data.
-3. Add or get the listing for the current account.
-4. Name the installed database exactly:
-
-   ```text
-   COVID19_EPIDEMIOLOGICAL_DATA
-   ```
-
-5. In a Snowsight worksheet, confirm this object exists and is queryable:
-
-   ```sql
-   SELECT *
-   FROM COVID19_EPIDEMIOLOGICAL_DATA.PUBLIC.ECDC_GLOBAL
-   LIMIT 1;
-   ```
-
-Setup deliberately checks both the database and
-`COVID19_EPIDEMIOLOGICAL_DATA.PUBLIC.ECDC_GLOBAL`. A similarly named database
-or another COVID listing is not interchangeable.
-
-> If setup later says the Marketplace object is missing, return to this step.
-> Installing the listing in a different Snowflake account or under a different
-> database name is the usual cause.
-
-### 3. Install the only local prerequisite: Docker
-
-The normal setup, start, stop, and application workflow requires **Docker only**.
-You do not need to install Python, uv, Java, MongoDB, Redis, Snowflake command-line
-tools, or a code editor. Python and uv are installed inside a pinned Docker image.
-After setup, you use the application through a web browser.
-
-#### Git or a ZIP download
-
-Git is recommended because it makes updates and branch history available:
-
-- Windows: install [Git for Windows](https://git-scm.com/download/win).
-- macOS: run `xcode-select --install`, or install Git with Homebrew.
-- Linux: install `git` with your distribution package manager.
-
-Verify it in a new terminal:
-
-```bash
-git --version
+```sql
+SELECT *
+FROM COVID19_EPIDEMIOLOGICAL_DATA.PUBLIC.ECDC_GLOBAL
+LIMIT 1;
 ```
 
-Git is optional if you download and extract the repository ZIP from GitHub.
-The guided setup works without a `.git` directory; you simply will not have Git
-history or normal pull/update commands.
+The query must return one ECDC row. A different COVID database or object does not meet this project contract.
 
-#### Docker and Docker Compose
+### 3. Install Docker
 
-- Windows/macOS: install [Docker Desktop](https://www.docker.com/products/docker-desktop/).
-- Linux: install Docker Engine and the Docker Compose v2 plugin using the
-  [official Docker instructions](https://docs.docker.com/engine/install/).
+On Windows or macOS, install [Docker Desktop](https://www.docker.com/products/docker-desktop/).
 
-Start Docker Desktop, or start the Docker service on Linux. Installation alone
-is not enough: the engine must be running. Verify the client, server, and
-Compose plugin:
+On Linux, install Docker Engine and the Compose v2 plugin from the [Docker documentation](https://docs.docker.com/engine/install/).
+
+Start the Docker engine. Then run these checks:
 
 ```bash
 docker --version
@@ -147,90 +72,88 @@ docker info
 docker compose version
 ```
 
-`docker info` must show a **Server** section. On Linux, if it reports permission
-denied, configure non-root Docker access according to the official Docker
-post-install instructions, then open a new login session.
+`docker info` must show a **Server** section. If Linux reports a permission error, configure non-root Docker access.
 
-Git remains optional. If you download the repository ZIP, the complete user
-workflow needs only Docker Desktop/Engine, the operating system's built-in
-terminal, and a browser.
+Git is optional. Use Git for normal updates, or download a ZIP file from GitHub.
 
-### 4. Download the repository and enter its root
+Verify Git if you use it:
 
-With Git:
+```bash
+git --version
+```
+
+### 4. Get the repository
+
+With Git, run:
 
 ```bash
 git clone <repository-url>
 cd bootcamp-project
 ```
 
-Without Git, download the repository ZIP, extract it, and open the extracted
-`bootcamp-project` folder in a terminal.
+Without Git, download the repository ZIP. Extract it and open the `bootcamp-project` folder in a terminal.
 
-Confirm the current folder before setup.
-
-PowerShell:
+On Windows, verify the current folder:
 
 ```powershell
 Get-Location
 Get-Item README.md, compose.yaml, setup.ps1, setup.sh
 ```
 
-macOS/Linux:
+On macOS or Linux, verify the current folder:
 
 ```bash
 pwd
 ls README.md compose.yaml setup.ps1 setup.sh
 ```
 
-If any file is reported missing, change directory into the repository root.
-Do not run setup from `Downloads`, your home folder, or the parent GitHub folder.
+If a file is missing, change to the repository root before setup.
 
-### 5. Understand the configuration values
+### 5. Understand the configuration
 
-The guided setup creates `.env` from `.env.example`, prompts only for missing
-secret/account values, backs up an existing `.env`, validates the serialized
-file, then replaces it atomically. `.env` is ignored by Git. Do not commit it,
-paste it into an issue, or share its contents.
+Setup creates `.env` from `.env.example`. It prompts only for missing account values and secrets.
 
-These values control Snowflake:
+Setup backs up an existing `.env` file before replacement. Git and Docker both ignore the file.
 
-| Variable | Meaning and expected value |
+Do not commit `.env`. Do not paste its contents into an issue or log.
+
+#### Snowflake variables
+
+| Variable | Required value |
 | --- | --- |
-| `SNOWFLAKE_ACCOUNT` | Connector account identifier such as `organization-account`; never a URL or hostname. |
-| `SNOWFLAKE_USER` | The Snowflake login created for this account. |
-| `SNOWFLAKE_PASSWORD` | Password for that login; hidden during prompting and never written to the audit log. |
-| `SNOWFLAKE_BOOTSTRAP_ROLE` | One-time account-level setup role. Keep the default `ACCOUNTADMIN`; it creates the warehouse/project roles and grants them to the user. |
-| `SNOWFLAKE_ROLE` | Deployment role, `COVID_PROJECT_ADMIN`; creates schemas, views, tables, and reporting objects after bootstrap. |
-| `SNOWFLAKE_API_ROLE` | Runtime least-privilege role, `COVID_APP_ROLE`; FastAPI uses this instead of `ACCOUNTADMIN`. |
-| `SNOWFLAKE_WAREHOUSE` | Project warehouse, `COVID_WH`, with auto-suspend/auto-resume and a resource monitor. |
-| `SNOWFLAKE_DATABASE` | Project-owned database, `COVID_ANALYTICS`. |
-| `SNOWFLAKE_SCHEMA` | Default loader/deployment schema, `RAW`. |
-| `SNOWFLAKE_API_SCHEMA` | Default API analytical schema, `MARTS`. |
+| `SNOWFLAKE_ACCOUNT` | Connector identifier in `organization-account` form |
+| `SNOWFLAKE_USER` | Snowflake login name |
+| `SNOWFLAKE_PASSWORD` | Snowflake login password |
+| `SNOWFLAKE_BOOTSTRAP_ROLE` | `ACCOUNTADMIN` for one-time account setup |
+| `SNOWFLAKE_ROLE` | `COVID_PROJECT_ADMIN` for deployment |
+| `SNOWFLAKE_API_ROLE` | `COVID_APP_ROLE` for runtime reads |
+| `SNOWFLAKE_WAREHOUSE` | `COVID_WH` |
+| `SNOWFLAKE_DATABASE` | `COVID_ANALYTICS` |
+| `SNOWFLAKE_SCHEMA` | `RAW` |
+| `SNOWFLAKE_API_SCHEMA` | `MARTS` |
 
-These values control the local services:
+Keep the three roles separate. Do not use `ACCOUNTADMIN` as the API role.
 
-| Variable | Meaning and expected value |
+#### Local service variables
+
+| Variable | Purpose |
 | --- | --- |
-| `MONGO_ROOT_USERNAME` | Root username used only for the project-owned MongoDB container. |
-| `MONGO_ROOT_PASSWORD` | Local MongoDB root password; leave the guided prompt blank to generate a strong value. |
-| `MONGO_DATABASE` | Application database, normally `covid_app`. |
-| `MONGODB_URI` | Complete MongoDB connection string. Guided setup derives it from the username/password/database and URL-encodes credentials. |
-| `REDIS_URL` | Host-side default `redis://localhost:6379/0`; Compose supplies `redis://redis:6379/0` to the API container. |
+| `MONGO_ROOT_USERNAME` | Root user for the project MongoDB container |
+| `MONGO_ROOT_PASSWORD` | Root password for the project MongoDB container |
+| `MONGO_DATABASE` | Application database, normally `covid_app` |
+| `MONGODB_URI` | MongoDB connection string |
+| `REDIS_URL` | Redis connection string |
+| `CACHE_NAMESPACE` | Version prefix for cached responses |
+| `DASHBOARD_API_BASE_URL` | API address used inside the dashboard container |
+| `DASHBOARD_PUBLIC_API_BASE_URL` | API address used by the host browser |
 
-The bootstrap role is temporary authority for setup; the project admin role is
-for deployment; the API role is for runtime reads. Do not simplify all three to
-`ACCOUNTADMIN`. That would defeat the repository's least-privilege design.
+If the MongoDB password is blank, setup generates a strong password. Setup also builds the encoded MongoDB URI.
 
-### 6. Run the one-time guided setup
+### 6. Run the one-time setup
 
-Keep Docker running. The first run builds the pinned setup image (including its
-private Python/uv environment), checksum-validates the committed World Bank
-snapshot, and creates Snowflake objects, so it normally takes several minutes.
-Nothing is installed into your host Python environment, and guided setup does
-not depend on the World Bank API being reachable.
+Before this step, make sure that Docker is running.
 
-Windows PowerShell:
+On Windows PowerShell, run:
 
 ```powershell
 Set-ExecutionPolicy -Scope Process Bypass
@@ -239,68 +162,64 @@ Set-ExecutionPolicy -Scope Process Bypass
 
 The execution-policy change applies only to the current PowerShell process.
 
-macOS/Linux:
+On macOS or Linux, run:
 
 ```bash
 chmod +x setup.sh start.sh stop.sh
 ./setup.sh
 ```
 
-The terminal displays **Step X of 9** and performs these operations:
+The setup process completes nine operations:
 
-1. Validates the Docker engine/Compose plugin and ports `8000`, `8050`, and
-   `27017`, then builds the pinned setup image.
-2. Inside the temporary setup container, validates repository permissions and
-   secret-ignore rules, creates or backs up `.env`, collects hidden secrets,
-   authenticates with the bootstrap role, and checks the Marketplace ECDC object.
-3. Creates the resource-monitored `COVID_WH`, project database/schemas, and
-   least-privilege roles; grants the project roles to the configured user.
-4. Reconnects as the newly granted `COVID_PROJECT_ADMIN`, creates the project
-   schemas/API grants, verifies Marketplace access, and deploys mapping/staging.
-5. Loads the committed WDI history without a network request, validates its
-   manifest, and activates exactly one immutable source snapshot.
-6. Preserves the separately frozen COVID denominator, then creates and verifies
-   the baseline, annual-context, enriched, latest-metrics, and context marts.
-7. The host launcher validates Compose, builds images, and starts FastAPI, Dash,
-   MongoDB, and Redis without mounting the Docker socket into a container.
-8. Creates the MongoDB annotations collection/indexes idempotently from the API
-   container.
-9. Verifies container networking, API readiness, explicit Snowflake access,
-   analytical data, and the dashboard, while writing a redacted JSONL audit log.
+1. It checks Docker, Compose, file permissions, and required ports.
+2. It creates or validates `.env` without printing secrets.
+3. It checks the Marketplace database and `ECDC_GLOBAL` table.
+4. It creates the warehouse, resource monitor, database, schemas, and roles.
+5. It publishes the committed WDI snapshot without a network request.
+6. It preserves the frozen COVID population denominator.
+7. It creates the staging views, analytical marts, and reporting objects.
+8. It starts FastAPI, Dash, MongoDB, and Redis.
+9. It creates MongoDB indexes and runs application checks.
 
-If a step fails, the terminal shows **SETUP COULD NOT CONTINUE**, what happened,
-the likely cause, specific repair actions, the exact retry command, and a
-technical reference. Correct the cause and resume safely:
+The process writes a redacted JSONL audit log under `outputs/setup/`.
+
+If setup stops, correct the reported cause. Then resume it.
+
+On Windows, run:
 
 ```powershell
 .\setup.ps1 --resume
 ```
 
-or:
+On macOS or Linux, run:
 
 ```bash
 ./setup.sh --resume
 ```
 
-Resume skips a completed step only when its input checksum, setup identity, and
-live postcondition still match. Ctrl+C exits with status `130`, flushes the
-audit log, and preserves containers, volumes, and resumable state.
+Resume skips a step only when its checksum, setup identity, and live postcondition still match.
 
-### 7. Confirm setup succeeded
+For unattended setup, prepare a complete `.env` file. Then use `--non-interactive` with `--resume`.
 
-A successful run ends with **SETUP COMPLETED SUCCESSFULLY**, the application
-URLs, the correct start/stop command for your operating system, and an audit log
-path under `outputs/setup/`. That audit is structured JSON and excludes secrets.
+```powershell
+.\setup.ps1 --resume --non-interactive
+```
 
-Check service state:
+```bash
+./setup.sh --resume --non-interactive
+```
+
+### 7. Verify the setup
+
+Run:
 
 ```bash
 docker compose ps
 ```
 
-`api`, `dashboard`, `mongo`, and `redis` should be running and healthy.
+The `api`, `dashboard`, `mongo`, and `redis` services must be healthy.
 
-PowerShell verification:
+On Windows PowerShell, run:
 
 ```powershell
 Invoke-RestMethod http://localhost:8000/health/live
@@ -308,7 +227,7 @@ Invoke-RestMethod http://localhost:8000/health/ready
 Invoke-RestMethod http://localhost:8000/countries
 ```
 
-macOS/Linux verification:
+On macOS or Linux, run:
 
 ```bash
 curl -i http://localhost:8000/health/live
@@ -316,127 +235,133 @@ curl -i http://localhost:8000/health/ready
 curl -i http://localhost:8000/countries
 ```
 
-The two health routes return HTTP `200`; liveness contains `{"status":"ok"}`
-and countries returns a non-empty JSON list. The explicit Snowflake check may
-resume `COVID_WH`, so call it only when you deliberately want a live check:
+The health routes must return HTTP `200`. The countries route must return a non-empty JSON list.
+
+Call the Snowflake check only when you need a live warehouse test. This request can resume `COVID_WH`.
 
 ```bash
 curl -i http://localhost:8000/health/snowflake
 ```
 
-### 8. Open and use the dashboard
+### 8. Use the dashboard
 
-Open <http://localhost:8050/overview>. The navigation contains:
+Open <http://localhost:8050/overview>.
 
-- **Overview**: headline totals, leading countries, and a world map.
-- **Country Explorer**: choose one country, metric, and date range.
-- **Compare**: select multiple countries and compare normalized trends.
-- **Annotations**: create and retrieve country/date notes stored in MongoDB.
+| Page | Purpose |
+| --- | --- |
+| Status | Check API, MongoDB, Redis, and Snowflake status |
+| Overview | Review global totals, rankings, and the map |
+| Country Explorer | Review COVID metrics and pre-pandemic country context |
+| Comparison | Compare normalized metrics for two to ten countries |
+| Forecast | Compare forecast candidates and error measures |
+| Annotations | Add and review country-date notes |
 
-The Snowflake status initially says **Not checked**. This is a neutral state,
-not a failure: the dashboard deliberately avoids waking the warehouse on page
-load. Use **Check Snowflake** only when a live connection test is necessary.
-Loading indicators mean a request is in progress. Empty-data messages can be
-valid for a selected country/date range; red dependency messages include a
-safe retry action and indicate which service needs attention.
+The dashboard does not check Snowflake during page load. Select **Check Snowflake** when you need that test.
 
-### 9. Daily start and stop
+### 9. Start and stop the project
 
-After the one-time setup, do not rerun deployment for normal daily use.
-
-Start existing services:
+After the first setup, use the start script for daily work.
 
 ```powershell
 .\start.ps1
 ```
 
-or:
-
 ```bash
 ./start.sh
 ```
 
-`start` validates Docker and `.env`, starts the existing Compose services, and
-waits for their cheap health checks. It does not need Python/uv, redeploy
-Snowflake, reload population data, or call the live Snowflake health endpoint.
-
-Stop services safely:
+Use the stop script to stop containers without deleting data.
 
 ```powershell
 .\stop.ps1
 ```
 
-or:
-
 ```bash
 ./stop.sh
 ```
 
-`stop` stops containers but preserves MongoDB/Redis volumes and every Snowflake
-object. `setup` is one-time deployment, `start` is daily operation, and `stop`
-is a non-destructive shutdown.
+`setup` creates the environment. `start` starts existing services. `stop` preserves MongoDB, Redis, and Snowflake data.
 
-### 10. Quick recovery guide
+### 10. Quick recovery
 
-- **Docker is installed but setup says its engine is unavailable:** start Docker
-  Desktop and wait for it to finish, or start the Linux Docker service; rerun
-  `docker info`, then resume setup.
-- **Port 8000, 8050, or 27017 is occupied:** the error names the service. On
-  Windows inspect it with `Get-NetTCPConnection -LocalPort <port>`; on
-  macOS/Linux use `lsof -i :<port>` or `ss -ltnp`. Stop only a process you
-  recognize. Setup never kills processes automatically.
-- **Snowflake authentication/account failure:** verify sign-in in Snowsight and
-  correct the connector-form account, username, or hidden password in `.env`.
-- **Marketplace failure:** install the listing in the same account as the
-  configured credentials, with the exact database/object names shown above.
-- **Role, warehouse, or MARTS failure:** keep the three role settings distinct
-  and resume setup so grants and postconditions are rechecked.
-- **API returns `503`:** read `error.code` and `request_id` in the response. A
-  Redis error intentionally blocks Snowflake queries; restore Redis instead of
-  bypassing the protection. See the full troubleshooting section below.
-- **Dashboard cannot reach API:** `http://api:8000` is correct inside Compose;
-  `http://localhost:8000` is correct from your host browser/terminal.
-- **MongoDB credentials changed after first start:** restore the credentials
-  that initialized the volume. The destructive reset documented below is only
-  for disposable local annotations and is never run by setup.
+- If Docker is unavailable, start its engine and run `docker info`.
+- If a port is busy, identify its owner before you stop any process.
+- If Snowflake rejects authentication, check the connector account identifier and credentials.
+- If setup cannot find the Marketplace object, check the account and database name.
+- If an analytical route returns `503`, read `error.code` and `request_id`.
+- If Redis is unavailable, restore Redis instead of bypassing the cache.
+- If dashboard requests fail, use `http://api:8000` inside Compose.
+- If MongoDB credentials changed, restore the credentials that created the volume.
 
-For individual SQL execution or recovery without the guided workflow, continue
-at [Advanced: manual setup and recovery](#advanced-manual-setup-and-recovery).
+For individual recovery steps, use [Advanced: manual setup and recovery](#advanced-manual-setup-and-recovery).
 
 ## Current capabilities
 
-- Creates the Snowflake warehouse, resource monitor, database, and schemas.
-- Explores the Snowflake Marketplace COVID-19 dataset and builds staging and
-  enriched analytical views.
-- Normalizes known country-code mismatches and classifies locations without a
-  matching World Bank population record.
-- Creates a latest-country reporting snapshot and detects sustained case-growth
-  patterns with Snowflake `MATCH_RECOGNIZE`.
-- Publishes a committed, checksum-verified 2019–2021 WDI history with one active
-  snapshot, while preserving the original 2020 COVID denominator separately.
-- Exposes metadata-rich baseline and pandemic-period context without allowing
-  socioeconomic values into forecasting.
-- Runs analytical queries against the included Snowflake mart and exports EDA
-  results as CSV files.
-- Runs FastAPI, a multi-page Dash interface, MongoDB, and Redis through Compose.
-- Exposes cheap liveness/readiness routes and an explicit Snowflake check.
-- Serves country, summary, time-series, comparison, and overview data from the
-  Snowflake MARTS layer using `COVID_APP_ROLE`.
-- Forecasts daily cases or deaths with a temporally evaluated 7-day mean and
-  linear-trend baseline, an empirical 90% error band, and explicit caveats.
-- Serves combined country and comparison page payloads so charts do not issue
-  independent Snowflake-backed requests.
-- Caches stable analytical responses for 24 hours and forecasts for 6 hours,
-  while preventing concurrent misses from duplicating Snowflake queries.
-- Stores canonical country/date annotations in MongoDB with indexed filtering.
-- Emits structured JSON logs with request IDs and contains no native Python
-  `print()` calls.
-- Locks Python dependencies with uv and runs Ruff, isort, and Black locally and
-  in GitHub Actions.
+- Create a Snowflake warehouse, resource monitor, database, schemas, and least-privilege roles.
+- Read daily global COVID data from `ECDC_GLOBAL`.
+- Normalize known country and ISO-code exceptions.
+- Preserve negative case and death corrections.
+- Publish a versioned 2019-2021 WDI snapshot.
+- Keep the active WDI context separate from the frozen COVID denominator.
+- Build daily, cumulative, per-capita, mortality, and country-context marts.
+- Detect sustained case increases with Snowflake `MATCH_RECOGNIZE`.
+- Export repeatable EDA results as CSV files.
+- Serve typed FastAPI endpoints and a six-page Dash application.
+- Cache analytical responses with Redis.
+- Store indexed annotations in MongoDB.
+- Compare two simple forecast models with temporal validation.
+- Build immutable PySpark Bronze data and benchmark evidence.
+- Run Ruff, isort, Black, unit tests, and GitHub Actions.
 
-Clustering, authentication, and user preferences are intentionally out of scope
-for this delivery. Clustering is a bonus assignment item; authentication and
-preference persistence are production-hardening opportunities.
+Clustering is not included because it is a bonus task. Authentication and user preferences also remain outside this project scope.
+
+## Data sources and table selection
+
+### Epidemiological source
+
+The Marketplace listing contains many provider tables. The analytical pipeline reads only `COVID19_EPIDEMIOLOGICAL_DATA.PUBLIC.ECDC_GLOBAL`.
+
+`ECDC_GLOBAL` has a country-date grain and daily case and death measures. This grain supports global comparisons, forecasts, and daily pattern detection.
+
+The project does not combine ECDC, JHU, and WHO case feeds. Their definitions, correction rules, and geographic grains differ.
+
+Combining those feeds would create conflicting facts and possible row multiplication. A source reconciliation study would need a separate contract.
+
+### Tables not used as COVID facts
+
+| Group | Examples | Reason for exclusion |
+| --- | --- | --- |
+| Weekly data | `ECDC_GLOBAL_WEEKLY` | Weekly rows do not support daily forecasts or patterns |
+| Alternative global feeds | `JHU_COVID_19`, `WHO_TIMESERIES` | They overlap with ECDC and use different definitions |
+| Country-specific feeds | `NYT_US_COVID19`, `PCM_DPS_COVID19`, `SCS_BE_*` | Their geographic grain does not match the global model |
+| Mobility and policy | `APPLE_MOBILITY`, `GOOG_GLOBAL_MOBILITY_REPORT`, `HDX_ACAPS` | They require a separate lag and causal analysis |
+| Vaccination | `JHU_VACCINES`, `OWID_VACCINATIONS` | Their main period is later than the COVID fact window |
+| Model output | `IHME_COVID_19` | Model output must not replace observed cases or deaths |
+
+### World Bank context
+
+The project uses five WDI indicators for 2019-2021:
+
+| Indicator | Meaning | Use |
+| --- | --- | --- |
+| `SP.POP.TOTL` | Annual population | Country context only |
+| `EN.POP.DNST` | Population density | Contact-environment context |
+| `SP.POP.65UP.TO.ZS` | Population aged 65 and older | Age-vulnerability context |
+| `NY.GDP.PCAP.KD` | Real GDP per person | Pre-pandemic baseline and descriptive change |
+| `SH.XPD.CHEX.PP.CD` | Health expenditure per person, PPP | Health-system context |
+
+The 2019 baseline precedes the COVID outcome period. This order reduces temporal leakage in descriptive comparisons.
+
+The WDI fields do not enter the forecasting code. The forecast uses only the report date and an incident COVID metric.
+
+### Population denominator policy
+
+The project keeps two population concepts:
+
+- `POPULATION_2020_CONTEXT` is the active WDI context value.
+- `COVID_RATE_POPULATION_2020` is the frozen denominator for published COVID rates.
+
+A normal WDI publication cannot change the frozen denominator. A denominator change needs a reviewed migration and rate reconciliation.
 
 ## Architecture
 
@@ -444,24 +369,17 @@ preference persistence are production-hardening opportunities.
 flowchart LR
     Market[Snowflake Marketplace ECDC data] --> Staging[(COVID_COUNTRY_DAILY)]
     Mapping[(Country-code mapping)] --> Staging
-    WB[World Bank API refresh] --> Snapshot[Reviewed CSV + manifest]
-    Snapshot --> Registry[(Historical WDI + active registry)]
-    Registry --> Context[(Baseline + annual context marts)]
+    WB[World Bank API refresh] --> Snapshot[Reviewed CSV and manifest]
+    Snapshot --> Registry[(WDI history and active registry)]
+    Registry --> Context[(Baseline and annual context marts)]
     Legacy[Legacy 2020 population] --> Denominator[(Frozen COVID denominator)]
-    Staging --> Marts[(Snowflake COVID_ENRICHED mart)]
+    Staging --> Marts[(COVID_ENRICHED)]
     Denominator --> Marts
-    Context --> API
-    Marts --> EDA[EDA script]
-    EDA --> Reports[(CSV reports)]
-
-    Browser[Dash analytical UI] --> API[FastAPI]
-    Client[API client] --> API
-    API --> Redis
-    Redis -->|Cache miss only| Marts
-    API --> Forecast[Temporal baseline evaluation]
-    Marts --> Forecast
+    Context --> API[FastAPI]
+    Marts --> API
+    API --> Redis[(Redis)]
     API --> Mongo[(MongoDB)]
-
+    Browser[Dash] --> API
     Marts --> Export[Immutable source export]
     Export --> Spark[PySpark Bronze and profiling]
     Spark --> Evidence[(Quality and benchmark evidence)]
@@ -469,319 +387,43 @@ flowchart LR
 
 ## Technology stack
 
-| Area                  | Technology                                     |
-| --------------------- | ---------------------------------------------- |
-| API                   | FastAPI, Uvicorn                               |
-| Web interface         | Plotly Dash and Plotly                         |
-| Analytics             | Snowflake SQL, pandas, PySpark 3.5.6            |
-| External data         | World Bank API                                 |
-| Operational data      | MongoDB 7.0                                    |
-| Cache                 | Redis 7.4                                      |
-| Dependency management | uv, `pyproject.toml`, `uv.lock`                |
-| Runtime               | Python 3.12.13                                 |
-| Containers            | Docker Compose                                 |
-| Code quality          | Ruff, isort, Black, pre-commit, GitHub Actions |
-
-## Automated setup command reference
-
-The setup automation creates the project-owned Snowflake objects, publishes the
-committed WDI snapshot offline, preserves the frozen denominator, starts the containers, creates MongoDB indexes, and
-checks the finished application. It stops on the first failed postcondition and
-can resume without repeating completed work.
-
-Before running it, complete these one-time prerequisites:
-
-1. Create the Snowflake account and add the Marketplace database named
-   `COVID19_EPIDEMIOLOGICAL_DATA` as described below.
-2. Install Docker Desktop/Engine. Git is optional when using a downloaded ZIP.
-3. Clone or extract this repository and open a terminal in its root directory.
-4. Start Docker Desktop and wait until its engine is ready.
-
-### First-time setup on Windows
-
-Open PowerShell in the repository and run:
-
-```powershell
-.\setup.ps1
-```
-
-### First-time setup on macOS, Linux, or Git Bash
-
-```bash
-./setup.sh
-```
-
-The wrapper verifies Docker, builds the pinned setup image, then starts the
-guided setup inside a temporary container. It asks for missing Snowflake
-settings without echoing passwords. The generated MongoDB password is random.
-Existing `.env` files are backed up before an atomic replacement, and secrets
-are never written to the image or audit log. The temporary setup container is
-removed automatically.
-
-The Snowflake bootstrap connection intentionally uses `ACCOUNTADMIN` only for
-account-level object creation and granting `COVID_PROJECT_ADMIN` and
-`COVID_APP_ROLE` to the configured user. All remaining deployment work uses the
-least-privilege project role.
-
-If setup stops, read the short terminal error and the referenced JSONL audit
-file under `outputs/setup/`. Fix the reported cause, then continue with:
-
-```powershell
-.\setup.ps1 --resume
-```
-
-or:
-
-```bash
-./setup.sh --resume
-```
-
-Completed steps are skipped only when their input checksum, setup context, and
-live postcondition still match. Interrupting with Ctrl+C leaves containers and
-volumes unchanged and exits with status `130`.
-
-For unattended execution, prepare a complete `.env` first and run the same
-Docker-only launcher:
-
-```powershell
-.\setup.ps1 --resume --non-interactive
-```
-
-or:
-
-```bash
-./setup.sh --resume --non-interactive
-```
-
-The command lists missing variable names but never their values. Useful local
-diagnostic commands require Docker only:
-
-```bash
-docker info
-docker compose config
-docker compose ps
-```
-
-Rerunning setup with `--resume` authenticates with the bootstrap role, confirms
-the Marketplace object, rechecks live postconditions, and performs bounded HTTP
-smoke tests. It can resume the Snowflake warehouse and should be run
-deliberately on a trial account.
-
-### Daily start and stop
-
-After first-time setup, start the existing services without redeploying data:
-
-```powershell
-.\start.ps1
-```
-
-or:
-
-```bash
-./start.sh
-```
-
-Stop services while preserving MongoDB and Redis volumes:
-
-```powershell
-.\stop.ps1
-```
-
-or:
-
-```bash
-./stop.sh
-```
-
-The three commands have deliberately different responsibilities:
-
-- `setup` is the one-time initialization. It validates `.env`, creates the
-  project-owned Snowflake roles and objects, loads population data, builds the
-  containers, creates MongoDB indexes, and verifies the finished system.
-- `start` is the normal daily command. It starts existing services without
-  recreating Snowflake objects or reloading population data.
-- `stop` stops the containers without deleting MongoDB or Redis volumes.
-
-### What success looks like
-
-After `start` completes, run:
-
-```bash
-docker compose ps
-```
-
-The `api`, `dashboard`, `mongo`, and `redis` services should all be running and
-healthy. Verify the cheap checks first:
-
-```bash
-curl -i http://localhost:8000/health/live
-curl -i http://localhost:8000/health/ready
-```
-
-Both should return `200`. The Snowflake check is manual because it may resume
-`COVID_WH`:
-
-```bash
-curl -i http://localhost:8000/health/snowflake
-```
-
-With a completed setup it returns `200`, and `GET /countries` returns a
-non-empty JSON list. Open:
-
-- Dashboard overview: <http://localhost:8050/overview>
-- Comparison: <http://localhost:8050/compare>
-- API documentation: <http://localhost:8000/docs>
-- API liveness: <http://localhost:8000/health/live>
-- Dependency readiness: <http://localhost:8000/health/ready>
-- Explicit Snowflake check: <http://localhost:8000/health/snowflake>
-
-Optional exploration is separate from required setup:
-
-```bash
-docker compose exec -T api python -m scripts.bootstrap analyze
-```
-
-The command uses Python and uv already installed inside the API image; nothing
-is installed on the host.
+| Area | Technology |
+| --- | --- |
+| API | FastAPI and Uvicorn |
+| Dashboard | Plotly Dash and Plotly |
+| Warehouse | Snowflake SQL |
+| Data processing | pandas and PySpark 3.5.6 |
+| External data | World Bank API |
+| Operational database | MongoDB 7.0 |
+| Cache | Redis 7.4 |
+| Runtime | Python 3.12.13 |
+| Dependencies | uv, `pyproject.toml`, and `uv.lock` |
+| Containers | Docker Compose |
+| Quality | Ruff, isort, Black, pre-commit, and GitHub Actions |
 
 ## Advanced: manual setup and recovery
 
-This section is the detailed fallback when you prefer to execute each operation
-yourself. Follow the steps in order.
-Do not start Docker before finishing the Snowflake setup, because the analytical
-API and dashboard need the Snowflake tables and views created in Steps 7–13.
+Use this section when the guided setup cannot complete. Contributors can also use it to inspect each deployment step.
 
-You will set up four things:
+The manual workflow requires Git, Docker, and uv. The normal user workflow above still requires Docker only.
 
-1. A Snowflake trial account and the free COVID-19 Marketplace dataset.
-2. The project files on your computer.
-3. The Snowflake analytical pipeline and World Bank population data.
-4. The Docker services: FastAPI, Dash, MongoDB, and Redis.
+### 1. Install contributor tools
 
-### Before you begin
+Install [Git](https://git-scm.com/downloads), [Docker](https://docs.docker.com/get-docker/), and [uv](https://docs.astral.sh/uv/getting-started/installation/).
 
-You need:
-
-- A computer with Windows, macOS, or Linux.
-- An internet connection.
-- An email address for the Snowflake trial account.
-- Permission to install applications on the computer.
-- Enough free disk space for Docker images and project data.
-
-A **terminal** is a window where you type commands. On Windows, use
-**PowerShell**:
-
-1. Select the Windows **Start** button.
-2. Type `PowerShell`.
-3. Open **Windows PowerShell** or **PowerShell**.
-
-Copy one command block at a time, paste it into the terminal, and press
-**Enter**. Wait for the command to finish before continuing.
-
-### Step 1 — Create the Snowflake trial account
-
-1. Open the [Snowflake trial sign-up page](https://signup.snowflake.com/) in a
-   web browser.
-2. Create a free trial account.
-3. When Snowflake asks for the cloud platform and region, choose:
-
-   ```text
-   Cloud provider: Amazon Web Services (AWS)
-   Region: Europe — Stockholm
-   ```
-
-4. Save your Snowflake username and password in a password manager.
-5. Sign in to Snowflake. The Snowflake web interface is called **Snowsight**.
-
-After signing in, create a SQL worksheet and run:
-
-```sql
-SELECT CURRENT_REGION() AS REGION;
-```
-
-The result should identify the AWS Stockholm region, normally:
-
-```text
-AWS_EU_NORTH_1
-```
-
-Stop here if the account is in a different region. The assignment requires AWS
-Stockholm.
-
-### Step 2 — Add the free COVID-19 Marketplace dataset
-
-In Snowsight:
-
-1. Make sure the current role is `ACCOUNTADMIN`.
-2. Open **Marketplace** or **Data Products → Marketplace**. The exact menu name
-   can vary slightly between Snowsight versions.
-3. Search for:
-
-   ```text
-   COVID-19 Epidemiological Data
-   ```
-
-4. Open the free listing and select **Get**, **Install**, or the equivalent
-   access button.
-5. Use this exact database name when Snowflake asks for one:
-
-   ```text
-   COVID19_EPIDEMIOLOGICAL_DATA
-   ```
-
-6. Wait until Snowflake finishes adding the data.
-
-Verify the database in a worksheet:
-
-```sql
-SHOW DATABASES LIKE 'COVID19_EPIDEMIOLOGICAL_DATA';
-
-SELECT *
-FROM COVID19_EPIDEMIOLOGICAL_DATA.PUBLIC.ECDC_GLOBAL
-LIMIT 1;
-```
-
-The first result must contain one database named
-`COVID19_EPIDEMIOLOGICAL_DATA`; the second must return an ECDC source row.
-
-### Step 3 — Install Git, Docker, and uv
-
-Install these tools:
-
-- [Git](https://git-scm.com/downloads) — downloads the project from GitHub.
-- [Docker Desktop](https://www.docker.com/products/docker-desktop/) — runs the
-  API, dashboard, MongoDB, and Redis.
-- [uv](https://docs.astral.sh/uv/getting-started/installation/) — installs the
-  pinned Python version and the exact dependencies from `uv.lock`.
-
-#### Windows
-
-Install Git and Docker Desktop using their installers. Keep the default options.
-When Docker asks about a backend, use the recommended WSL 2 option. Restart the
-computer if an installer asks you to do so.
-
-Install uv by opening PowerShell and running:
+On Windows, install uv with:
 
 ```powershell
 powershell -ExecutionPolicy ByPass -c "irm https://astral.sh/uv/install.ps1 | iex"
 ```
 
-Close PowerShell and open it again after the installation.
-
-#### macOS or Linux
-
-Install Git and Docker using the official instructions for your operating
-system. Install uv with:
+On macOS or Linux, install uv with:
 
 ```bash
 curl -LsSf https://astral.sh/uv/install.sh | sh
 ```
 
-Close the terminal and open it again after the installation.
-
-#### Verify the installations
-
-Start Docker Desktop and wait until it reports that Docker is running. Then run:
+Open a new terminal after installation. Then verify each tool.
 
 ```bash
 git --version
@@ -790,754 +432,76 @@ docker compose version
 uv --version
 ```
 
-Each command must print a version number. Do not continue while one of these
-commands reports that it is unknown, missing, or unable to connect.
+### 2. Install the locked Python environment
 
-### Step 4 — Download the project from GitHub
-
-Open the project repository on GitHub, select **Code**, select **HTTPS**, and
-copy the repository URL.
-
-In PowerShell, macOS Terminal, or a Linux terminal, move to a place where you
-want to keep the project. For example:
-
-```bash
-cd ~/Documents
-```
-
-Clone the repository. Replace `PASTE_REPOSITORY_URL_HERE` with the URL copied
-from GitHub:
-
-```bash
-git clone PASTE_REPOSITORY_URL_HERE
-```
-
-Enter the downloaded project directory. If GitHub created a folder with a
-different name, use that folder name instead:
-
-```bash
-cd bootcamp-project
-```
-
-Confirm that you are in the correct directory:
-
-```bash
-ls
-```
-
-On Windows PowerShell, `dir` can be used instead:
-
-```powershell
-dir
-```
-
-You should see at least:
-
-```text
-README.md
-compose.yaml
-pyproject.toml
-uv.lock
-sql
-scripts
-app
-```
-
-All remaining terminal commands must be run from this project directory unless
-a step explicitly says otherwise.
-
-> If you received the project as a ZIP file instead of cloning it, extract the
-> ZIP, open a terminal in the extracted folder, and confirm that `compose.yaml`
-> is visible before continuing.
-
-### Step 5 — Install the locked Python environment
-
-Run:
-
-```bash
-uv sync --locked
-```
-
-uv reads `.python-version`, installs the pinned Python version when necessary,
-creates the isolated `.venv` directory, and installs the exact dependency
-versions recorded in `uv.lock`.
-
-Verify the environment:
-
-```bash
-uv run python --version
-```
-
-The result should show Python `3.12.13` for the current project version.
-
-You do not need to activate `.venv`. Commands beginning with `uv run` use the
-isolated project environment automatically.
-
-### Step 6 — Learn how to run the Snowflake SQL files
-
-The SQL files are in the local `sql/` folder, but they must be executed in the
-Snowflake website. **Do not paste Snowflake SQL into PowerShell or another
-computer terminal.**
-
-For every SQL file in the following steps:
-
-1. Open the file on your computer in a text editor such as Visual Studio Code,
-   Notepad, or another plain-text editor.
-2. Select all text and copy it.
-3. In Snowsight, open **Projects → Workspaces** or a new SQL worksheet.
-4. Paste the copied SQL into the worksheet.
-5. Confirm that the role shown at the top matches the role required by the
-   step.
-6. Execute all statements in the file. If the interface executes only the
-   statement containing the cursor, highlight the complete file before
-   selecting **Run**.
-7. Read the result messages. Do not continue past a red error message.
-
-The file numbers define the required execution order.
-
-### Step 7 — Create the Snowflake account objects, grant roles, and create schemas
-
-In Snowsight, select the `ACCOUNTADMIN` role and run:
-
-```text
-sql/00_project_setup.sql
-```
-
-This first phase creates:
-
-```text
-COVID_PROJECT_MONITOR
-COVID_WH
-COVID_ANALYTICS
-COVID_PROJECT_ADMIN
-COVID_APP_ROLE
-```
-
-The final result also includes `PYTHON_ACCOUNT_IDENTIFIER`. Copy that value; it
-will look similar to:
-
-```text
-MYORGANIZATION-MYACCOUNT
-```
-
-Do not use only the short account locator.
-
-Before running any SQL that says `USE ROLE COVID_PROJECT_ADMIN`, grant both
-roles to your deployment user. Run this as `ACCOUNTADMIN`, replacing the
-placeholder with the value returned by `SELECT CURRENT_USER()`:
-
-```sql
-GRANT ROLE COVID_PROJECT_ADMIN TO USER YOUR_SNOWFLAKE_USERNAME;
-GRANT ROLE COVID_APP_ROLE TO USER YOUR_SNOWFLAKE_USERNAME;
-```
-
-Then run the second phase:
-
-```text
-sql/00_project_objects.sql
-```
-
-This ordering is required. Creating a role does not by itself authorize the
-current user to activate it. The automated Docker setup performs the two bound
-user grants between these SQL files and reconnects explicitly with
-`COVID_PROJECT_ADMIN` before executing the second phase.
-
-The second phase creates:
-
-```text
-COVID_ANALYTICS.RAW
-COVID_ANALYTICS.STAGING
-COVID_ANALYTICS.MARTS
-COVID_ANALYTICS.APP
-```
-
-### Step 8 — Explore the source and create the staging layer
-
-Run these files in this exact order:
-
-```text
-sql/01_data_exploration.sql
-sql/02_create_country_mapping.sql
-sql/03_create_staging_view.sql
-```
-
-Use `COVID_PROJECT_ADMIN` unless the SQL file explicitly changes the role.
-
-After Step 8, verify the staging view:
-
-```sql
-SELECT COUNT(*) AS ROW_COUNT
-FROM COVID_ANALYTICS.STAGING.COVID_COUNTRY_DAILY;
-```
-
-The query should return a positive row count, not zero.
-
-### Step 9 — Create the local `.env` configuration file
-
-The project includes `.env.example`, which lists every required setting. Copy it
-to a new file named `.env`.
-
-Windows PowerShell:
-
-```powershell
-Copy-Item .env.example .env
-notepad .env
-```
-
-macOS or Linux:
-
-```bash
-cp .env.example .env
-nano .env
-```
-
-When using `nano`, save with **Ctrl+O**, press **Enter**, and exit with
-**Ctrl+X**. You can also open `.env` in any other plain-text editor.
-
-Replace the placeholder values with your own values. The important section must
-look like this:
-
-```dotenv
-SNOWFLAKE_ACCOUNT=MYORGANIZATION-MYACCOUNT
-SNOWFLAKE_USER=YOUR_SNOWFLAKE_USERNAME
-SNOWFLAKE_PASSWORD=YOUR_SNOWFLAKE_PASSWORD
-SNOWFLAKE_ROLE=COVID_PROJECT_ADMIN
-SNOWFLAKE_API_ROLE=COVID_APP_ROLE
-SNOWFLAKE_WAREHOUSE=COVID_WH
-SNOWFLAKE_DATABASE=COVID_ANALYTICS
-SNOWFLAKE_SCHEMA=RAW
-SNOWFLAKE_API_SCHEMA=MARTS
-
-MONGO_ROOT_USERNAME=covid_admin
-MONGO_ROOT_PASSWORD=ChooseANewPassword123
-MONGO_DATABASE=covid_app
-```
-
-Replace:
-
-- `MYORGANIZATION-MYACCOUNT` with the `PYTHON_ACCOUNT_IDENTIFIER` copied in
-  Step 7.
-- `YOUR_SNOWFLAKE_USERNAME` with your Snowflake username.
-- `YOUR_SNOWFLAKE_PASSWORD` with your Snowflake password.
-- `ChooseANewPassword123` with a new local MongoDB password.
-
-Use only letters and numbers in the MongoDB password for the beginner setup.
-This avoids URL-encoding problems.
-
-Save and close `.env`.
-
-> **Security:** `.env` contains passwords. Never upload it, email it, paste it
-> into screenshots, or commit it to Git. The repository is configured to ignore
-> it.
-
-### Step 10 — Publish the committed World Bank context
-
-From the project directory in the terminal, run:
-
-```bash
-uv run python -m scripts.world_bank_indicators publish
-```
-
-A successful run validates the committed CSV and manifest, inserts immutable
-historical observations, and leaves exactly one snapshot active. It does not
-download live data.
-
-If the command reports `404 Not Found` for a Snowflake login request, check
-`SNOWFLAKE_ACCOUNT`. It must be the full `organization-account` identifier from
-Step 7.
-
-### Step 11 — Create and verify the country-context objects
-
-In Snowsight, run:
-
-```text
-sql/04_create_world_bank_context.sql
-```
-
-Then run this direct check:
-
-```sql
-SELECT SNAPSHOT_ID, ROW_COUNT, COUNTRY_COUNT
-FROM COVID_ANALYTICS.RAW.WORLD_BANK_INDICATOR_SNAPSHOTS
-WHERE IS_ACTIVE;
-```
-
-The query must return exactly one row. Also run
-`uv run python scripts/verify_world_bank_context.py` for the registry, baseline,
-annual, denominator, and context reconciliation checks.
-
-### Step 12 — Create the enriched analytical mart
-
-In Snowsight, run:
-
-```text
-sql/05_create_enriched_view.sql
-```
-
-Verify it:
-
-```sql
-SELECT COUNT(*) AS MART_ROWS
-FROM COVID_ANALYTICS.MARTS.COVID_ENRICHED;
-```
-
-The result must be greater than zero.
-
-### Step 13 — Create the reporting objects and run final SQL checks
-
-In Snowsight, run:
-
-```text
-sql/06_create_reporting_objects.sql
-sql/07_analysis_queries.sql
-```
-
-Verify the API reporting snapshot:
-
-```sql
-SELECT COUNT(*) AS COUNTRY_COUNT
-FROM COVID_ANALYTICS.MARTS.COUNTRY_LATEST_METRICS;
-```
-
-The result must be greater than zero.
-
-Optionally generate the local EDA CSV files:
-
-```bash
-uv run python scripts/run_eda.py
-```
-
-The files will be created under:
-
-```text
-outputs/eda/
-```
-
-At this point, the Snowflake data pipeline is ready.
-
-### Step 14 — Start Docker Desktop
-
-Open Docker Desktop and wait until it says that the Docker engine is running.
-Test it from the project directory:
-
-```bash
-docker version
-```
-
-The output must include both a **Client** section and a **Server** section.
-
-### Step 15 — Build and start the application services
-
-Run:
-
-```bash
-docker compose up --build -d
-```
-
-The first build can take several minutes. Docker downloads the required images,
-builds the project image, and starts:
-
-```text
-api
-dashboard
-mongo
-redis
-```
-
-Check the status:
-
-```bash
-docker compose ps
-```
-
-Wait until the services show as running or healthy. If one fails, inspect the
-logs:
-
-```bash
-docker compose logs api dashboard mongo redis
-```
-
-### Step 16 — Create the MongoDB annotation collection and indexes
-
-Run:
-
-```bash
-docker compose exec api python -m scripts.setup_mongodb
-```
-
-This command is safe to run more than once. It creates the `annotations`
-collection when needed and creates the indexes used by the annotation API.
-
-### Step 17 — Verify the complete application
-
-Open these addresses in a web browser, in this order:
-
-1. <http://localhost:8000/health/live> — the API process should return
-   `{"status":"ok"}`.
-2. <http://localhost:8000/health/ready> — MongoDB and Redis should be ready.
-3. <http://localhost:8000/health/snowflake> — Snowflake and the required MARTS
-   objects should be accessible.
-4. <http://localhost:8000/docs> — interactive FastAPI documentation.
-5. <http://localhost:8050/overview> — global dashboard.
-6. <http://localhost:8050/country> — Country Explorer.
-7. <http://localhost:8050/compare> — country comparison.
-8. <http://localhost:8050/annotations> — MongoDB annotations.
-
-The Snowflake check is explicit because it can resume `COVID_WH` and consume
-trial credits. The dashboard does not repeatedly poll Snowflake in the
-background.
-
-To verify caching, open or request the overview twice. The first successful
-response should contain:
-
-```text
-X-Cache: MISS
-```
-
-The second identical response should contain:
-
-```text
-X-Cache: HIT
-```
-
-You can inspect these headers in Swagger at <http://localhost:8000/docs> or from
-a terminal. On Windows PowerShell, run:
-
-```powershell
-curl.exe -i http://localhost:8000/dashboard/overview
-curl.exe -i http://localhost:8000/dashboard/overview
-```
-
-On macOS or Linux, run:
-
-```bash
-curl -i http://localhost:8000/dashboard/overview
-curl -i http://localhost:8000/dashboard/overview
-```
-
-### Step 18 — Stop and restart the project
-
-Stop the application without deleting MongoDB or Redis data:
-
-```bash
-docker compose down
-```
-
-Start it again later:
-
-```bash
-docker compose up -d
-```
-
-Do **not** use the following command unless you intentionally want to delete all
-local MongoDB annotations and Redis data:
-
-```bash
-docker compose down -v
-```
-
-### Blank-slate completion checklist
-
-The setup is complete only when every item below is true:
-
-- [ ] Snowflake is in AWS Stockholm.
-- [ ] `COVID19_EPIDEMIOLOGICAL_DATA` exists.
-- [ ] `COVID_WH` and `COVID_PROJECT_MONITOR` exist.
-- [ ] `COVID_ANALYTICS.STAGING.COVID_COUNTRY_DAILY` contains rows.
-- [ ] `RAW.WORLD_BANK_INDICATOR_SNAPSHOTS` contains exactly one active snapshot.
-- [ ] `MARTS.COUNTRY_COVID_DENOMINATOR` contains frozen population rows.
-- [ ] `MARTS.COUNTRY_BASELINE_2019` contains context-eligible countries.
-- [ ] `COVID_ANALYTICS.MARTS.COVID_ENRICHED` contains rows.
-- [ ] `COVID_ANALYTICS.MARTS.COUNTRY_LATEST_METRICS` contains rows.
-- [ ] `docker compose ps` shows the four application services running.
-- [ ] `/health/live`, `/health/ready`, and `/health/snowflake` succeed.
-- [ ] The Overview, Country Explorer, Comparison, and Annotations pages open.
-- [ ] Two identical overview requests produce `MISS` followed by `HIT`.
-
-### Docker services
-
-| Service | Container | Address | Purpose |
-| ------- | --------- | ------- | ------- |
-| `api` | `covid_api` | <http://localhost:8000> | FastAPI application |
-| `dashboard` | `covid_dashboard` | <http://localhost:8050> | Dash analytical UI |
-| `mongo` | `covid_mongo` | `127.0.0.1:27017` | Annotation data store |
-| `redis` | `covid_redis` | Internal Docker network only | API cache |
-
-Useful commands:
-
-```bash
-docker compose ps
-docker compose logs -f api
-docker compose logs -f dashboard
-docker compose restart api
-docker compose restart dashboard
-docker compose exec api python --version
-```
-
-## API endpoints
-
-| Method | Path                              | Description                                      |
-| ------ | --------------------------------- | ------------------------------------------------ |
-| `GET`  | `/health`, `/health/live`         | Process liveness; no dependency calls            |
-| `GET`  | `/health/ready`                   | MongoDB and Redis readiness                       |
-| `GET`  | `/health/snowflake`               | Explicit uncached Snowflake and MARTS check       |
-| `GET`  | `/dashboard/overview`             | Latest global and per-location analytical values |
-| `GET`  | `/dashboard/countries/{identifier}` | Combined Country Explorer payload               |
-| `GET`  | `/dashboard/compare`              | Combined three-metric comparison payload          |
-| `GET`  | `/countries`                      | Canonical country and ISO identities              |
-| `GET`  | `/countries/{identifier}/summary` | Latest stored country metrics                     |
-| `GET`  | `/countries/{identifier}/timeseries` | Filtered metric points                         |
-| `GET`  | `/compare`                        | Two-to-ten-country metric comparison              |
-| `GET`  | `/forecast`                       | Evaluated daily cases/deaths forecast              |
-| `POST` | `/annotations`                    | Validate and create a MongoDB annotation           |
-| `GET`  | `/annotations`                    | Filter chronological MongoDB annotations           |
-| `GET`  | `/docs`                           | Swagger UI                                        |
-
-Analytical responses include `X-Cache: MISS`, `HIT`, or `BYPASS`. Redis is a
-budget-protection dependency: if Redis is unavailable while caching is enabled,
-analytical routes return `503` without opening a Snowflake connection.
-
-Example acceptance requests:
-
-```bash
-curl -i http://localhost:8000/health/live
-curl -i http://localhost:8000/health/ready
-curl -i http://localhost:8000/health/snowflake
-curl -i http://localhost:8000/dashboard/overview
-curl -i http://localhost:8000/dashboard/overview
-curl -i "http://localhost:8000/dashboard/countries/LV?metric=cases_per_100k&start_date=2020-03-01&end_date=2020-12-14"
-curl -i "http://localhost:8000/dashboard/compare?country=LV&country=EE&start_date=2020-03-01&end_date=2020-12-14"
-curl -i http://localhost:8000/countries/LV/summary
-curl -i "http://localhost:8000/compare?country=LV&country=EE&metric=cases_per_100k&start_date=2020-03-01&end_date=2020-12-14"
-curl -i "http://localhost:8000/forecast?country=LV&metric=new_cases&days=30&lookback_days=90"
-```
-
-The first overview call should be `MISS`; the second should be `HIT` and should
-not query Snowflake.
-
-### Cache invalidation and query budget
-
-Stable analytical responses are cached for 24 hours. Forecasts use a 6-hour TTL
-because model output is derived and more likely to change with model or source
-updates. Change `CACHE_NAMESPACE` when a deployment changes response semantics,
-or clear only the current project prefix after refreshing the marts:
-
-```bash
-docker compose exec api python -m scripts.clear_cache
-```
-
-The script uses incremental Redis `SCAN` calls and never flushes unrelated
-Redis data. Redis failures are fail-closed by design: spending Snowflake credits
-is not used as an automatic cache fallback.
-
-The Country Explorer loads its complete page response once into:
-
-```python
-dcc.Store(id="country-page-data", storage_type="memory")
-```
-
-KPI and chart callbacks consume that stored JSON and never make independent API
-calls. The comparison and overview pages use the same page-level pattern. The
-country catalog and Snowflake status use session stores because they are small
-and reused across navigation.
-
-### Annotation workflow
-
-Create or verify the MongoDB indexes:
-
-```bash
-docker compose exec api python -m scripts.setup_mongodb
-```
-
-Create an annotation through Swagger or curl:
-
-```bash
-curl -i -X POST http://localhost:8000/annotations \
-  -H "Content-Type: application/json" \
-  -d '{"country":"LV","report_date":"2020-03-15","metric":"new_cases","comment":"Reporting delay.","created_by":"Student"}'
-```
-
-Read it back:
-
-```bash
-curl -i "http://localhost:8000/annotations?country=LV&metric=new_cases&start_date=2020-03-01&end_date=2020-03-31"
-```
-
-Creation validates that the country and report date exist in the Snowflake
-mart. Successful validation is cached for 24 hours. Annotation lists are read
-directly from MongoDB and are never response-cached.
-
-## Local development
-
-This section is optional and intended only for contributors who want to run or
-modify Python code outside Docker. Normal dashboard users should stop at the
-Docker-only setup above and do not need Python or uv on the host.
-
-This optional workflow requires
-[uv](https://docs.astral.sh/uv/getting-started/installation/). uv reads
-`.python-version` and can install the project's pinned Python version
-automatically.
-
-Install the locked runtime and development dependencies:
+From the repository root, run:
 
 ```bash
 uv sync --locked
 uv run python --version
 ```
 
-Run the API locally only when MongoDB and Redis are available and
-`MONGODB_URI` and `REDIS_URL` are set in the shell:
+The Python version must satisfy `.python-version` and `pyproject.toml`.
 
-```bash
-uv run uvicorn app.main:app --reload
-```
+### 3. Create Snowflake account objects
 
-The Docker workflow is recommended for API development because Compose creates
-those connection strings automatically.
+Open [`sql/00_project_setup.sql`](sql/00_project_setup.sql) in Snowsight. Run it as `ACCOUNTADMIN`.
 
-### Dependency management
+The file creates these objects:
 
-`pyproject.toml` is the source of declared dependencies. `uv.lock` records the
-resolved versions used across environments.
+- `COVID_PROJECT_MONITOR`, with a five-credit monthly quota.
+- `COVID_WH`, with an `XSMALL` size and automatic suspension.
+- `COVID_ANALYTICS`, which owns project data.
+- `COVID_PROJECT_ADMIN`, which deploys project objects.
+- `COVID_APP_ROLE`, which reads API marts.
 
-```bash
-uv add package-name
-uv add --dev development-package
-uv lock --check
-uv sync --locked
-```
+The monitor notifies at 50 percent. It suspends the warehouse at 80 percent and immediately suspends it at 100 percent.
 
-Commit both `pyproject.toml` and `uv.lock` whenever dependencies change. Do not
-edit `uv.lock` manually.
+Review the quota before you run the file. A trial-account owner remains responsible for credit use.
 
-## Configuration
-
-Copy `.env.example` to `.env` and configure these values:
-
-| Variable              | Required by       | Description                                                     |
-| --------------------- | ----------------- | --------------------------------------------------------------- |
-| `SNOWFLAKE_ACCOUNT`   | Snowflake scripts | Organization-account identifier returned by the setup SQL       |
-| `SNOWFLAKE_USER`      | Snowflake scripts | Snowflake username                                              |
-| `SNOWFLAKE_PASSWORD`  | Snowflake scripts | Snowflake password                                              |
-| `SNOWFLAKE_ROLE`      | Snowflake scripts | Project role; defaults to `COVID_PROJECT_ADMIN` in code         |
-| `SNOWFLAKE_API_ROLE`  | FastAPI            | Least-privilege runtime role; use `COVID_APP_ROLE`              |
-| `SNOWFLAKE_WAREHOUSE` | Snowflake scripts | Compute warehouse                                               |
-| `SNOWFLAKE_DATABASE`  | Population loader | Connection database; use `COVID_ANALYTICS` with the current SQL |
-| `SNOWFLAKE_SCHEMA`    | Population loader | Connection schema; use `RAW` with the current SQL               |
-| `SNOWFLAKE_API_SCHEMA` | FastAPI           | Analytical schema; use `MARTS`                                  |
-| `MONGO_ROOT_USERNAME` | Docker Compose     | MongoDB root username                                           |
-| `MONGO_ROOT_PASSWORD` | Docker Compose     | MongoDB root password                                           |
-| `MONGO_DATABASE`      | Docker Compose     | Application database name                                       |
-| `MONGODB_URI`         | Local FastAPI      | Local MongoDB connection URI                                    |
-| `REDIS_URL`           | API/cache scripts  | Redis connection URI                                            |
-| `CACHE_NAMESPACE`     | FastAPI            | Versioned prefix; current default is `covid-api:v2`              |
-| `CACHE_TTL_*`         | FastAPI            | Endpoint TTLs; 21600 seconds for forecasts, 86400 otherwise     |
-| `DASHBOARD_API_BASE_URL` | Dash             | FastAPI base URL used by the status interface                   |
-| `DASHBOARD_PUBLIC_API_BASE_URL` | Browser      | Host-visible FastAPI URL used by the Swagger link               |
-
-Compose overrides `MONGODB_URI`, `REDIS_URL`, and the dashboard API URL for
-container networking. Never commit `.env`; it is excluded by `.gitignore` and
-`.dockerignore`.
-
-## Snowflake pipeline reference
-
-This section explains the Snowflake pipeline in more technical detail. If you
-already completed Steps 7–13 in **Run the complete project from a blank
-computer**, the required objects already exist and you do not need to repeat
-these steps unless you are rebuilding or troubleshooting the pipeline.
-
-The pipeline is optional for process-only API health endpoints, but it is
-required for the analytical API and dashboard. You need:
-
-- Access to a Snowflake account
-- Permission to use `ACCOUNTADMIN` for the initial setup, or help from a
-  Snowflake administrator; later steps use `COVID_PROJECT_ADMIN`
-- The free Marketplace data installed as
-  `COVID19_EPIDEMIOLOGICAL_DATA`
-- [uv](https://docs.astral.sh/uv/getting-started/installation/) for the Python
-  population loader and EDA script
-
-The SQL files are designed for Snowsight. Open each file in a SQL worksheet,
-place the cursor inside one statement, and select **Run**. Run statements one
-at a time so that errors and results are easy to inspect.
-
-### 1. Create the Snowflake project objects
-
-Run [`sql/00_project_setup.sql`](sql/00_project_setup.sql) as `ACCOUNTADMIN`.
-It creates:
-
-- A five-credit monthly resource monitor named `COVID_PROJECT_MONITOR`
-- An `XSMALL` warehouse named `COVID_WH`
-- The `COVID_ANALYTICS` database
-- A least-privilege project role named `COVID_PROJECT_ADMIN`
-- A read-only API runtime role named `COVID_APP_ROLE`
-- Imported access from the Marketplace database to `COVID_PROJECT_ADMIN`
-
-The monitor notifies at 50%, suspends the warehouse at 80%, and suspends it
-immediately at 100%. Confirm that this quota is appropriate for your account
-before running the file. The final query returns the
-`PYTHON_ACCOUNT_IDENTIFIER` needed for `.env`; use that
-`organization-account` value, not only the account locator.
-
-The setup grants the project role to `SYSADMIN`, but the deployment user must
-still receive both project roles before activating them. As `ACCOUNTADMIN`, run
-the following after replacing the username:
+Grant both project roles to the deployment user:
 
 ```sql
 GRANT ROLE COVID_PROJECT_ADMIN TO USER YOUR_SNOWFLAKE_USERNAME;
 GRANT ROLE COVID_APP_ROLE TO USER YOUR_SNOWFLAKE_USERNAME;
 ```
 
-Only after both grants succeed, run
-[`sql/00_project_objects.sql`](sql/00_project_objects.sql). It activates
-`COVID_PROJECT_ADMIN`, creates `RAW`, `STAGING`, `MARTS`, and `APP`, and grants
-the MARTS read contract to `COVID_APP_ROLE`.
+Run [`sql/00_project_objects.sql`](sql/00_project_objects.sql) after both grants succeed.
 
-The automated bootstrap performs this exact boundary with bound user
-identifiers: account SQL, user grants, a new project-role connection, and then
-project-object SQL. It never executes `USE ROLE COVID_PROJECT_ADMIN` before the
-user grant exists. Marketplace access uses Snowflake's shared-database command,
-`GRANT IMPORTED PRIVILEGES`, rather than attempting to grant `USAGE` or `SELECT`
-on provider-owned objects. Its grant postcondition resolves the named `role`
-column from `SHOW GRANTS TO USER`, so it works with both legacy and current
-Snowflake result layouts.
+This file creates `RAW`, `STAGING`, `MARTS`, and `APP`. It also grants the MARTS read contract to `COVID_APP_ROLE`.
 
-FastAPI connects only as `COVID_APP_ROLE`. That role can use `COVID_WH` and
-read current and future MARTS tables/views, but it cannot create or replace
-project objects.
+FastAPI uses only `COVID_APP_ROLE`. This role cannot create or replace project objects.
 
-### 2. Explore and validate the Marketplace data
+### 4. Explore the Marketplace source
 
-Run [`sql/01_data_exploration.sql`](sql/01_data_exploration.sql). It verifies
-the `ECDC_GLOBAL` columns, previews the source, checks coverage, duplicates,
-missing values, and negative corrections, and confirms that `CASES` and
-`DEATHS` are daily rather than cumulative values.
+Run [`sql/01_data_exploration.sql`](sql/01_data_exploration.sql).
 
-If Snowflake reports that `COVID19_EPIDEMIOLOGICAL_DATA` does not exist, add
-the free COVID-19 epidemiological dataset from Snowflake Marketplace and make
-it available under that exact database name.
+The queries check these conditions:
 
-### 3. Create the country mapping
+- Required columns exist.
+- The date range and country coverage are known.
+- Country-date duplicates are visible.
+- Required values have measured null counts.
+- Negative values remain visible as source corrections.
+- `CASES` and `DEATHS` are daily values.
 
-Run
-[`sql/02_create_country_mapping.sql`](sql/02_create_country_mapping.sql). It
-creates and seeds an idempotent mapping table for source naming/code exceptions
-such as `EL` to `GR`, `UK` to `GB`, and the missing Namibia code. It also marks
-territories and non-country rows that are not expected to match the current
-World Bank extract.
+Do not derive daily values from another subtraction. The source already supplies daily measures.
 
-### 4. Create and verify the staging view
+### 5. Create the staging layer
 
-Run [`sql/03_create_staging_view.sql`](sql/03_create_staging_view.sql). It
-creates `COVID_ANALYTICS.STAGING.COVID_COUNTRY_DAILY`, applies the country
-mapping, separates ISO-2 and ISO-3 codes, aggregates duplicate country-date
-rows, preserves negative source corrections, and calculates cumulative cases
-and deaths from the daily values.
+Run [`sql/02_create_country_mapping.sql`](sql/02_create_country_mapping.sql).
 
-### 5. Configure the Python connection
+The mapping fixes reviewed country and code exceptions. It also marks locations that do not need a population match.
 
-Copy `.env.example` to `.env`, then replace the Snowflake placeholders. The
-project defaults are:
+Run [`sql/03_create_staging_view.sql`](sql/03_create_staging_view.sql).
+
+The staging view has one row per normalized location and date. It aggregates duplicate source rows before cumulative calculations.
+
+The view preserves negative corrections. It records the source row count and mapping status for audit work.
+
+### 6. Configure the Python connection
+
+Copy `.env.example` to `.env`. Replace the Snowflake placeholders.
 
 ```dotenv
 SNOWFLAKE_ACCOUNT=organization-account-from-step-1
@@ -1549,53 +513,43 @@ SNOWFLAKE_DATABASE=COVID_ANALYTICS
 SNOWFLAKE_SCHEMA=RAW
 ```
 
-Install the locked dependencies:
+Run the configured doctor without printing secret values:
 
 ```bash
-uv sync --locked
+uv run --locked python -m scripts.bootstrap doctor --configured
 ```
 
-### 6. Publish and verify the committed World Bank context
+### 7. Publish the World Bank context
 
-Normal setup uses committed artifacts and never contacts the live API:
+Normal setup uses the committed WDI artifacts. It does not contact the World Bank API.
 
 ```bash
 uv run python -m scripts.world_bank_indicators publish
 ```
 
-This validates and publishes the versioned 2019–2021 WDI snapshot. The legacy
-2020 population file is loaded only when the permanent frozen denominator has
-not yet been seeded. Run [`scripts/verify_world_bank_context.py`](scripts/verify_world_bank_context.py)
-to verify the active snapshot and every downstream context object.
+The publisher validates the manifest, observations, identities, and coverage. It activates one snapshot only after all checks pass.
 
-### 7. Create and verify the enriched mart
-
-Run [`sql/05_create_enriched_view.sql`](sql/05_create_enriched_view.sql). It
-joins the daily COVID-19 view only to the frozen denominator and creates
-`COVID_ANALYTICS.MARTS.COVID_ENRICHED` with cumulative, daily, per-100,000, and
-mortality metrics. Its `DENOMINATOR_JOIN_STATUS` distinguishes matched rows,
-expected source-unavailable locations, missing codes, and genuine unmatched
-records.
-
-### 8. Create reporting objects and run the analyses
-
-Run
-[`sql/06_create_reporting_objects.sql`](sql/06_create_reporting_objects.sql)
-to build the small `COUNTRY_LATEST_METRICS` transient snapshot and the
-`CASE_INCREASE_PATTERNS` view. Re-run this file after refreshing upstream data
-so the transient snapshot stays current.
-
-Then run [`sql/07_analysis_queries.sql`](sql/07_analysis_queries.sql) for
-per-capita rankings, mortality rankings, the Baltic-country comparison, and
-the longest detected runs of daily case increases.
-
-Export the automated EDA reports locally with:
+Run the verifier:
 
 ```bash
-uv run python scripts/run_eda.py
+uv run python scripts/verify_world_bank_context.py
 ```
 
-The complete Snowflake object flow is:
+The legacy population file seeds the frozen denominator only when that denominator does not exist.
+
+### 8. Create the analytical marts
+
+Run [`sql/04_create_world_bank_context.sql`](sql/04_create_world_bank_context.sql).
+
+Run [`sql/05_create_enriched_view.sql`](sql/05_create_enriched_view.sql).
+
+Run [`sql/06_create_reporting_objects.sql`](sql/06_create_reporting_objects.sql).
+
+Run [`sql/07_analysis_queries.sql`](sql/07_analysis_queries.sql).
+
+The build order prevents circular dependencies. It also keeps WDI publication separate from the COVID denominator.
+
+The Snowflake object flow is:
 
 ```text
 COVID19_EPIDEMIOLOGICAL_DATA.PUBLIC.ECDC_GLOBAL
@@ -1603,122 +557,319 @@ COVID19_EPIDEMIOLOGICAL_DATA.PUBLIC.ECDC_GLOBAL
     -> COVID_ANALYTICS.STAGING.COVID_COUNTRY_DAILY
 
 World Bank API
-    -> reviewed CSV + manifest + evidence
-    -> RAW.WORLD_BANK_COUNTRY_INDICATORS + snapshot registry
-    -> STAGING current/clean views
-    -> MARTS.COUNTRY_BASELINE_2019 + COUNTRY_INDICATOR_ANNUAL
+    -> reviewed CSV, manifest, and evidence
+    -> RAW.WORLD_BANK_COUNTRY_INDICATORS
+    -> STAGING.WORLD_BANK_COUNTRY_INDICATORS_CURRENT
+    -> MARTS.COUNTRY_BASELINE_2019
+    -> MARTS.COUNTRY_INDICATOR_ANNUAL
 
 COVID_ANALYTICS.STAGING.COVID_COUNTRY_DAILY
-    + MARTS.COUNTRY_COVID_DENOMINATOR (frozen policy object)
-    -> COVID_ANALYTICS.MARTS.COVID_ENRICHED
-    -> COVID_ANALYTICS.MARTS.COUNTRY_LATEST_METRICS
+    + MARTS.COUNTRY_COVID_DENOMINATOR
+    -> MARTS.COVID_ENRICHED
+    -> MARTS.COUNTRY_LATEST_METRICS
 
-MARTS.COUNTRY_BASELINE_2019 + MARTS.COUNTRY_INDICATOR_ANNUAL
+MARTS.COUNTRY_BASELINE_2019
+    + MARTS.COUNTRY_INDICATOR_ANNUAL
     + MARTS.COUNTRY_LATEST_METRICS
     -> MARTS.COUNTRY_CONTEXT_ANALYSIS
 
 COVID_ANALYTICS.STAGING.COVID_COUNTRY_DAILY
-    -> COVID_ANALYTICS.MARTS.CASE_INCREASE_PATTERNS
+    -> MARTS.CASE_INCREASE_PATTERNS
 ```
 
-## World Bank ingestion
+### 9. Start the local services
 
-The normal setup publishes the committed, checksum-verified WDI snapshot. A
-network refresh is an explicit review workflow:
+Start Docker before this step. Then run:
 
-After completing the Snowflake setup and configuring `.env`, run:
+```bash
+docker compose config
+docker compose up -d --build
+docker compose ps
+```
+
+Create the MongoDB collection and indexes:
+
+```bash
+docker compose exec api python -m scripts.setup_mongodb
+```
+
+### 10. Check the complete application
+
+Run these requests:
+
+```bash
+curl -i http://localhost:8000/health/live
+curl -i http://localhost:8000/health/ready
+curl -i http://localhost:8000/health/snowflake
+curl -i http://localhost:8000/countries
+curl -i http://localhost:8000/dashboard/overview
+```
+
+Open <http://localhost:8050/overview>. Confirm that the Overview page contains data.
+
+### Completion checklist
+
+- [ ] Snowflake uses AWS Stockholm.
+- [ ] `COVID19_EPIDEMIOLOGICAL_DATA.PUBLIC.ECDC_GLOBAL` returns data.
+- [ ] `COVID_WH` and `COVID_PROJECT_MONITOR` exist.
+- [ ] `STAGING.COVID_COUNTRY_DAILY` contains rows.
+- [ ] `RAW.WORLD_BANK_INDICATOR_SNAPSHOTS` has one active snapshot.
+- [ ] `MARTS.COUNTRY_COVID_DENOMINATOR` contains frozen population rows.
+- [ ] `MARTS.COUNTRY_BASELINE_2019` contains eligible countries.
+- [ ] `MARTS.COVID_ENRICHED` contains rows.
+- [ ] `MARTS.COUNTRY_LATEST_METRICS` contains rows.
+- [ ] All four local services are healthy.
+- [ ] The liveness, readiness, and Snowflake checks succeed.
+- [ ] Two equal overview requests return `MISS` and then `HIT`.
+
+## API endpoints
+
+| Method | Path | Purpose |
+| --- | --- | --- |
+| `GET` | `/health`, `/health/live` | Check process liveness without dependency calls |
+| `GET` | `/health/ready` | Check MongoDB and Redis |
+| `GET` | `/health/snowflake` | Check Snowflake and required marts |
+| `GET` | `/countries` | List canonical country identities |
+| `GET` | `/countries/{identifier}/summary` | Get the latest country metrics |
+| `GET` | `/countries/{identifier}/timeseries` | Get a filtered metric series |
+| `GET` | `/countries/{identifier}/context` | Get versioned WDI context |
+| `GET` | `/compare` | Compare one metric for two to ten countries |
+| `GET` | `/forecast` | Get an evaluated daily forecast |
+| `GET` | `/dashboard/overview` | Get the complete Overview payload |
+| `GET` | `/dashboard/countries/{identifier}` | Get the complete Country Explorer payload |
+| `GET` | `/dashboard/compare` | Get the complete Comparison payload |
+| `POST` | `/annotations` | Validate and create an annotation |
+| `GET` | `/annotations` | Get filtered annotations |
+| `GET` | `/docs` | Open Swagger UI |
+
+### Acceptance requests
+
+```bash
+curl -i http://localhost:8000/health/live
+curl -i http://localhost:8000/health/ready
+curl -i http://localhost:8000/health/snowflake
+curl -i http://localhost:8000/dashboard/overview
+curl -i http://localhost:8000/dashboard/overview
+curl -i "http://localhost:8000/dashboard/countries/LV?metric=cases_per_100k&start_date=2020-03-01&end_date=2020-12-14"
+curl -i "http://localhost:8000/dashboard/compare?country=LV&country=EE&start_date=2020-03-01&end_date=2020-12-14"
+curl -i http://localhost:8000/countries/LV/summary
+curl -i http://localhost:8000/countries/LV/context
+curl -i "http://localhost:8000/forecast?country=LV&metric=new_cases&days=30&lookback_days=90"
+```
+
+The first overview response should include `X-Cache: MISS`. The second equal request should include `X-Cache: HIT`.
+
+### Cache policy
+
+Stable analytical responses use a 24-hour time to live. Forecasts use a six-hour time to live.
+
+Context cache keys include the active WDI snapshot identifier. This rule prevents cached context from crossing snapshot versions.
+
+Change `CACHE_NAMESPACE` when response semantics change. Clear only the project prefix after a mart refresh.
+
+```bash
+docker compose exec api python -m scripts.clear_cache
+```
+
+The script uses incremental Redis `SCAN` calls. It does not flush unrelated Redis data.
+
+Page-level dashboard stores prevent one API request per chart. Render callbacks use the stored page payload.
+
+### Annotation workflow
+
+Create or verify the MongoDB indexes:
+
+```bash
+docker compose exec api python -m scripts.setup_mongodb
+```
+
+Create an annotation:
+
+```bash
+curl -i -X POST http://localhost:8000/annotations \
+  -H "Content-Type: application/json" \
+  -d '{"country":"LV","report_date":"2020-03-15","metric":"new_cases","comment":"Reporting delay.","created_by":"Student"}'
+```
+
+Read the annotation:
+
+```bash
+curl -i "http://localhost:8000/annotations?country=LV&metric=new_cases&start_date=2020-03-01&end_date=2020-03-31"
+```
+
+The API validates the country and report date against Snowflake before insertion. MongoDB stores canonical country identity fields.
+
+## Configuration reference
+
+| Variable | Used by | Purpose |
+| --- | --- | --- |
+| `SNOWFLAKE_ACCOUNT` | Setup and Snowflake clients | Connector account identifier |
+| `SNOWFLAKE_USER` | Setup and Snowflake clients | Login name |
+| `SNOWFLAKE_PASSWORD` | Setup and Snowflake clients | Login password |
+| `SNOWFLAKE_BOOTSTRAP_ROLE` | Setup | Account-level setup role |
+| `SNOWFLAKE_ROLE` | Deployment scripts | Project deployment role |
+| `SNOWFLAKE_API_ROLE` | FastAPI | Read-only runtime role |
+| `SNOWFLAKE_WAREHOUSE` | Snowflake clients | Compute warehouse |
+| `SNOWFLAKE_DATABASE` | Snowflake clients | Project database |
+| `SNOWFLAKE_SCHEMA` | Deployment scripts | Default deployment schema |
+| `SNOWFLAKE_API_SCHEMA` | FastAPI | Analytical schema |
+| `MONGO_ROOT_USERNAME` | Compose | MongoDB root user |
+| `MONGO_ROOT_PASSWORD` | Compose | MongoDB root password |
+| `MONGO_DATABASE` | Compose and FastAPI | Application database |
+| `MONGODB_URI` | FastAPI | MongoDB connection string |
+| `REDIS_URL` | FastAPI | Redis connection string |
+| `CACHE_NAMESPACE` | FastAPI | Version prefix for cache keys |
+| `CACHE_TTL_*` | FastAPI | Endpoint time-to-live values |
+| `DASHBOARD_API_BASE_URL` | Dash | Internal API URL |
+| `DASHBOARD_PUBLIC_API_BASE_URL` | Browser links | Host-visible API URL |
+
+Compose replaces host addresses with container-network addresses. Never commit `.env`.
+
+## World Bank context lifecycle
+
+Normal setup publishes committed data. It does not contact the World Bank API.
+
+Use the network refresh only when you want to review a new source snapshot:
 
 ```bash
 uv run python -m scripts.world_bank_indicators refresh
+```
+
+The refresh process requests WDI source 2 for 2019-2021. It retrieves every result page for the indicator allowlist.
+
+The process validates identities and coverage before it writes candidate files. It does not replace committed files after a failed check.
+
+Review these artifacts together:
+
+- The WDI CSV file.
+- The manifest.
+- The identity report.
+- The coverage report.
+
+Publish the reviewed snapshot:
+
+```bash
 uv run python -m scripts.world_bank_indicators publish
 ```
 
-Refresh downloads all source-2 pages, applies identity and coverage gates, and
-writes immutable candidate files only after validation. Review and commit the
-CSV, manifest, identity report, and coverage report together. The publisher
-retains historical observations, activates one snapshot under a single-writer
-rule, and preserves its predecessor for rollback. The frozen denominator is a
-separate permanent mart and is never updated by WDI publication.
+The publisher inserts observations and a registry record in one transaction. A second transaction activates the candidate and supersedes its predecessor.
+
+Exactly one registry row can be active. Application code enforces this rule because Snowflake standard-table keys do not enforce uniqueness.
+
+### Identity and grain
+
+The raw WDI grain is:
+
+```text
+SNAPSHOT_ID + CANONICAL_ISO3 + INDICATOR_CODE + OBSERVATION_YEAR
+```
+
+Country names are display values. The project never uses them as WDI join keys.
+
+The publisher accepts non-aggregate economies with a canonical ISO3 code. A reviewed mapping can also supply an approved identity.
+
+Conflicting identities stop publication. Unsupported and aggregate entities remain in evidence but do not enter canonical observations.
+
+### Coverage gates
+
+| Indicator | Minimum coverage | Maximum drop |
+| --- | ---: | ---: |
+| `SP.POP.TOTL` | 95% | 5 percentage points |
+| `EN.POP.DNST` | 90% | 5 percentage points |
+| `SP.POP.65UP.TO.ZS` | 90% | 5 percentage points |
+| `NY.GDP.PCAP.KD` | 80% | 5 percentage points |
+| `SH.XPD.CHEX.PP.CD` | 75% | 10 percentage points |
+
+Different indicators use different gates because their source coverage differs. A missing indicator-year pair always stops publication.
+
+### Checksums
+
+`app/world_bank.py` defines one cross-platform serialization protocol. It fixes row order, column order, Unicode form, line endings, nulls, and decimals.
+
+The observation checksum represents logical source data. The file checksum represents the exact committed CSV bytes.
+
+Python and Spark use the same scalar rules. Golden tests detect newline, decimal, and null-format drift.
+
+### Migration and rollback
+
+Run the migration reconciliation before a consumer cutover:
+
+```bash
+uv run python scripts/reconcile_world_bank_migration.py
+```
+
+The reconciliation requires equal case, death, and denominator values. It applies small documented tolerances to calculated rates.
+
+Use [`sql/08_migrate_population_compatibility.sql`](sql/08_migrate_population_compatibility.sql) only after one verified release.
+
+Snapshot rollback and denominator rollback are separate operations. Publishing WDI data cannot change the COVID rate denominator.
 
 ## Forecasting
 
-The `/forecast` endpoint and dashboard page support `new_cases` and
-`new_deaths`, a 1-to-30-day horizon, and a 42-to-180-observation training
-window. The default compares two intentionally transparent candidates:
+`GET /forecast` supports `new_cases` and `new_deaths`. The forecast horizon is 1-30 days.
 
-- A 7-day mean that absorbs weekly reporting cycles without extrapolating a
-  long-term trend.
-- A least-squares trend fitted to at most the most recent 42 observations so an
-  early-pandemic regime cannot dominate the current window.
+The training window is 42-180 observations. The default window contains 90 observations.
 
-The last 14 observations are evaluated with rolling-origin, one-step-ahead
-predictions. The lower-MAE candidate wins; exact ties choose the simpler 7-day
-mean. Both MAE and RMSE are returned. A nearest-rank 90th-percentile holdout
-error, widened by the square root of the horizon, forms a descriptive interval.
-It is an empirical error band rather than a formal probabilistic confidence
-interval.
+The service compares two candidates:
 
-Negative source corrections remain visible in chart history but are floored to
-zero only in the model's working copy, because a reporting revision is not
-negative incidence. Missing calendar days are not invented as zero observations;
-the trend uses actual date offsets. These choices preserve source fidelity while
-preventing impossible negative forecasts.
+- A seven-day mean represents the recent reporting level.
+- A linear trend uses at most the latest 42 observations.
+
+The service validates both candidates on the last 14 observations. Each validation prediction uses only earlier data.
+
+The candidate with the lower mean absolute error wins. An equal score selects the simpler seven-day mean.
+
+The response also reports root mean squared error. This measure makes large forecast misses visible.
+
+The error band uses the larger selected-model error measure. It expands with the square root of the forecast horizon.
+
+This band is descriptive. It is not a clinical or probabilistic confidence interval.
+
+Negative source corrections stay visible in returned history. The model uses zero for a negative incident value because incidence cannot be negative.
+
+The trend uses actual date offsets. It does not add zero observations for missing calendar days.
 
 ## Exploratory data analysis
 
-The EDA script expects this object to exist before it runs:
+Create `COVID_ANALYTICS.MARTS.COVID_ENRICHED` before you run the EDA script.
 
-```text
-COVID_ANALYTICS.MARTS.COVID_ENRICHED
-```
-
-Create the mart by running `sql/05_create_enriched_view.sql` after the staging
-view and population table are ready. It provides the country, report date,
-population, cumulative cases/deaths, per-100,000 metrics, mortality rate, and
-negative-correction flags used by `scripts/run_eda.py`.
-
-Run the reports with:
+Run:
 
 ```bash
 uv run python scripts/run_eda.py
 ```
 
-Results are written to the ignored `outputs/eda/` directory:
+The script writes these files under the ignored `outputs/eda/` directory:
 
 - `dataset_coverage.csv`
 - `missing_population.csv`
 - `data_corrections.csv`
 - `latest_country_metrics.csv`
 
-## PySpark Bronze and profiling demonstration
+The exports use the same analytical mart as the API. This rule prevents separate metric definitions in notebooks and services.
 
-Spark is isolated from the production API. At the current approximately
-61,900-row scale, pandas or Snowflake SQL are simpler and cheaper; this path
-demonstrates explicit schemas, immutable Bronze storage, quality rules,
-broadcast joins, physical-plan inspection, and measured layout decisions.
+## PySpark Bronze and profiling
 
-The pinned runtime is Python 3.12.13, PySpark 3.5.6, Java 17.0.19, and uv
-0.11.29. Normal API containers do not contain Java or PySpark. The optional
-Spark service runs one local application with two execution threads through
-`local[2]`.
+Spark does not serve API requests. Snowflake SQL is simpler for the current 61,900-row interactive workload.
 
-### 1. Export one reusable source batch
+The Spark path demonstrates explicit schemas, immutable Bronze data, quality gates, plan inspection, and measured file-layout decisions.
 
-Complete the Snowflake setup, load population data, and configure `.env` for
-the project-admin role. Then run:
+The pinned Spark runtime uses Python 3.12.13, PySpark 3.5.6, Java 17.0.19, and `local[2]`.
+
+### 1. Export one source batch
+
+Complete the Snowflake setup first. Configure `.env` for `COVID_PROJECT_ADMIN`.
 
 ```bash
 uv run python scripts/export_spark_sources.py \
   --source-batch-id ecdc-2020-v1
 ```
 
-This is the only Spark workflow step that contacts Snowflake. It opens one
-connection, executes two required-column statements, copies the local
-population snapshot, and writes `data/source/ecdc-2020-v1/`. Its manifest
-contains row counts, byte counts, and SHA-256 checksums. Existing batch IDs are
-never overwritten.
+This is the only Spark step that contacts Snowflake. It writes one immutable batch under `data/source/`.
 
-### 2. Build and run the pinned Spark container
+The batch manifest includes row counts, byte counts, and SHA-256 checksums. The exporter never overwrites an existing batch identifier.
+
+### 2. Run Bronze ingestion and profiling
 
 ```bash
 docker compose --profile spark build spark
@@ -1729,32 +880,27 @@ docker compose --profile spark run --rm spark ingest-profile \
   --benchmark-run-id benchmark-v1
 ```
 
-The job validates exact headers, applies explicit schemas, preserves all input
-and corrupt records in immutable Bronze Parquet, profiles each source,
-aggregates duplicate normalized country/date rows, applies null-safe mappings,
-and broadcast-joins typed population keys such as `ISO2:LV`.
+The job checks exact headers before parsing. It applies explicit Spark schemas to all sources.
 
-Bronze is written to `data/bronze/ingestion_id=bronze-v1/`; successful curated
-output is written to `data/curated/ingestion_id=bronze-v1/`; local quality,
-event-log, plan, and benchmark artifacts go to `outputs/spark/benchmark-v1/`.
-Both the ingestion and benchmark IDs are immutable, so choose unused IDs when
-repeating the commands.
+The job keeps input and corrupt records in immutable Bronze Parquet. Quality failures block curated publication.
 
-The `bronze-quality-v1` rules have deterministic publication behavior:
+| Condition | Result |
+| --- | --- |
+| Schema drift or corrupt input | Failure |
+| Missing required identity or date | Failure |
+| Invalid ISO length | Failure |
+| Duplicate mapping or population key | Failure |
+| Non-positive population | Failure |
+| Null daily measure | Warning |
+| Duplicate normalized country-date | Warning |
+| Recoverable missing ISO code | Warning |
+| Negative case or death correction | Information |
 
-- Schema drift, corrupt input, missing required values, invalid ISO lengths,
-  duplicate mapping/population keys, and non-positive population are failures.
-- Null daily measures, duplicate normalized dates, and recoverable missing ISO
-  values are warnings.
-- Negative cases and deaths are informational corrections and remain unchanged.
+Schema failures publish only quality evidence. Other failures can publish Bronze and quarantine evidence, but they block curated output.
 
-Schema failures publish only quality evidence. Other failures publish Bronze
-and quarantine evidence but block curated output. Warnings permit curated
-publication. Bronze manifest version 2 stores the ruleset, quality status, and
-quality-document checksum, allowing later benchmarks to run without retaining
-the original benchmark output directory.
+Warnings allow curated publication. The Bronze manifest records the ruleset, quality result, and quality-document checksum.
 
-### 3. Repeat benchmarks without rewriting Bronze
+### 3. Run a new benchmark
 
 ```bash
 docker compose --profile spark run --rm spark benchmark \
@@ -1762,37 +908,62 @@ docker compose --profile spark run --rm spark benchmark \
   --benchmark-run-id benchmark-v2
 ```
 
-Each comparison performs one warm-up and five measured repetitions in one JVM,
-alternating variant order. Results include individual durations, median, range,
-input and shuffle bytes, partitions, and output file counts. Before timing, both
-variants must pass an exact correctness gate covering ordered schema, row count,
-and an order-independent SHA-256 row-multiset checksum. Correctness work is not
-included in benchmark durations.
+Each comparison uses one warm-up and five measured repetitions in one JVM. The benchmark alternates the variant order.
 
-If a gate fails, the run exits nonzero and writes a sanitized
-`correctness_failure.json` inside that run's output directory. Warm-up and
-measured actions are skipped, and the committed evidence file is unchanged.
-Benchmark-only mode requires Bronze manifest version 2; legacy version 1
-ingestions must be recreated from their local immutable source batch.
+Both variants must pass a correctness gate before timing. The gate checks schema, row count, and a row-multiset checksum.
 
-Final file count is derived from measured Parquet bytes with a 128 MiB target.
-Year/month directories are used only when monthly partitions are sufficiently
-large and bounded in cardinality. This dataset should remain unpartitioned and
-coalesce to one file.
+A failed gate stops timing and preserves the previous committed evidence. A successful suite publishes `reports/spark/evidence.json` atomically.
 
-Only a completely passing suite atomically publishes
-`reports/spark/evidence.json`. Evidence version 2 records the fingerprint
-protocol and a passing correctness block for all five comparisons. Raw Marketplace extracts,
-Parquet data, event logs, complete plans, and scratch output remain ignored.
-The summary contains source and plan hashes without credentials, account names,
-SQL, raw rows, or local paths.
+The benchmark covers these decisions:
 
-Run the Spark fixture suite with:
+- Early projection and filtering.
+- Broadcast joins for small lookup data.
+- Adaptive query execution.
+- Persistence for a reused data frame.
+- Output partition and file count.
+
+The measured fixture does not prove that every common optimization is faster. The report separates plan changes from elapsed-time changes.
+
+The final Parquet size is below the 128 MiB target. The pipeline therefore uses one unpartitioned file instead of many small partitions.
+
+### 4. Run Spark tests
 
 ```bash
 uv sync --locked --group spark
 uv run --group spark python -m unittest discover -s spark_tests -v
 ```
+
+## Local development
+
+This workflow is for contributors who run Python outside Docker. Dashboard users do not need it.
+
+Install the locked environment:
+
+```bash
+uv sync --locked
+uv run python --version
+```
+
+Run the API after MongoDB and Redis are available:
+
+```bash
+uv run uvicorn app.main:app --reload
+```
+
+Compose supplies the service connection strings automatically. Use Compose when you do not need a host Python process.
+
+### Dependency changes
+
+`pyproject.toml` declares dependencies. `uv.lock` records exact resolved versions.
+
+```bash
+uv add package-name
+uv add --dev development-package
+uv lock --check
+uv sync --locked
+```
+
+Commit `pyproject.toml` and `uv.lock` after each dependency change. Do not edit `uv.lock` manually.
 
 ## Code quality and CI
 
@@ -1802,13 +973,13 @@ Install the Git hook once:
 uv run pre-commit install
 ```
 
-Run every quality check manually:
+Run all hooks:
 
 ```bash
 uv run pre-commit run --all-files
 ```
 
-Individual CI-equivalent commands are:
+Run individual checks:
 
 ```bash
 uv run isort --check-only --diff .
@@ -1817,188 +988,153 @@ uv run ruff check .
 uv run python -m unittest discover -s tests -v
 ```
 
-The GitHub Actions workflow runs the locked Python environment and all three
-checks on every push and pull request.
+GitHub Actions runs the locked environment and quality checks for each push and pull request.
 
 ## Repository structure
 
 ```text
 .
 |-- app/
-|   |-- api/                            # Health, analytical, annotation routes
-|   |-- dashboard/                      # Multi-page Dash interface
-|   |-- models/                         # Pydantic response contracts
-|   |-- repositories/                   # Snowflake and MongoDB access
-|   |-- services/                       # Cache, analytics, forecasts, annotations
-|   |-- spark_pipeline/                 # Bronze, profiling, transformations
-|   |-- world_bank.py                  # WDI contracts and canonical checksums
-|   |-- config.py                       # Typed environment settings
-|   |-- logging_config.py               # Structured JSON logging
-|   `-- main.py                         # FastAPI factory and lifespan
+|   |-- api/                             # Health, analytics, and annotation routes
+|   |-- dashboard/                       # Dash pages and charts
+|   |-- models/                          # Pydantic contracts
+|   |-- repositories/                    # Snowflake and MongoDB access
+|   |-- services/                        # Cache, analytics, forecast, and annotations
+|   |-- spark_pipeline/                  # Bronze, quality, and benchmark code
+|   |-- world_bank.py                    # WDI contracts and checksums
+|   |-- config.py                        # Typed settings
+|   `-- main.py                          # FastAPI application
 |-- data/external/
-|   |-- world_bank_indicators_2019_2021.csv  # Versioned WDI snapshot
-|   `-- world_bank_population_2020.csv       # Frozen denominator seed
+|   |-- world_bank_indicators_2019_2021.csv
+|   `-- world_bank_population_2020.csv
+|-- docs/architecture/
+|   `-- world-bank-context.md            # WDI architecture decision
 |-- scripts/
-|   |-- clear_cache.py                   # Prefix-scoped Redis invalidation
-|   |-- export_spark_sources.py          # Snowflake -> immutable local batch
-|   |-- load_population.py              # World Bank -> CSV/Snowflake
-|   |-- world_bank_indicators.py         # Explicit WDI refresh/publication
-|   |-- update_covid_denominator.py      # Reviewed denominator lifecycle
-|   |-- run_eda.py                       # Snowflake mart -> CSV reports
-|   |-- run_spark_bronze.py              # Spark ingest/profile/benchmark CLI
-|   `-- setup_mongodb.py                 # Annotation collection and indexes
+|   |-- bootstrap.py                     # Guided setup
+|   |-- clear_cache.py                   # Prefix-scoped cache removal
+|   |-- export_spark_sources.py          # Snowflake source export
+|   |-- run_eda.py                       # EDA CSV export
+|   |-- run_spark_bronze.py              # Spark command-line entry point
+|   |-- setup_mongodb.py                 # MongoDB indexes
+|   |-- update_covid_denominator.py      # Denominator lifecycle
+|   `-- world_bank_indicators.py         # WDI refresh and publication
 |-- sql/
-|   |-- 00_project_setup.sql             # Account objects and project roles
-|   |-- 00_project_objects.sql           # Schemas after user role grants
-|   |-- 01_data_exploration.sql          # Marketplace source checks
-|   |-- 02_create_country_mapping.sql    # Normalize country/code exceptions
-|   |-- 03_create_staging_view.sql       # Clean daily and cumulative metrics
-|   |-- 04_create_world_bank_context.sql # Versioned context and denominator
-|   |-- 05_create_enriched_view.sql      # Frozen-denominator analytics mart
-|   |-- 06_create_reporting_objects.sql  # Latest/context/pattern objects
-|   |-- 07_analysis_queries.sql          # Final analytical queries
-|   `-- 08_migrate_population_compatibility.sql # Controlled legacy cutover
-|-- .env.example                        # Configuration template
-|-- .pre-commit-config.yaml             # Local Git hooks
-|-- .python-version                     # Exact local/CI Python pin
-|-- tests/                              # Focused API, cache, repository tests
-|-- compose.yaml                         # API, dashboard, MongoDB, Redis
-|-- compose.setup.yaml                   # Temporary Docker-only setup runner
-|-- dockerfile                          # API image
-|-- dockerfile.spark                    # Pinned Java/PySpark image
-|-- pyproject.toml                       # Project metadata and dependencies
-`-- uv.lock                              # Resolved dependency lockfile
+|   |-- 00_project_setup.sql
+|   |-- 00_project_objects.sql
+|   |-- 01_data_exploration.sql
+|   |-- 02_create_country_mapping.sql
+|   |-- 03_create_staging_view.sql
+|   |-- 04_create_world_bank_context.sql
+|   |-- 05_create_enriched_view.sql
+|   |-- 06_create_reporting_objects.sql
+|   |-- 07_analysis_queries.sql
+|   `-- 08_migrate_population_compatibility.sql
+|-- tests/                               # Application tests
+|-- spark_tests/                         # Spark tests
+|-- .env.example                         # Configuration template
+|-- compose.yaml                         # Application services
+|-- compose.setup.yaml                   # Temporary setup service
+|-- dockerfile                           # API image
+|-- dockerfile.spark                     # Spark image
+|-- pyproject.toml                       # Dependencies and tool settings
+`-- uv.lock                              # Resolved dependency lock
 ```
 
 ## Troubleshooting
 
-### Docker cannot connect to the daemon
+### Docker cannot connect
 
-Start Docker Desktop and wait until the Linux container engine is ready. Verify
-it with `docker info`, which should show both Client and Server information.
-On Linux, also confirm the Docker service is running and the current user can
-access its socket. Resume setup after the engine responds; reinstalling Python
-packages will not repair a stopped Docker engine.
+Start Docker Desktop or the Linux Docker service. Wait until `docker info` shows a Server section.
 
-### The API health endpoint returns `503`
+Reinstalling Python packages does not repair a stopped Docker engine.
 
-Start with the response's `error.code` and `request_id`; the API intentionally
-keeps connector messages and credentials out of HTTP responses. Inspect the
-matching structured API log by request ID:
+### An API route returns `503`
+
+Read `error.code` and `request_id` in the response. Use the request identifier to find the matching API log.
 
 ```bash
 docker compose ps
 docker compose logs mongo redis api
 ```
 
-Use this code-to-action guide:
+| Error code | Action |
+| --- | --- |
+| `cache_unavailable` | Check the Redis service and logs |
+| `mongodb_unavailable` | Check MongoDB logs and stored credentials |
+| `snowflake_configuration_invalid` | Compare variable names with `.env.example` |
+| `snowflake_account_invalid` | Use `organization-account` for `SNOWFLAKE_ACCOUNT` |
+| `snowflake_authentication_failed` | Check the Snowflake username and password |
+| `snowflake_role_unauthorized` | Resume setup and verify the API role grant |
+| `snowflake_warehouse_unavailable` | Verify `COVID_WH` and role `USAGE` |
+| `snowflake_permission_denied` | Resume setup and restore project grants |
+| `analytics_objects_missing` | Complete the Snowflake mart deployment |
+| `context_data_unavailable` | Check the committed and active WDI snapshot identifiers |
+| `snowflake_network_unavailable` | Check internet, DNS, proxy, and firewall access |
 
-| Error code | Meaning and next action |
-| ---------- | ----------------------- |
-| `cache_unavailable` | Redis is unavailable. Check `docker compose ps redis` and Redis logs. Analytical routes remain fail-closed to protect Snowflake credits. |
-| `mongodb_unavailable` | MongoDB readiness failed. Check MongoDB logs and whether the volume was created with different credentials. |
-| `snowflake_configuration_invalid` | One or more required `SNOWFLAKE_*` variables are missing. Compare `.env` with `.env.example`; errors list names, never values. |
-| `snowflake_account_invalid` | `SNOWFLAKE_ACCOUNT` is not the connector identifier. Use `organization-account`, not a Snowsight URL or `snowflakecomputing.com` hostname. |
-| `snowflake_authentication_failed` | The configured Snowflake username or password was rejected. |
-| `snowflake_role_unauthorized` | Resume guided setup so it can verify the `COVID_APP_ROLE` grant to the configured API user, then restart `api`. |
-| `snowflake_warehouse_unavailable` | Resume setup so it can confirm `COVID_WH` and the API role's warehouse `USAGE`. |
-| `snowflake_permission_denied` | Resume setup to recheck the grants in `sql/00_project_setup.sql`; do not switch the API to `ACCOUNTADMIN`. |
-| `analytics_objects_missing` | Complete or resume setup so `COVID_ENRICHED` and `COUNTRY_LATEST_METRICS` exist and are readable. |
-| `snowflake_network_unavailable` | The API container could not reach Snowflake. Check internet, DNS, proxy, and firewall settings. |
-
-Confirm the API received configuration without displaying secret values:
-
-```bash
-uv run --locked python -m scripts.bootstrap doctor --configured
-```
-
-If first-time setup did not finish, resume it instead of starting only Docker:
-
-```powershell
-.\setup.ps1 --resume
-```
-
-or:
-
-```bash
-./setup.sh --resume
-```
+Do not change the API role to `ACCOUNTADMIN` to avoid a permission error.
 
 ### Dashboard cannot reach the API
 
-The dashboard container must use `http://api:8000`; `localhost` inside the
-dashboard container refers to the dashboard itself. `compose.yaml` sets the
-internal and browser-visible URLs separately. Verify the bridge request with:
+The dashboard container must use `http://api:8000`. Inside the container, `localhost` refers to the dashboard container.
+
+Check the bridge request:
 
 ```bash
 docker compose exec -T dashboard python -c "import sys, urllib.request; sys.stdout.write(urllib.request.urlopen('http://api:8000/health/live').read().decode())"
 ```
 
-### Existing MongoDB volume uses old credentials
+### MongoDB uses old credentials
 
-MongoDB applies root credentials only when its data directory is first created.
-Prefer restoring the credentials originally used by the volume. Delete the
-volume only if you intentionally accept losing local annotations; `stop.ps1`
-and `stop.sh` never delete it.
+MongoDB applies root credentials only when it creates the data directory. Restore the credentials that created the current volume.
 
-If, and only if, the annotations are disposable, the explicit destructive
-recovery is:
+Delete the volume only when local annotations are disposable. This operation cannot be reversed.
 
 ```bash
 docker compose down
 docker volume rm covid-platform_mongo_data
 ```
 
-Then rerun setup with `--resume`. The volume deletion is irreversible and is
-never performed by setup. The separate Redis volume is not removed by these
-commands.
+Run setup with `--resume` after the deletion. The setup scripts never delete this volume automatically.
 
-### Required ports are already occupied
+### A required port is busy
 
-The API, dashboard, and host MongoDB binding require ports `8000`, `8050`, and
-`27017`. Run the local doctor before setup; it distinguishes this Compose
-project from unrelated processes:
+The host uses ports `8000`, `8050`, and `27017`. Run the local doctor first.
 
 ```bash
 uv run --locked python -m scripts.bootstrap doctor --local
 ```
 
-Identify the owner before stopping anything:
+On Windows, identify the process:
 
 ```powershell
 Get-NetTCPConnection -LocalPort 8000
 Get-Process -Id <OwningProcess>
 ```
 
-or on macOS/Linux:
+On macOS or Linux, identify the process:
 
 ```bash
 lsof -i :8000
 ss -ltnp
 ```
 
-Repeat with `8050` or `27017` as reported. Setup never kills an unrelated
-process automatically.
+Repeat the command for the reported port. Stop only a process that you recognize.
 
-### World Bank context publication fails
+### World Bank publication fails
 
-Guided setup reads the committed WDI CSV and manifest, so a World Bank outage
-does not block setup. If validation fails, restore both
-`data/external/world_bank_indicators_2019_2021.csv` and its `.manifest.json`
-from Git, then resume. Only `python -m scripts.world_bank_indicators refresh`
-contacts the API; a failed candidate never replaces the active Snowflake
-snapshot or changes the frozen denominator.
+Restore the committed WDI CSV and manifest from Git. Then run setup with `--resume`.
 
-### Setup was interrupted with Ctrl+C
+Only the explicit `refresh` command contacts the API. A failed candidate cannot replace the active Snowflake snapshot.
 
-The command exits with status `130`, flushes the structured audit log, and does
-not delete containers or volumes. Run `setup.ps1 --resume` or
-`./setup.sh --resume`; each completed step is revalidated before it is skipped.
+### Setup was interrupted
 
-### A pre-commit hook modifies files
+The setup command exits with status `130`. It keeps containers, volumes, and resumable state.
 
-This is expected for Ruff, isort, and Black. Review and stage the updated files,
-then rerun the command until every hook passes:
+Run `setup.ps1 --resume` or `./setup.sh --resume`. Setup checks each completed step before it skips that step.
+
+### A pre-commit hook changes files
+
+Review the changes. Stage the accepted files and run the hooks again.
 
 ```bash
 git add <updated-files>
@@ -2007,7 +1143,7 @@ uv run pre-commit run --all-files
 
 ### The lockfile is out of date
 
-After an intentional dependency change, regenerate and verify it:
+After an intentional dependency change, run:
 
 ```bash
 uv lock

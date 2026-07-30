@@ -49,6 +49,10 @@ ENV_PATH = REPOSITORY_ROOT / ".env"
 STATE_PATH = REPOSITORY_ROOT / ".setup-state.json"
 SETUP_OUTPUT_ROOT = REPOSITORY_ROOT / "outputs" / "setup"
 POPULATION_MANIFEST_PATH = REPOSITORY_ROOT / DEFAULT_MANIFEST_PATH
+POPULATION_SNAPSHOT_PATH = (
+    REPOSITORY_ROOT / "data" / "external" / "world_bank_population_2020.csv"
+)
+POPULATION_SOURCE_MANIFEST_PATH = REPOSITORY_ROOT / DEFAULT_SOURCE_MANIFEST_PATH
 WDI_SNAPSHOT_PATH = REPOSITORY_ROOT / WDI_CSV_PATH
 WDI_SNAPSHOT_MANIFEST_PATH = REPOSITORY_ROOT / WDI_MANIFEST_PATH
 COMPOSE_PROJECT_NAME = "covid-platform"
@@ -94,6 +98,20 @@ SQL_FILES = {
     "exploration": REPOSITORY_ROOT / "sql" / "01_data_exploration.sql",
     "analysis": REPOSITORY_ROOT / "sql" / "07_analysis_queries.sql",
 }
+WORLD_BANK_PUBLICATION_INPUTS = (
+    REPOSITORY_ROOT / "scripts" / "load_population.py",
+    POPULATION_SNAPSHOT_PATH,
+    POPULATION_SOURCE_MANIFEST_PATH,
+    REPOSITORY_ROOT / "scripts" / "world_bank_indicators.py",
+    WDI_SNAPSHOT_PATH,
+    WDI_SNAPSHOT_MANIFEST_PATH,
+)
+ANALYTICAL_MART_INPUTS = (
+    SQL_FILES["population_verify"],
+    SQL_FILES["world_bank_context"],
+    SQL_FILES["mart"],
+    SQL_FILES["reporting"],
+)
 logger = logging.getLogger(__name__)
 
 
@@ -230,23 +248,58 @@ def _atomic_write(path: Path, content: str, *, owner_only: bool = False) -> None
         staging.unlink(missing_ok=True)
 
 
+def _repository_path_label(path: Path) -> str:
+    try:
+        return str(path.resolve().relative_to(REPOSITORY_ROOT.resolve()))
+    except ValueError:
+        return str(path)
+
+
 def _file_sha256(path: Path) -> str:
     digest = hashlib.sha256()
-    with path.open("rb") as source:
-        for chunk in iter(lambda: source.read(1024 * 1024), b""):
-            digest.update(chunk)
+    try:
+        with path.open("rb") as source:
+            for chunk in iter(lambda: source.read(1024 * 1024), b""):
+                digest.update(chunk)
+    except FileNotFoundError as exc:
+        path_label = _repository_path_label(path)
+        raise BootstrapError(
+            f"Required setup input is missing: {path_label}",
+            likely_cause="The checkout is incomplete, or setup is running from a branch that does not contain the required input.",
+            fixes=(
+                f"Restore {path_label} from Git and rerun setup.",
+                "Confirm that the Codespace is on the expected project branch and commit.",
+            ),
+            technical_reference=path_label,
+        ) from exc
     return digest.hexdigest()
 
 
 def _input_checksum(*paths: Path, values: tuple[str, ...] = ()) -> str:
     digest = hashlib.sha256()
     for path in sorted(paths, key=lambda item: str(item)):
-        digest.update(str(path.relative_to(REPOSITORY_ROOT)).encode("utf-8"))
+        digest.update(_repository_path_label(path).encode("utf-8"))
         digest.update(bytes.fromhex(_file_sha256(path)))
     for value in values:
         digest.update(value.encode("utf-8"))
         digest.update(b"\0")
     return f"sha256:{digest.hexdigest()}"
+
+
+def _world_bank_publication_checksum() -> str:
+    return _input_checksum(
+        *WORLD_BANK_PUBLICATION_INPUTS,
+        values=("2020", "wdi-source-2-2019-2021"),
+    )
+
+
+def _analytical_marts_checksum(publication_checksum: str) -> str:
+    # Snowflake can outlive a Codespace. Use committed publication inputs here so
+    # resume state never depends on an ignored receipt from a previous workspace.
+    return _input_checksum(
+        *ANALYTICAL_MART_INPUTS,
+        values=(publication_checksum,),
+    )
 
 
 def configure_audit_logging(command: str) -> Path:
@@ -1484,15 +1537,14 @@ def setup(
 
         def refresh_population_safely() -> None:
             try:
+                # The frozen denominator is governed Snowflake state. Reloading its
+                # legacy source only to create a local receipt would weaken that
+                # boundary and make clean Codespaces behave differently from reuse.
                 if not _frozen_denominator_ready(admin_connection):
                     refresh_population(
                         connection=admin_connection,
-                        csv_path=REPOSITORY_ROOT
-                        / "data"
-                        / "external"
-                        / "world_bank_population_2020.csv",
-                        source_manifest_path=REPOSITORY_ROOT
-                        / DEFAULT_SOURCE_MANIFEST_PATH,
+                        csv_path=POPULATION_SNAPSHOT_PATH,
+                        source_manifest_path=POPULATION_SOURCE_MANIFEST_PATH,
                         manifest_path=POPULATION_MANIFEST_PATH,
                         source_mode="snapshot",
                     )
@@ -1516,22 +1568,12 @@ def setup(
                     ),
                 ) from exc
 
+        world_bank_publication_checksum = _world_bank_publication_checksum()
         _run_step(
             state=state,
             context=context,
             name="world_bank_snapshot_publication",
-            checksum=_input_checksum(
-                REPOSITORY_ROOT / "scripts" / "load_population.py",
-                REPOSITORY_ROOT
-                / "data"
-                / "external"
-                / "world_bank_population_2020.csv",
-                REPOSITORY_ROOT / DEFAULT_SOURCE_MANIFEST_PATH,
-                REPOSITORY_ROOT / "scripts" / "world_bank_indicators.py",
-                WDI_SNAPSHOT_PATH,
-                WDI_SNAPSHOT_MANIFEST_PATH,
-                values=("2020", "wdi-source-2-2019-2021"),
-            ),
+            checksum=world_bank_publication_checksum,
             action=refresh_population_safely,
             postcondition=lambda: (
                 (
@@ -1580,13 +1622,7 @@ def setup(
             state=state,
             context=context,
             name="population_verification_and_marts",
-            checksum=_input_checksum(
-                SQL_FILES["population_verify"],
-                SQL_FILES["world_bank_context"],
-                SQL_FILES["mart"],
-                SQL_FILES["reporting"],
-                POPULATION_MANIFEST_PATH,
-            ),
+            checksum=_analytical_marts_checksum(world_bank_publication_checksum),
             action=create_marts,
             postcondition=lambda: (
                 (
