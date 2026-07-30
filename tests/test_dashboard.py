@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import unittest
 from copy import deepcopy
+from datetime import date
 from unittest.mock import patch
 
 from dash.exceptions import PreventUpdate
@@ -182,6 +183,7 @@ def country_dashboard_payload(
             "location_key": iso3,
             "report_date": "2020-12-14",
             "covid_rate_population_2020": 1900000,
+            "denominator_publication_status": "ACTIVE",
             "cases_cumulative": 25000,
             "deaths_cumulative": 350,
             "cases_per_100k": 1315.79,
@@ -328,6 +330,26 @@ class DashboardSmokeTests(unittest.TestCase):
         self.assertEqual(comparison_select.maxValues, 10)
         self.assertEqual(annotation_name.inputProps["maxLength"], 80)
         self.assertEqual(annotation_comment.inputProps["maxLength"], 1000)
+
+    def test_promoted_date_controls_end_on_final_jhu_date(self) -> None:
+        catalog = self._catalog_state()
+
+        self.assertEqual(
+            component_by_id(country_page(catalog), "country-end-date").value,
+            date(2023, 3, 9),
+        )
+        self.assertEqual(
+            component_by_id(comparison_page(catalog), "compare-end-date").value,
+            date(2023, 3, 9),
+        )
+
+    def test_candidate_denominator_renders_country_warning(self) -> None:
+        payload = country_dashboard_payload(latvia_context())
+        payload["summary"]["denominator_publication_status"] = "CANDIDATE"
+
+        rendered = render_country_content({"state": "success", "payload": payload})
+
+        self.assertIn("candidate 2020 population denominator", str(rendered))
 
     def test_sidebar_state_keeps_mobile_width_independent(self) -> None:
         navbar, class_name = update_app_shell_navbar(

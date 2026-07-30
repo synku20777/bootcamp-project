@@ -90,6 +90,9 @@ class CovidService:
             **cls._identity(row),
             report_date=row["REPORT_DATE"],
             covid_rate_population_2020=row["COVID_RATE_POPULATION_2020"],
+            denominator_publication_status=(
+                row.get("DENOMINATOR_PUBLICATION_STATUS") or "ACTIVE"
+            ),
             cases_cumulative=row["CASES_CUMULATIVE"],
             deaths_cumulative=row["DEATHS_CUMULATIVE"],
             cases_per_100k=row["CASES_PER_100K"],
@@ -677,6 +680,9 @@ class CovidService:
                 **self._identity(first),
                 report_date=first["LATEST_REPORT_DATE"],
                 covid_rate_population_2020=first["COVID_RATE_POPULATION_2020"],
+                denominator_publication_status=(
+                    first.get("DENOMINATOR_PUBLICATION_STATUS") or "ACTIVE"
+                ),
                 cases_cumulative=first["CASES_CUMULATIVE"],
                 deaths_cumulative=first["DEATHS_CUMULATIVE"],
                 cases_per_100k=first["CASES_PER_100K"],

@@ -554,6 +554,10 @@ def render_overview_content(state: dict[str, Any] | None) -> html.Div:
     payload = state["payload"]
     totals = payload["totals"]
     locations = payload["locations"]
+    candidate_count = sum(
+        location.get("denominator_publication_status") == "CANDIDATE"
+        for location in locations
+    )
     return dmc.Box(
         [
             dmc.Grid(
@@ -598,6 +602,15 @@ def render_overview_content(state: dict[str, Any] | None) -> html.Div:
                 size="sm",
                 c="dimmed",
                 mb="md",
+            ),
+            (
+                create_alert(
+                    f"{candidate_count} locations use candidate 2020 population "
+                    "denominators for per-capita metrics.",
+                    "warning",
+                )
+                if candidate_count
+                else None
             ),
             dmc.Grid(
                 children=[
@@ -749,6 +762,15 @@ def render_country_content(state: dict[str, Any] | None) -> html.Div:
                     ),
                 ],
                 mb="md",
+            ),
+            (
+                create_alert(
+                    "Per-capita metrics for this country use a candidate 2020 "
+                    "population denominator.",
+                    "warning",
+                )
+                if summary.get("denominator_publication_status") == "CANDIDATE"
+                else None
             ),
             # Reusing the combined page payload preserves the one-request contract.
             # The generic warning is intentional because context_status cannot

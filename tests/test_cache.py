@@ -101,7 +101,7 @@ class CacheServiceTests(unittest.TestCase):
             compute=self.model,
         )
         self.assertIn(
-            f"covid-api:v3:{snapshot_id}:country-context:LVA",
+            f"covid-api:v4:{snapshot_id}:country-context:LVA",
             self.redis.values,
         )
 

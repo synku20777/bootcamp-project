@@ -17,6 +17,8 @@ services:
       REDIS_URL: redis://redis:6379/0
       SNOWFLAKE_API_ROLE: COVID_APP_ROLE
       SNOWFLAKE_API_SCHEMA: MARTS
+      COVID_DATASET: ${COVID_DATASET:-extended}
+      CACHE_NAMESPACE: ${CACHE_NAMESPACE:-covid-api:v4}
       SERVICE_NAME: covid-api
 
     command:

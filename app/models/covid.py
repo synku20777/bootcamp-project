@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from datetime import date
 from enum import StrEnum
+from typing import Literal
 
 from pydantic import BaseModel, Field
 
@@ -38,6 +39,7 @@ class CountryIdentity(BaseModel):
 class CountrySummary(CountryIdentity):
     report_date: date
     covid_rate_population_2020: int | None
+    denominator_publication_status: Literal["ACTIVE", "CANDIDATE"] = "ACTIVE"
     cases_cumulative: int
     deaths_cumulative: int
     cases_per_100k: float | None

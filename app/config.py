@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from functools import lru_cache
+from typing import Literal
 
 from pydantic import SecretStr
 from pydantic_settings import BaseSettings, SettingsConfigDict
@@ -25,13 +26,14 @@ class Settings(BaseSettings):
     snowflake_warehouse: str = "COVID_WH"
     snowflake_database: str = "COVID_ANALYTICS"
     snowflake_api_schema: str = "MARTS"
+    covid_dataset: Literal["extended", "legacy"] = "extended"
 
     mongodb_uri: str = "mongodb://localhost:27017/covid_app"
     mongo_database: str = "covid_app"
     redis_url: str = "redis://localhost:6379/0"
 
     cache_enabled: bool = True
-    cache_namespace: str = "covid-api:v3"
+    cache_namespace: str = "covid-api:v4"
     world_bank_manifest_path: str = (
         "data/external/world_bank_indicators_2019_2021.manifest.json"
     )

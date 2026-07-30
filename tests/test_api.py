@@ -419,6 +419,10 @@ class ApiTests(unittest.TestCase):
         self.assertEqual(overview.json()["totals"]["total_cases"], 25_000)
         self.assertEqual(summary.status_code, 200)
         self.assertEqual(summary.json()["iso2"], "LV")
+        self.assertEqual(
+            summary.json()["denominator_publication_status"],
+            "ACTIVE",
+        )
         self.assertEqual(context.status_code, 200)
         self.assertEqual(context.json()["methodology"]["classification"], "descriptive")
         self.assertEqual(

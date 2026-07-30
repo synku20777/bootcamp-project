@@ -3,12 +3,91 @@ from __future__ import annotations
 import unittest
 from unittest.mock import MagicMock, patch
 
+from pydantic import ValidationError
+
 from app.config import Settings
 from app.models.covid import Metric
 from app.repositories.snowflake_repository import SnowflakeRepository
 
 
 class SnowflakeRepositoryTests(unittest.TestCase):
+    def test_dataset_setting_rejects_unknown_object_selection(self) -> None:
+        with self.assertRaises(ValidationError):
+            Settings(_env_file=None, covid_dataset="arbitrary_table")
+
+    @patch("app.repositories.snowflake_repository.snowflake.connector.connect")
+    def test_dataset_selection_uses_allowlisted_extended_and_legacy_objects(
+        self,
+        connect,
+    ) -> None:
+        cursor = MagicMock()
+        cursor.description = []
+        cursor.fetchall.return_value = []
+        connection = MagicMock()
+        connection.cursor.return_value = cursor
+        connect.return_value = connection
+
+        extended = SnowflakeRepository(
+            Settings(
+                _env_file=None,
+                snowflake_account="account",
+                snowflake_user="user",
+                snowflake_password="password",
+            )
+        )
+        extended.fetch_summary("LV")
+        extended_sql = " ".join(cursor.execute.call_args.args[0].split())
+        self.assertIn("COUNTRY_LATEST_METRICS_EXTENDED", extended_sql)
+        self.assertIn(
+            "COALESCE(DENOMINATOR_PUBLICATION_STATUS, 'ACTIVE') "
+            "AS DENOMINATOR_PUBLICATION_STATUS",
+            extended_sql,
+        )
+
+        cursor.reset_mock()
+        legacy = SnowflakeRepository(
+            Settings(
+                _env_file=None,
+                snowflake_account="account",
+                snowflake_user="user",
+                snowflake_password="password",
+                covid_dataset="legacy",
+            )
+        )
+        legacy.fetch_summary("LV")
+        legacy_sql = " ".join(cursor.execute.call_args.args[0].split())
+        self.assertIn("MARTS.COUNTRY_LATEST_METRICS ", legacy_sql)
+        self.assertNotIn("COUNTRY_LATEST_METRICS_EXTENDED", legacy_sql)
+        self.assertIn("'ACTIVE' AS DENOMINATOR_PUBLICATION_STATUS", legacy_sql)
+
+    @patch("app.repositories.snowflake_repository.snowflake.connector.connect")
+    def test_context_uses_selected_latest_date_and_optional_wdi_join(
+        self,
+        connect,
+    ) -> None:
+        cursor = MagicMock()
+        cursor.description = []
+        cursor.fetchall.return_value = []
+        connection = MagicMock()
+        connection.cursor.return_value = cursor
+        connect.return_value = connection
+        repository = SnowflakeRepository(
+            Settings(
+                _env_file=None,
+                snowflake_account="account",
+                snowflake_user="user",
+                snowflake_password="password",
+            )
+        )
+
+        repository.fetch_country_context("FSM")
+
+        sql, parameters = cursor.execute.call_args.args
+        self.assertIn("COUNTRY_LATEST_METRICS_EXTENDED", sql)
+        self.assertIn("resolved.REPORT_DATE AS COVID_LATEST_REPORT_DATE", sql)
+        self.assertIn("LEFT JOIN COVID_ANALYTICS.MARTS.COUNTRY_CONTEXT_ANALYSIS", sql)
+        self.assertEqual(parameters, ("FSM", "FSM", "FSM", "FSM"))
+
     @patch("app.repositories.snowflake_repository.snowflake.connector.connect")
     def test_summary_uses_bind_parameters_and_one_statement(self, connect) -> None:
         cursor = MagicMock()

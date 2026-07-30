@@ -15,7 +15,7 @@ from app.dashboard.components import (
 from app.models.covid import ForecastMetric, Metric
 
 DEFAULT_START_DATE = date(2020, 3, 1)
-DEFAULT_END_DATE = date(2020, 12, 14)
+DEFAULT_END_DATE = date(2023, 3, 9)
 ERROR_STATE = "error"
 NEUTRAL_STATE = "neutral"
 RETRY_DATA_LABEL = "Retry data"

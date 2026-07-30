@@ -135,6 +135,7 @@ Do not commit `.env`. Do not paste its contents into an issue or log.
 | `SNOWFLAKE_DATABASE` | `COVID_ANALYTICS` |
 | `SNOWFLAKE_SCHEMA` | `RAW` |
 | `SNOWFLAKE_API_SCHEMA` | `MARTS` |
+| `COVID_DATASET` | `extended` for the promoted ECDC/JHU series; `legacy` for rollback |
 
 Keep the three roles separate. Do not use `ACCOUNTADMIN` as the API role.
 
@@ -324,13 +325,13 @@ Clustering is not included because it is a bonus task. Authentication and user p
 
 ### Epidemiological source
 
-The production API and Spark pipeline read `COVID19_EPIDEMIOLOGICAL_DATA.PUBLIC.ECDC_GLOBAL`. The parallel Snowflake extension also reads `COVID19_EPIDEMIOLOGICAL_DATA.PUBLIC.JHU_COVID_19_TIMESERIES`.
+The production API reads the promoted parallel marts built from `COVID19_EPIDEMIOLOGICAL_DATA.PUBLIC.ECDC_GLOBAL` and `COVID19_EPIDEMIOLOGICAL_DATA.PUBLIC.JHU_COVID_19_TIMESERIES`. The Spark pipeline remains ECDC-only.
 
 `ECDC_GLOBAL` has a country-date grain and daily case and death measures. This grain supports global comparisons, forecasts, and daily pattern detection.
 
 `JHU_COVID_19_TIMESERIES` mixes country, province, and county rows and stores cumulative measures by case type. The extension normalizes it to one row per ISO3 and date before deriving daily changes.
 
-The sources are spliced rather than blended. Shared countries use ECDC through their governed boundary and JHU afterward. Spain switches on 2020-12-14; other shared countries switch on 2020-12-15. Eight JHU-only countries retain their full JHU history from 2020-01-22. The existing API-facing marts remain ECDC-only until a separate promotion decision.
+The sources are spliced rather than blended. Shared countries use ECDC through their governed boundary and JHU afterward. Spain switches on 2020-12-14; other shared countries switch on 2020-12-15. Eight JHU-only countries retain their full JHU history from 2020-01-22. `COVID_DATASET=extended` is the API default; `COVID_DATASET=legacy` restores the original ECDC-only reads without changing either set of marts. API summaries label populated denominators as `ACTIVE` or `CANDIDATE`; the status is `null` when no denominator is available.
 
 ### Tables not used as COVID facts
 
@@ -679,8 +680,8 @@ curl -i http://localhost:8000/health/ready
 curl -i http://localhost:8000/health/snowflake
 curl -i http://localhost:8000/dashboard/overview
 curl -i http://localhost:8000/dashboard/overview
-curl -i "http://localhost:8000/dashboard/countries/LV?metric=cases_per_100k&start_date=2020-03-01&end_date=2020-12-14"
-curl -i "http://localhost:8000/dashboard/compare?country=LV&country=EE&start_date=2020-03-01&end_date=2020-12-14"
+curl -i "http://localhost:8000/dashboard/countries/LV?metric=cases_per_100k&start_date=2020-03-01&end_date=2023-03-09"
+curl -i "http://localhost:8000/dashboard/compare?country=LV&country=EE&start_date=2020-03-01&end_date=2023-03-09"
 curl -i http://localhost:8000/countries/LV/summary
 curl -i http://localhost:8000/countries/LV/context
 curl -i "http://localhost:8000/forecast?country=LV&metric=new_cases&days=30&lookback_days=90"
@@ -694,7 +695,7 @@ Stable analytical responses use a 24-hour time to live. Forecasts use a six-hour
 
 Context cache keys include the active WDI snapshot identifier. This rule prevents cached context from crossing snapshot versions.
 
-Change `CACHE_NAMESPACE` when response semantics change. Clear only the project prefix after a mart refresh.
+The promoted dataset uses `CACHE_NAMESPACE=covid-api:v4`. Change the namespace when response semantics change. Clear only the project prefix after a mart refresh.
 
 ```bash
 docker compose exec api python -m scripts.clear_cache
@@ -820,6 +821,15 @@ The observation checksum represents logical source data. The file checksum repre
 Python and Spark use the same scalar rules. Golden tests detect newline, decimal, and null-format drift.
 
 ### Migration and rollback
+
+The API selects COVID marts through an internal allowlist. The normal setting is:
+
+```dotenv
+COVID_DATASET=extended
+CACHE_NAMESPACE=covid-api:v4
+```
+
+For an immediate application rollback, set `COVID_DATASET=legacy`, choose a new cache namespace, and restart the API. This changes reads only; it does not rename, replace, or delete either mart family.
 
 Run the migration reconciliation before a consumer cutover:
 

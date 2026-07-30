@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import logging
 from collections.abc import Sequence
+from dataclasses import dataclass
 from typing import Any
 
 import snowflake.connector
@@ -15,6 +16,29 @@ from app.models.covid import Metric
 logger = logging.getLogger(__name__)
 
 SNOWFLAKE_SOURCE = "Snowflake"
+
+
+@dataclass(frozen=True)
+class CovidDatasetObjects:
+    enriched: str
+    latest: str
+    denominator_publication_status: str
+
+
+COVID_DATASET_OBJECTS: dict[str, CovidDatasetObjects] = {
+    "extended": CovidDatasetObjects(
+        enriched="COVID_ANALYTICS.MARTS.COVID_ENRICHED_EXTENDED",
+        latest="COVID_ANALYTICS.MARTS.COUNTRY_LATEST_METRICS_EXTENDED",
+        denominator_publication_status=(
+            "COALESCE(DENOMINATOR_PUBLICATION_STATUS, 'ACTIVE')"
+        ),
+    ),
+    "legacy": CovidDatasetObjects(
+        enriched="COVID_ANALYTICS.MARTS.COVID_ENRICHED",
+        latest="COVID_ANALYTICS.MARTS.COUNTRY_LATEST_METRICS",
+        denominator_publication_status="'ACTIVE'",
+    ),
+}
 
 
 METRIC_COLUMNS: dict[Metric, str] = {
@@ -35,6 +59,7 @@ class SnowflakeRepository:
 
     def __init__(self, settings: Settings) -> None:
         self.settings = settings
+        self.covid_objects = COVID_DATASET_OBJECTS[settings.covid_dataset]
 
     def _configuration(self) -> dict[str, str]:
         values = {
@@ -84,6 +109,7 @@ class SnowflakeRepository:
             "sqlstate": getattr(exc, "sqlstate", None),
             "role": self.settings.snowflake_api_role,
             "warehouse": self.settings.snowflake_warehouse,
+            "covid_dataset": self.settings.covid_dataset,
         }
 
     @staticmethod
@@ -226,16 +252,16 @@ class SnowflakeRepository:
     def check_health(self) -> list[dict[str, Any]]:
         return self._execute(
             "health_check",
-            """
+            f"""
             SELECT
                 (
                     SELECT 1
-                    FROM COVID_ANALYTICS.MARTS.COVID_ENRICHED
+                    FROM {self.covid_objects.enriched}
                     LIMIT 1
                 ) AS COVID_ENRICHED_ACCESSIBLE,
                 (
                     SELECT 1
-                    FROM COVID_ANALYTICS.MARTS.COUNTRY_LATEST_METRICS
+                    FROM {self.covid_objects.latest}
                     LIMIT 1
                 ) AS COUNTRY_LATEST_METRICS_ACCESSIBLE
             """,
@@ -244,7 +270,7 @@ class SnowflakeRepository:
     def fetch_overview(self) -> list[dict[str, Any]]:
         return self._execute(
             "dashboard_overview",
-            """
+            f"""
             SELECT
                 COUNTRY,
                 COUNTRY_ISO2,
@@ -258,6 +284,8 @@ class SnowflakeRepository:
                 DEATHS_PER_100K,
                 MORTALITY_RATE_PERCENT,
                 DENOMINATOR_JOIN_STATUS,
+                {self.covid_objects.denominator_publication_status}
+                    AS DENOMINATOR_PUBLICATION_STATUS,
                 MAX(REPORT_DATE) OVER () AS DATASET_REPORT_DATE,
                 COUNT(*) OVER () AS COUNTRY_COUNT,
                 SUM(CASES_CUMULATIVE) OVER () AS TOTAL_CASES,
@@ -267,7 +295,7 @@ class SnowflakeRepository:
                     / NULLIF(SUM(CASES_CUMULATIVE) OVER (), 0) * 100,
                     4
                 ) AS GLOBAL_MORTALITY_RATE_PERCENT
-            FROM COVID_ANALYTICS.MARTS.COUNTRY_LATEST_METRICS
+            FROM {self.covid_objects.latest}
             ORDER BY COUNTRY
             """,
         )
@@ -275,13 +303,13 @@ class SnowflakeRepository:
     def fetch_countries(self) -> list[dict[str, Any]]:
         return self._execute(
             "countries",
-            """
+            f"""
             SELECT
                 COUNTRY,
                 COUNTRY_ISO2,
                 COUNTRY_ISO3,
                 LOCATION_KEY
-            FROM COVID_ANALYTICS.MARTS.COUNTRY_LATEST_METRICS
+            FROM {self.covid_objects.latest}
             ORDER BY COUNTRY
             """,
         )
@@ -289,7 +317,7 @@ class SnowflakeRepository:
     def fetch_summary(self, identifier: str) -> list[dict[str, Any]]:
         return self._execute(
             "country_summary",
-            """
+            f"""
             SELECT
                 COUNTRY,
                 COUNTRY_ISO2,
@@ -297,12 +325,14 @@ class SnowflakeRepository:
                 LOCATION_KEY,
                 REPORT_DATE,
                 COVID_RATE_POPULATION_2020,
+                {self.covid_objects.denominator_publication_status}
+                    AS DENOMINATOR_PUBLICATION_STATUS,
                 CASES_CUMULATIVE,
                 DEATHS_CUMULATIVE,
                 CASES_PER_100K,
                 DEATHS_PER_100K,
                 MORTALITY_RATE_PERCENT
-            FROM COVID_ANALYTICS.MARTS.COUNTRY_LATEST_METRICS
+            FROM {self.covid_objects.latest}
             WHERE UPPER(COUNTRY) = %s
                OR UPPER(COALESCE(COUNTRY_ISO2, '')) = %s
                OR UPPER(COALESCE(COUNTRY_ISO3, '')) = %s
@@ -318,13 +348,13 @@ class SnowflakeRepository:
     def fetch_country_identity(self, identifier: str) -> list[dict[str, Any]]:
         return self._execute(
             "country_identity",
-            """
+            f"""
             SELECT
                 COUNTRY,
                 COUNTRY_ISO2,
                 COUNTRY_ISO3,
                 LOCATION_KEY
-            FROM COVID_ANALYTICS.MARTS.COUNTRY_LATEST_METRICS
+            FROM {self.covid_objects.latest}
             WHERE UPPER(COUNTRY) = %s
                OR UPPER(COALESCE(COUNTRY_ISO2, '')) = %s
                OR UPPER(COALESCE(COUNTRY_ISO3, '')) = %s
@@ -340,15 +370,73 @@ class SnowflakeRepository:
     def fetch_country_context(self, identifier: str) -> list[dict[str, Any]]:
         return self._execute(
             "country_context",
-            """
-            SELECT *
-            FROM COVID_ANALYTICS.MARTS.COUNTRY_CONTEXT_ANALYSIS
-            WHERE UPPER(COUNTRY_NAME) = %s
-               OR UPPER(COALESCE(ISO2, '')) = %s
-               OR UPPER(COALESCE(ISO3, '')) = %s
-            QUALIFY ROW_NUMBER() OVER (
-                ORDER BY IFF(UPPER(COALESCE(ISO2, '')) = %s, 0, 1), COUNTRY_NAME
-            ) = 1
+            f"""
+            WITH RESOLVED AS (
+                SELECT
+                    COUNTRY,
+                    COUNTRY_ISO2,
+                    COUNTRY_ISO3,
+                    LOCATION_KEY,
+                    REPORT_DATE,
+                    COVID_RATE_POPULATION_2020,
+                    COVID_RATE_POPULATION_YEAR,
+                    DENOMINATOR_SOURCE_SNAPSHOT_ID,
+                    DENOMINATOR_VERSION,
+                    DENOMINATOR_POLICY,
+                    DENOMINATOR_IS_FROZEN,
+                    CASES_CUMULATIVE,
+                    DEATHS_CUMULATIVE,
+                    CASES_PER_100K,
+                    DEATHS_PER_100K,
+                    MORTALITY_RATE_PERCENT
+                FROM {self.covid_objects.latest}
+                WHERE UPPER(COUNTRY) = %s
+                   OR UPPER(COALESCE(COUNTRY_ISO2, '')) = %s
+                   OR UPPER(COALESCE(COUNTRY_ISO3, '')) = %s
+                QUALIFY ROW_NUMBER() OVER (
+                    ORDER BY
+                        IFF(UPPER(COALESCE(COUNTRY_ISO2, '')) = %s, 0, 1),
+                        COUNTRY
+                ) = 1
+            )
+            SELECT
+                context.* EXCLUDE (
+                    LOCATION_KEY,
+                    ISO2,
+                    ISO3,
+                    COUNTRY_NAME,
+                    COVID_RATE_POPULATION_2020,
+                    COVID_RATE_POPULATION_YEAR,
+                    DENOMINATOR_SOURCE_SNAPSHOT_ID,
+                    DENOMINATOR_VERSION,
+                    DENOMINATOR_POLICY,
+                    DENOMINATOR_IS_FROZEN,
+                    COVID_LATEST_REPORT_DATE,
+                    CASES_CUMULATIVE,
+                    DEATHS_CUMULATIVE,
+                    CASES_PER_100K,
+                    DEATHS_PER_100K,
+                    MORTALITY_RATE_PERCENT
+                ),
+                resolved.LOCATION_KEY,
+                resolved.COUNTRY_ISO2 AS ISO2,
+                resolved.COUNTRY_ISO3 AS ISO3,
+                resolved.COUNTRY AS COUNTRY_NAME,
+                resolved.COVID_RATE_POPULATION_2020,
+                resolved.COVID_RATE_POPULATION_YEAR,
+                resolved.DENOMINATOR_SOURCE_SNAPSHOT_ID,
+                resolved.DENOMINATOR_VERSION,
+                resolved.DENOMINATOR_POLICY,
+                resolved.DENOMINATOR_IS_FROZEN,
+                resolved.REPORT_DATE AS COVID_LATEST_REPORT_DATE,
+                resolved.CASES_CUMULATIVE,
+                resolved.DEATHS_CUMULATIVE,
+                resolved.CASES_PER_100K,
+                resolved.DEATHS_PER_100K,
+                resolved.MORTALITY_RATE_PERCENT
+            FROM RESOLVED AS resolved
+            LEFT JOIN COVID_ANALYTICS.MARTS.COUNTRY_CONTEXT_ANALYSIS AS context
+                ON resolved.COUNTRY_ISO3 = context.ISO3
             """,
             (identifier, identifier, identifier, identifier),
         )
@@ -360,14 +448,14 @@ class SnowflakeRepository:
     ) -> list[dict[str, Any]]:
         return self._execute(
             "annotation_target",
-            """
+            f"""
             WITH RESOLVED AS (
                 SELECT
                     COUNTRY,
                     COUNTRY_ISO2,
                     COUNTRY_ISO3,
                     LOCATION_KEY
-                FROM COVID_ANALYTICS.MARTS.COUNTRY_LATEST_METRICS
+                FROM {self.covid_objects.latest}
                 WHERE UPPER(COUNTRY) = %s
                    OR UPPER(COALESCE(COUNTRY_ISO2, '')) = %s
                    OR UPPER(COALESCE(COUNTRY_ISO3, '')) = %s
@@ -384,7 +472,7 @@ class SnowflakeRepository:
                 resolved.LOCATION_KEY,
                 data.REPORT_DATE AS VALIDATED_REPORT_DATE
             FROM RESOLVED AS resolved
-            LEFT JOIN COVID_ANALYTICS.MARTS.COVID_ENRICHED AS data
+            LEFT JOIN {self.covid_objects.enriched} AS data
                 ON data.LOCATION_KEY = resolved.LOCATION_KEY
                AND data.REPORT_DATE = %s
             """,
@@ -408,7 +496,7 @@ class SnowflakeRepository:
                     COUNTRY_ISO2,
                     COUNTRY_ISO3,
                     LOCATION_KEY
-                FROM COVID_ANALYTICS.MARTS.COUNTRY_LATEST_METRICS
+                FROM {self.covid_objects.latest}
                 WHERE UPPER(COUNTRY) = %s
                    OR UPPER(COALESCE(COUNTRY_ISO2, '')) = %s
                    OR UPPER(COALESCE(COUNTRY_ISO3, '')) = %s
@@ -426,7 +514,7 @@ class SnowflakeRepository:
                 data.REPORT_DATE,
                 data.{metric_column} AS METRIC_VALUE
             FROM RESOLVED AS resolved
-            LEFT JOIN COVID_ANALYTICS.MARTS.COVID_ENRICHED AS data
+            LEFT JOIN {self.covid_objects.enriched} AS data
                 ON data.LOCATION_KEY = resolved.LOCATION_KEY
                AND data.REPORT_DATE BETWEEN %s AND %s
             ORDER BY data.REPORT_DATE
@@ -459,7 +547,7 @@ class SnowflakeRepository:
                     COUNTRY_ISO2,
                     COUNTRY_ISO3,
                     LOCATION_KEY
-                FROM COVID_ANALYTICS.MARTS.COUNTRY_LATEST_METRICS
+                FROM {self.covid_objects.latest}
                 WHERE UPPER(COUNTRY) = %s
                    OR UPPER(COALESCE(COUNTRY_ISO2, '')) = %s
                    OR UPPER(COALESCE(COUNTRY_ISO3, '')) = %s
@@ -478,7 +566,7 @@ class SnowflakeRepository:
                     data.REPORT_DATE,
                     data.{metric_column} AS METRIC_VALUE
                 FROM RESOLVED AS resolved
-                LEFT JOIN COVID_ANALYTICS.MARTS.COVID_ENRICHED AS data
+                LEFT JOIN {self.covid_objects.enriched} AS data
                     ON data.LOCATION_KEY = resolved.LOCATION_KEY
                 QUALIFY ROW_NUMBER() OVER (
                     ORDER BY data.REPORT_DATE DESC NULLS LAST
@@ -529,7 +617,7 @@ class SnowflakeRepository:
                     latest.COUNTRY_ISO3,
                     latest.LOCATION_KEY
                 FROM REQUESTED AS requested
-                LEFT JOIN COVID_ANALYTICS.MARTS.COUNTRY_LATEST_METRICS AS latest
+                LEFT JOIN {self.covid_objects.latest} AS latest
                     ON UPPER(latest.COUNTRY) = requested.IDENTIFIER
                     OR UPPER(COALESCE(latest.COUNTRY_ISO2, ''))
                         = requested.IDENTIFIER
@@ -557,7 +645,7 @@ class SnowflakeRepository:
                 data.REPORT_DATE,
                 data.{metric_column} AS METRIC_VALUE
             FROM RESOLVED AS resolved
-            LEFT JOIN COVID_ANALYTICS.MARTS.COVID_ENRICHED AS data
+            LEFT JOIN {self.covid_objects.enriched} AS data
                 ON data.LOCATION_KEY = resolved.LOCATION_KEY
                AND data.REPORT_DATE BETWEEN %s AND %s
             ORDER BY resolved.REQUEST_ORDER, data.REPORT_DATE
@@ -584,12 +672,19 @@ class SnowflakeRepository:
                     LOCATION_KEY,
                     REPORT_DATE AS LATEST_REPORT_DATE,
                     COVID_RATE_POPULATION_2020,
+                    COVID_RATE_POPULATION_YEAR,
+                    DENOMINATOR_SOURCE_SNAPSHOT_ID,
+                    DENOMINATOR_VERSION,
+                    DENOMINATOR_POLICY,
+                    DENOMINATOR_IS_FROZEN,
+                    {self.covid_objects.denominator_publication_status}
+                        AS DENOMINATOR_PUBLICATION_STATUS,
                     CASES_CUMULATIVE,
                     DEATHS_CUMULATIVE,
                     CASES_PER_100K,
                     DEATHS_PER_100K,
                     MORTALITY_RATE_PERCENT AS LATEST_MORTALITY_RATE_PERCENT
-                FROM COVID_ANALYTICS.MARTS.COUNTRY_LATEST_METRICS
+                FROM {self.covid_objects.latest}
                 WHERE UPPER(COUNTRY) = %s
                    OR UPPER(COALESCE(COUNTRY_ISO2, '')) = %s
                    OR UPPER(COALESCE(COUNTRY_ISO3, '')) = %s
@@ -606,6 +701,7 @@ class SnowflakeRepository:
                 resolved.LOCATION_KEY,
                 resolved.LATEST_REPORT_DATE,
                 resolved.COVID_RATE_POPULATION_2020,
+                resolved.DENOMINATOR_PUBLICATION_STATUS,
                 resolved.CASES_CUMULATIVE,
                 resolved.DEATHS_CUMULATIVE,
                 resolved.CASES_PER_100K,
@@ -634,13 +730,13 @@ class SnowflakeRepository:
                 context.REAL_GDP_PER_CAPITA_CHANGE_2020_VS_2019_STATUS,
                 context.REAL_GDP_PER_CAPITA_CHANGE_2021_VS_2019_STATUS,
                 context.REAL_GDP_PER_CAPITA_CHANGE_2021_VS_2020_STATUS,
-                context.COVID_LATEST_REPORT_DATE,
+                resolved.LATEST_REPORT_DATE AS COVID_LATEST_REPORT_DATE,
                 context.SNAPSHOT_ID AS CONTEXT_SNAPSHOT_ID,
-                context.DENOMINATOR_SOURCE_SNAPSHOT_ID,
-                context.DENOMINATOR_VERSION,
-                context.DENOMINATOR_POLICY
+                resolved.DENOMINATOR_SOURCE_SNAPSHOT_ID,
+                resolved.DENOMINATOR_VERSION,
+                resolved.DENOMINATOR_POLICY
             FROM RESOLVED AS resolved
-            LEFT JOIN COVID_ANALYTICS.MARTS.COVID_ENRICHED AS data
+            LEFT JOIN {self.covid_objects.enriched} AS data
                 ON data.LOCATION_KEY = resolved.LOCATION_KEY
                AND data.REPORT_DATE BETWEEN %s AND %s
             LEFT JOIN COVID_ANALYTICS.MARTS.COUNTRY_CONTEXT_ANALYSIS AS context
@@ -690,7 +786,7 @@ class SnowflakeRepository:
                     latest.COUNTRY_ISO3,
                     latest.LOCATION_KEY
                 FROM REQUESTED AS requested
-                LEFT JOIN COVID_ANALYTICS.MARTS.COUNTRY_LATEST_METRICS AS latest
+                LEFT JOIN {self.covid_objects.latest} AS latest
                     ON UPPER(latest.COUNTRY) = requested.IDENTIFIER
                     OR UPPER(COALESCE(latest.COUNTRY_ISO2, ''))
                         = requested.IDENTIFIER
@@ -731,7 +827,7 @@ class SnowflakeRepository:
                 context.HEALTH_EXPENDITURE_PPP_2019_STATUS,
                 context.SNAPSHOT_ID AS CONTEXT_SNAPSHOT_ID
             FROM RESOLVED AS resolved
-            LEFT JOIN COVID_ANALYTICS.MARTS.COVID_ENRICHED AS data
+            LEFT JOIN {self.covid_objects.enriched} AS data
                 ON data.LOCATION_KEY = resolved.LOCATION_KEY
                AND data.REPORT_DATE BETWEEN %s AND %s
             LEFT JOIN COVID_ANALYTICS.MARTS.COUNTRY_CONTEXT_ANALYSIS AS context
