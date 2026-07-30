@@ -151,6 +151,7 @@ class BootstrapTests(unittest.TestCase):
             if kwargs["name"] in {
                 "world_bank_snapshot_publication",
                 "population_verification_and_marts",
+                "jhu_parallel_extension",
             }:
                 kwargs["action"]()
 
@@ -197,6 +198,7 @@ class BootstrapTests(unittest.TestCase):
                 bootstrap.SQL_FILES["world_bank_context"],
                 bootstrap.SQL_FILES["mart"],
                 bootstrap.SQL_FILES["reporting"],
+                bootstrap.SQL_FILES["jhu_extension"],
             ],
         )
 
@@ -330,6 +332,32 @@ class BootstrapTests(unittest.TestCase):
         self.assertTrue(all(event[1] == ("BOOTCAMP_USER",) for event in grant_events))
         cursor.close.assert_called_once()
 
+    def test_account_setup_adopts_existing_jhu_extension_objects(self) -> None:
+        cursor = MagicMock()
+        cursor.fetchone.side_effect = [
+            ("ACCOUNTADMIN",),
+            ("COVID_PROJECT_ADMIN",),
+            None,
+            None,
+            None,
+        ]
+
+        bootstrap._transfer_existing_jhu_extension_ownership(cursor)
+
+        ownership_statements = [
+            call.args[0]
+            for call in cursor.execute.call_args_list
+            if call.args[0].startswith("GRANT OWNERSHIP")
+        ]
+        self.assertEqual(
+            ownership_statements,
+            [
+                "GRANT OWNERSHIP ON TABLE "
+                "COVID_ANALYTICS.RAW.JHU_GEOGRAPHY_POLICY "
+                "TO ROLE COVID_PROJECT_ADMIN COPY CURRENT GRANTS"
+            ],
+        )
+
     def test_current_user_role_check_supports_legacy_and_current_show_layouts(
         self,
     ) -> None:
@@ -454,6 +482,7 @@ class BootstrapTests(unittest.TestCase):
             ("BOOTCAMP_USER", "ACCOUNTADMIN"),
             ("COVID19_EPIDEMIOLOGICAL_DATA",),
             (1,),
+            (1,),
         ]
         values = {
             "SNOWFLAKE_BOOTSTRAP_ROLE": "ACCOUNTADMIN",
@@ -465,6 +494,13 @@ class BootstrapTests(unittest.TestCase):
         self.assertTrue(
             any(
                 "COVID19_EPIDEMIOLOGICAL_DATA.PUBLIC.ECDC_GLOBAL" in statement
+                for statement in executed_sql
+            )
+        )
+        self.assertTrue(
+            any(
+                "COVID19_EPIDEMIOLOGICAL_DATA.PUBLIC.JHU_COVID_19_TIMESERIES"
+                in statement
                 for statement in executed_sql
             )
         )
@@ -594,6 +630,28 @@ class BootstrapTests(unittest.TestCase):
         self.assertIn("COUNTRY_CONTEXT_ANALYSIS", text)
         self.assertNotIn(
             "DELETE FROM COVID_ANALYTICS.MARTS.COUNTRY_LATEST_METRICS", text
+        )
+
+    def test_jhu_extension_is_parallel_and_policy_driven(self) -> None:
+        sql = bootstrap.SQL_FILES["jhu_extension"].read_text(encoding="utf-8")
+        normalized = " ".join(sql.upper().split())
+
+        self.assertIn("JHU_START_DATE DATE", normalized)
+        self.assertIn("DATE '2020-12-14'", normalized)
+        self.assertIn(
+            "COALESCE(POLICY.JHU_START_DATE, DATE '2020-12-15')",
+            normalized,
+        )
+        self.assertIn("THEN JHU.FIRST_JHU_DATE", normalized)
+        self.assertIn("COVID_COUNTRY_DAILY_EXTENDED", normalized)
+        self.assertIn("COVID_ENRICHED_EXTENDED", normalized)
+        self.assertIn("COUNTRY_LATEST_METRICS_EXTENDED", normalized)
+        self.assertIn("'ECDC_BASELINE'", normalized)
+        self.assertIn("'JHU_CONTINUATION'", normalized)
+        self.assertIn("'JHU_ONLY'", normalized)
+        self.assertNotIn(
+            "CREATE OR REPLACE VIEW COVID_ANALYTICS.MARTS.COVID_ENRICHED AS",
+            normalized,
         )
 
 

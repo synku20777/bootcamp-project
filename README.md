@@ -2,7 +2,7 @@
 
 This bootcamp project builds a COVID-19 data platform with Snowflake, FastAPI, Dash, MongoDB, Redis, and PySpark.
 
-The platform uses ECDC data from Snowflake Marketplace. It adds versioned World Development Indicators (WDI) for country context.
+The production application uses ECDC data from Snowflake Marketplace. A parallel Snowflake extension preserves ECDC history and continues comparable country series with normalized JHU data through March 2023. It adds versioned World Development Indicators (WDI) for country context.
 
 The project keeps the WDI context separate from the frozen 2020 population denominator. This rule prevents source revisions from changing published COVID rates.
 
@@ -54,9 +54,13 @@ Use `organization-account` for `SNOWFLAKE_ACCOUNT`. Do not use a URL, regional h
 SELECT *
 FROM COVID19_EPIDEMIOLOGICAL_DATA.PUBLIC.ECDC_GLOBAL
 LIMIT 1;
+
+SELECT *
+FROM COVID19_EPIDEMIOLOGICAL_DATA.PUBLIC.JHU_COVID_19_TIMESERIES
+LIMIT 1;
 ```
 
-The query must return one ECDC row. A different COVID database or object does not meet this project contract.
+Both queries must return a row. A different COVID database or object does not meet this project contract.
 
 ### 3. Install Docker
 
@@ -173,7 +177,7 @@ The setup process completes nine operations:
 
 1. It checks Docker, Compose, file permissions, and required ports.
 2. It creates or validates `.env` without printing secrets.
-3. It checks the Marketplace database and `ECDC_GLOBAL` table.
+3. It checks the Marketplace database and the `ECDC_GLOBAL` and `JHU_COVID_19_TIMESERIES` tables.
 4. It creates the warehouse, resource monitor, database, schemas, and roles.
 5. It publishes the committed WDI snapshot without a network request.
 6. It preserves the frozen COVID population denominator.
@@ -299,6 +303,7 @@ For individual recovery steps, use [Advanced: manual setup and recovery](#advanc
 
 - Create a Snowflake warehouse, resource monitor, database, schemas, and least-privilege roles.
 - Read daily global COVID data from `ECDC_GLOBAL`.
+- Build a parallel ECDC-to-JHU continuation without changing API-facing marts.
 - Normalize known country and ISO-code exceptions.
 - Preserve negative case and death corrections.
 - Publish a versioned 2019-2021 WDI snapshot.
@@ -319,20 +324,20 @@ Clustering is not included because it is a bonus task. Authentication and user p
 
 ### Epidemiological source
 
-The Marketplace listing contains many provider tables. The analytical pipeline reads only `COVID19_EPIDEMIOLOGICAL_DATA.PUBLIC.ECDC_GLOBAL`.
+The production API and Spark pipeline read `COVID19_EPIDEMIOLOGICAL_DATA.PUBLIC.ECDC_GLOBAL`. The parallel Snowflake extension also reads `COVID19_EPIDEMIOLOGICAL_DATA.PUBLIC.JHU_COVID_19_TIMESERIES`.
 
 `ECDC_GLOBAL` has a country-date grain and daily case and death measures. This grain supports global comparisons, forecasts, and daily pattern detection.
 
-The project does not combine ECDC, JHU, and WHO case feeds. Their definitions, correction rules, and geographic grains differ.
+`JHU_COVID_19_TIMESERIES` mixes country, province, and county rows and stores cumulative measures by case type. The extension normalizes it to one row per ISO3 and date before deriving daily changes.
 
-Combining those feeds would create conflicting facts and possible row multiplication. A source reconciliation study would need a separate contract.
+The sources are spliced rather than blended. Shared countries use ECDC through their governed boundary and JHU afterward. Spain switches on 2020-12-14; other shared countries switch on 2020-12-15. Eight JHU-only countries retain their full JHU history from 2020-01-22. The existing API-facing marts remain ECDC-only until a separate promotion decision.
 
 ### Tables not used as COVID facts
 
 | Group | Examples | Reason for exclusion |
 | --- | --- | --- |
 | Weekly data | `ECDC_GLOBAL_WEEKLY` | Weekly rows do not support daily forecasts or patterns |
-| Alternative global feeds | `JHU_COVID_19`, `WHO_TIMESERIES` | They overlap with ECDC and use different definitions |
+| Alternative global feeds | `JHU_COVID_19`, `WHO_TIMESERIES` | The extension uses the reviewed `JHU_COVID_19_TIMESERIES` normalization contract instead |
 | Country-specific feeds | `NYT_US_COVID19`, `PCM_DPS_COVID19`, `SCS_BE_*` | Their geographic grain does not match the global model |
 | Mobility and policy | `APPLE_MOBILITY`, `GOOG_GLOBAL_MOBILITY_REPORT`, `HDX_ACAPS` | They require a separate lag and causal analysis |
 | Vaccination | `JHU_VACCINES`, `OWID_VACCINATIONS` | Their main period is later than the COVID fact window |
@@ -545,6 +550,8 @@ Run [`sql/05_create_enriched_view.sql`](sql/05_create_enriched_view.sql).
 
 Run [`sql/06_create_reporting_objects.sql`](sql/06_create_reporting_objects.sql).
 
+Run [`sql/09_create_jhu_extension.sql`](sql/09_create_jhu_extension.sql).
+
 Run [`sql/07_analysis_queries.sql`](sql/07_analysis_queries.sql).
 
 The build order prevents circular dependencies. It also keeps WDI publication separate from the COVID denominator.
@@ -575,6 +582,18 @@ MARTS.COUNTRY_BASELINE_2019
 
 COVID_ANALYTICS.STAGING.COVID_COUNTRY_DAILY
     -> MARTS.CASE_INCREASE_PATTERNS
+
+COVID19_EPIDEMIOLOGICAL_DATA.PUBLIC.JHU_COVID_19_TIMESERIES
+    + RAW.JHU_GEOGRAPHY_POLICY
+    + STAGING.CANONICAL_COUNTRY_CODE_MAP
+    -> STAGING.JHU_COUNTRY_CUMULATIVE
+    -> STAGING.JHU_COUNTRY_DAILY
+
+STAGING.COVID_COUNTRY_DAILY
+    + STAGING.JHU_COUNTRY_DAILY
+    -> STAGING.COVID_COUNTRY_DAILY_EXTENDED
+    -> MARTS.COVID_ENRICHED_EXTENDED
+    -> MARTS.COUNTRY_LATEST_METRICS_EXTENDED
 ```
 
 ### 9. Start the local services
@@ -611,6 +630,7 @@ Open <http://localhost:8050/overview>. Confirm that the Overview page contains d
 
 - [ ] Snowflake uses AWS Stockholm.
 - [ ] `COVID19_EPIDEMIOLOGICAL_DATA.PUBLIC.ECDC_GLOBAL` returns data.
+- [ ] `COVID19_EPIDEMIOLOGICAL_DATA.PUBLIC.JHU_COVID_19_TIMESERIES` returns data.
 - [ ] `COVID_WH` and `COVID_PROJECT_MONITOR` exist.
 - [ ] `STAGING.COVID_COUNTRY_DAILY` contains rows.
 - [ ] `RAW.WORLD_BANK_INDICATOR_SNAPSHOTS` has one active snapshot.
@@ -618,6 +638,8 @@ Open <http://localhost:8050/overview>. Confirm that the Overview page contains d
 - [ ] `MARTS.COUNTRY_BASELINE_2019` contains eligible countries.
 - [ ] `MARTS.COVID_ENRICHED` contains rows.
 - [ ] `MARTS.COUNTRY_LATEST_METRICS` contains rows.
+- [ ] `STAGING.COVID_COUNTRY_DAILY_EXTENDED` contains 222 locations.
+- [ ] `MARTS.COUNTRY_LATEST_METRICS_EXTENDED` contains 222 rows.
 - [ ] All four local services are healthy.
 - [ ] The liveness, readiness, and Snowflake checks succeed.
 - [ ] Two equal overview requests return `MISS` and then `HIT`.
@@ -1045,7 +1067,8 @@ GitHub Actions runs the locked environment and quality checks for each push and 
 |   |-- 05_create_enriched_view.sql
 |   |-- 06_create_reporting_objects.sql
 |   |-- 07_analysis_queries.sql
-|   `-- 08_migrate_population_compatibility.sql
+|   |-- 08_migrate_population_compatibility.sql
+|   `-- 09_create_jhu_extension.sql
 |-- tests/                               # Application tests
 |-- spark_tests/                         # Spark tests
 |-- .env.example                         # Configuration template

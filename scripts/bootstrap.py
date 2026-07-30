@@ -95,6 +95,7 @@ SQL_FILES = {
     "world_bank_context": REPOSITORY_ROOT / "sql" / "04_create_world_bank_context.sql",
     "mart": REPOSITORY_ROOT / "sql" / "05_create_enriched_view.sql",
     "reporting": REPOSITORY_ROOT / "sql" / "06_create_reporting_objects.sql",
+    "jhu_extension": REPOSITORY_ROOT / "sql" / "09_create_jhu_extension.sql",
     "exploration": REPOSITORY_ROOT / "sql" / "01_data_exploration.sql",
     "analysis": REPOSITORY_ROOT / "sql" / "07_analysis_queries.sql",
 }
@@ -111,6 +112,13 @@ ANALYTICAL_MART_INPUTS = (
     SQL_FILES["world_bank_context"],
     SQL_FILES["mart"],
     SQL_FILES["reporting"],
+)
+JHU_EXTENSION_OWNERSHIP_OBJECTS = (
+    ("TABLE", "RAW", "JHU_GEOGRAPHY_POLICY"),
+    ("VIEW", "STAGING", "CANONICAL_COUNTRY_CODE_MAP"),
+    ("TABLE", "STAGING", "JHU_COUNTRY_CUMULATIVE"),
+    ("TABLE", "STAGING", "JHU_COUNTRY_DAILY"),
+    ("TABLE", "APP", "ECDC_JHU_OVERLAP_AUDIT"),
 )
 logger = logging.getLogger(__name__)
 
@@ -299,6 +307,13 @@ def _analytical_marts_checksum(publication_checksum: str) -> str:
     return _input_checksum(
         *ANALYTICAL_MART_INPUTS,
         values=(publication_checksum,),
+    )
+
+
+def _jhu_extension_checksum(analytical_marts_checksum: str) -> str:
+    return _input_checksum(
+        SQL_FILES["jhu_extension"],
+        values=(analytical_marts_checksum,),
     )
 
 
@@ -811,14 +826,15 @@ def doctor_configured(values: dict[str, str]) -> None:
                     ),
                 )
             try:
-                cursor.execute(
-                    "SELECT 1 FROM "
-                    "COVID19_EPIDEMIOLOGICAL_DATA.PUBLIC.ECDC_GLOBAL LIMIT 1"
-                )
-                if cursor.fetchone() is None:
-                    raise BootstrapError(
-                        "The Marketplace ECDC_GLOBAL source returned no accessible rows."
+                for table_name in ("ECDC_GLOBAL", "JHU_COVID_19_TIMESERIES"):
+                    cursor.execute(
+                        "SELECT 1 FROM "
+                        f"COVID19_EPIDEMIOLOGICAL_DATA.PUBLIC.{table_name} LIMIT 1"
                     )
+                    if cursor.fetchone() is None:
+                        raise BootstrapError(
+                            f"The Marketplace {table_name} source returned no accessible rows."
+                        )
             except snowflake.connector.Error as exc:
                 logger.exception(
                     "marketplace_source_validation_failed",
@@ -826,11 +842,11 @@ def doctor_configured(values: dict[str, str]) -> None:
                     exc_info=sanitized_exception_info(exc),
                 )
                 raise BootstrapError(
-                    "The required Marketplace object PUBLIC.ECDC_GLOBAL is not accessible.",
+                    "A required Marketplace COVID source is not accessible.",
                     likely_cause="The listing is missing, was installed under a different database name, or the bootstrap role cannot use it.",
                     fixes=(
                         "Confirm the database is named COVID19_EPIDEMIOLOGICAL_DATA.",
-                        "In Snowsight, verify PUBLIC.ECDC_GLOBAL opens and contains data.",
+                        "In Snowsight, verify PUBLIC.ECDC_GLOBAL and PUBLIC.JHU_COVID_19_TIMESERIES open and contain data.",
                     ),
                 ) from exc
         finally:
@@ -928,8 +944,31 @@ def bootstrap_account_objects_and_roles(connection: Any) -> None:
             "GRANT ROLE COVID_APP_ROLE TO USER IDENTIFIER(%s)",
             (current_user,),
         )
+        _transfer_existing_jhu_extension_ownership(cursor)
     finally:
         cursor.close()
+
+
+def _transfer_existing_jhu_extension_ownership(cursor: Any) -> None:
+    """Adopt exploratory extension objects before project-role replacement."""
+    for object_type, schema_name, object_name in JHU_EXTENSION_OWNERSHIP_OBJECTS:
+        cursor.execute(
+            """
+            SELECT TABLE_OWNER
+            FROM COVID_ANALYTICS.INFORMATION_SCHEMA.TABLES
+            WHERE TABLE_SCHEMA = %s
+              AND TABLE_NAME = %s
+            """,
+            (schema_name, object_name),
+        )
+        row = cursor.fetchone()
+        if row is None or str(row[0]).upper() == "COVID_PROJECT_ADMIN":
+            continue
+        qualified_name = f"COVID_ANALYTICS.{schema_name}.{object_name}"
+        cursor.execute(
+            f"GRANT OWNERSHIP ON {object_type} {qualified_name} "
+            "TO ROLE COVID_PROJECT_ADMIN COPY CURRENT GRANTS"
+        )
 
 
 def _query_one(connection: Any, query: str, parameters: tuple[Any, ...] = ()) -> Any:
@@ -1075,6 +1114,107 @@ def _snowflake_objects_ready(connection: Any) -> bool:
         "SELECT COUNT(*) FROM COVID_ANALYTICS.MARTS.COUNTRY_COVID_DENOMINATOR",
     )
     return all(_query_one(connection, query) is not None for query in checks)
+
+
+def _jhu_extension_ready(connection: Any) -> bool:
+    try:
+        row = _query_one(
+            connection,
+            """
+            WITH JHU_PROFILE AS (
+                SELECT
+                    COUNT(*) AS ROW_COUNT,
+                    COUNT(DISTINCT ISO3) AS COUNTRY_COUNT,
+                    MIN(REPORT_DATE) AS FIRST_DATE,
+                    MAX(REPORT_DATE) AS LAST_DATE,
+                    COUNT_IF(ISO3 IS NULL) AS NULL_ISO3_ROWS,
+                    COUNT_IF(HAS_DATE_GAP) AS DATE_GAP_ROWS,
+                    COUNT_IF(HAS_NEGATIVE_CASE_CORRECTION) AS NEGATIVE_CASE_ROWS,
+                    COUNT_IF(HAS_NEGATIVE_DEATH_CORRECTION) AS NEGATIVE_DEATH_ROWS
+                FROM COVID_ANALYTICS.STAGING.JHU_COUNTRY_DAILY
+            ),
+            JHU_DUPLICATES AS (
+                SELECT COUNT(*) AS DUPLICATE_KEYS
+                FROM (
+                    SELECT ISO3, REPORT_DATE
+                    FROM COVID_ANALYTICS.STAGING.JHU_COUNTRY_DAILY
+                    GROUP BY ISO3, REPORT_DATE
+                    HAVING COUNT(*) > 1
+                )
+            ),
+            EXTENDED_PROFILE AS (
+                SELECT
+                    COUNT(DISTINCT LOCATION_KEY) AS LOCATION_COUNT,
+                    COUNT_IF(SERIES_SEGMENT = 'ECDC_BASELINE') AS ECDC_ROWS,
+                    MAX(REPORT_DATE) AS LAST_DATE
+                FROM COVID_ANALYTICS.STAGING.COVID_COUNTRY_DAILY_EXTENDED
+            ),
+            SHARED_BOUNDARIES AS (
+                SELECT
+                    LOCATION_KEY,
+                    MAX(IFF(SERIES_SEGMENT = 'ECDC_BASELINE', REPORT_DATE, NULL))
+                        AS LAST_ECDC_DATE,
+                    MIN(IFF(SERIES_SEGMENT = 'JHU_CONTINUATION', REPORT_DATE, NULL))
+                        AS FIRST_JHU_DATE
+                FROM COVID_ANALYTICS.STAGING.COVID_COUNTRY_DAILY_EXTENDED
+                GROUP BY LOCATION_KEY
+                HAVING FIRST_JHU_DATE IS NOT NULL
+            ),
+            BOUNDARY_PROFILE AS (
+                SELECT
+                    COUNT(*) AS COUNTRY_COUNT,
+                    COUNT_IF(
+                        DATEDIFF('DAY', LAST_ECDC_DATE, FIRST_JHU_DATE) = 1
+                    ) AS CONTIGUOUS_COUNT
+                FROM SHARED_BOUNDARIES
+            ),
+            JHU_ONLY_PROFILE AS (
+                SELECT
+                    COUNT(DISTINCT LOCATION_KEY) AS COUNTRY_COUNT,
+                    MIN(REPORT_DATE) AS FIRST_DATE,
+                    MAX(REPORT_DATE) AS LAST_DATE
+                FROM COVID_ANALYTICS.STAGING.COVID_COUNTRY_DAILY_EXTENDED
+                WHERE SERIES_SEGMENT = 'JHU_ONLY'
+            ),
+            OVERLAP_PROFILE AS (
+                SELECT
+                    COUNT_IF(MATCH_STATUS = 'BOTH') AS BOTH_ROWS,
+                    COUNT(DISTINCT IFF(MATCH_STATUS = 'BOTH', ISO3, NULL))
+                        AS BOTH_COUNTRIES
+                FROM COVID_ANALYTICS.APP.ECDC_JHU_OVERLAP_AUDIT
+            )
+            SELECT
+                jhu.ROW_COUNT = 224028
+                AND jhu.COUNTRY_COUNT = 196
+                AND jhu.FIRST_DATE = DATE '2020-01-22'
+                AND jhu.LAST_DATE = DATE '2023-03-09'
+                AND jhu.NULL_ISO3_ROWS = 0
+                AND jhu.DATE_GAP_ROWS = 0
+                AND jhu.NEGATIVE_CASE_ROWS = 174
+                AND jhu.NEGATIVE_DEATH_ROWS = 199
+                AND duplicates.DUPLICATE_KEYS = 0
+                AND extended.LOCATION_COUNT = 222
+                AND extended.ECDC_ROWS = 61900
+                AND extended.LAST_DATE = DATE '2023-03-09'
+                AND boundaries.COUNTRY_COUNT = 188
+                AND boundaries.CONTIGUOUS_COUNT = 188
+                AND jhu_only.COUNTRY_COUNT = 8
+                AND jhu_only.FIRST_DATE = DATE '2020-01-22'
+                AND jhu_only.LAST_DATE = DATE '2023-03-09'
+                AND overlap.BOTH_ROWS = 53954
+                AND overlap.BOTH_COUNTRIES = 188
+                    AS IS_READY
+            FROM JHU_PROFILE AS jhu
+            CROSS JOIN JHU_DUPLICATES AS duplicates
+            CROSS JOIN EXTENDED_PROFILE AS extended
+            CROSS JOIN BOUNDARY_PROFILE AS boundaries
+            CROSS JOIN JHU_ONLY_PROFILE AS jhu_only
+            CROSS JOIN OVERLAP_PROFILE AS overlap
+            """,
+        )
+        return row is not None and bool(row[0])
+    except Exception:
+        return False
 
 
 def _wdi_snapshot_matches(connection: Any) -> bool:
@@ -1393,7 +1533,7 @@ def setup(
     _setup_progress(
         2,
         "Configure and validate Snowflake access",
-        "Collecting only missing values, writing the ignored .env atomically, authenticating with ACCOUNTADMIN, and validating the Marketplace ECDC source.",
+        "Collecting only missing values, writing the ignored .env atomically, authenticating with ACCOUNTADMIN, and validating the Marketplace ECDC and JHU sources.",
     )
     values = configure_environment(non_interactive=non_interactive)
     doctor_configured(values)
@@ -1477,11 +1617,15 @@ def setup(
 
         def verify_marketplace_access() -> bool:
             try:
-                row = _query_one(
-                    admin_connection,
-                    "SELECT 1 FROM COVID19_EPIDEMIOLOGICAL_DATA.PUBLIC.ECDC_GLOBAL LIMIT 1",
-                )
-                return row is not None
+                for table_name in ("ECDC_GLOBAL", "JHU_COVID_19_TIMESERIES"):
+                    row = _query_one(
+                        admin_connection,
+                        "SELECT 1 FROM "
+                        f"COVID19_EPIDEMIOLOGICAL_DATA.PUBLIC.{table_name} LIMIT 1",
+                    )
+                    if row is None:
+                        return False
+                return True
             except snowflake.connector.Error as exc:
                 logger.exception(
                     "marketplace_access_failed",
@@ -1489,10 +1633,10 @@ def setup(
                     exc_info=sanitized_exception_info(exc),
                 )
                 raise BootstrapError(
-                    "The Marketplace ECDC_GLOBAL source is not accessible to the project role.",
+                    "A required Marketplace COVID source is not accessible to the project role.",
                     likely_cause="The Marketplace database is missing, has a different name, or its imported privileges are unavailable.",
                     fixes=(
-                        "Add the listing as COVID19_EPIDEMIOLOGICAL_DATA and verify PUBLIC.ECDC_GLOBAL in Snowsight.",
+                        "Add the listing as COVID19_EPIDEMIOLOGICAL_DATA and verify PUBLIC.ECDC_GLOBAL and PUBLIC.JHU_COVID_19_TIMESERIES in Snowsight.",
                         "Then rerun setup with --resume; completed account-level work will be rechecked and skipped safely.",
                     ),
                 ) from exc
@@ -1506,6 +1650,7 @@ def setup(
             postcondition=verify_marketplace_access,
             resume=resume,
         )
+
         _run_step(
             state=state,
             context=context,
@@ -1632,6 +1777,22 @@ def setup(
                 and _snowflake_objects_ready(admin_connection)
                 and _wdi_snapshot_matches(admin_connection)
             ),
+            resume=resume,
+        )
+
+        analytical_marts_checksum = _analytical_marts_checksum(
+            world_bank_publication_checksum
+        )
+        _run_step(
+            state=state,
+            context=context,
+            name="jhu_parallel_extension",
+            checksum=_jhu_extension_checksum(analytical_marts_checksum),
+            action=lambda: execute_sql_file(
+                admin_connection,
+                SQL_FILES["jhu_extension"],
+            ),
+            postcondition=lambda: _jhu_extension_ready(admin_connection),
             resume=resume,
         )
     finally:

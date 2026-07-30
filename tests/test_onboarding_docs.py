@@ -20,6 +20,10 @@ class OnboardingDocumentationTests(unittest.TestCase):
         self.assertIn("private Python/uv environment", primary_path)
         self.assertIn("## Advanced: manual setup and recovery", readme)
         self.assertIn("COVID19_EPIDEMIOLOGICAL_DATA.PUBLIC.ECDC_GLOBAL", readme)
+        self.assertIn(
+            "COVID19_EPIDEMIOLOGICAL_DATA.PUBLIC.JHU_COVID_19_TIMESERIES", readme
+        )
+        self.assertIn("sql/09_create_jhu_extension.sql", readme)
         self.assertIn("Set-ExecutionPolicy -Scope Process Bypass", readme)
         self.assertIn("chmod +x setup.sh start.sh stop.sh", readme)
 
