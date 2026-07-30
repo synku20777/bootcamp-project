@@ -1,12 +1,67 @@
+# Version-control and development metadata
 .git
+.github
+.agents
+.codex
 .gitignore
+.gitattributes
+.pre-commit-config.yaml
+.python-version
+
+# Local configuration and setup state
 .env
 .env.backup-*
 .setup-state.json
+
+# Python environments, caches, and build products
 .venv
+.uv-cache
 __pycache__
-*.pyc
+*.py[cod]
 .pytest_cache
 .ruff_cache
+.black-cache
+.mypy_cache
+.coverage
+.coverage.*
+htmlcov
+build
+dist
+*.egg-info
+
+# Tests and development-only material
+tests
+spark_tests
+docs
+reports
+assets
+!app/dashboard/assets/
+!app/dashboard/assets/**
+lessons
+reference
+external
+README*
+MISSION.md
+NOTES.md
+RESOURCES.md
+returns.md
+tasks.md
+ahdsd.md
+
+# Runtime output and source data are mounted when a workflow needs them
 outputs
 data
+
+# Local orchestration and host launchers are not copied into either image
+compose*.yaml
+setup.ps1
+setup.sh
+start.ps1
+start.sh
+stop.ps1
+stop.sh
+
+# Miscellaneous local artifacts
+*.log
+*.tmp
+*.docx

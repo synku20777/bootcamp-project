@@ -1,24 +1,53 @@
+# Local configuration and setup state
 .env
 .env.backup-*
 .setup-state.json
+
+# Python environments, caches, and build products
 .venv/
+.uv-cache/
 __pycache__/
-*.pyc
+*.py[cod]
 .pytest_cache/
 .ruff_cache/
 .black-cache/
-outputs/
-outputs/setup/
-.vscode/
+.mypy_cache/
+.coverage
+.coverage.*
+htmlcov/
+build/
+dist/
 *.egg-info/
-ahdsd.md
-reports/*
-.docx
+
+# Editors and operating-system metadata
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
+.agents/
+
+# Runtime and generated data
+outputs/
+*.log
+*.tmp
 data/source/
 data/bronze/
 data/curated/
+
+# Generated reports. Keep the reviewed project evidence below.
+reports/*
+*.docx
 !reports/spark/
 !reports/spark/**
 !reports/bootcamp_project_report_2026.md
 !reports/world_bank/
 !reports/world_bank/**
+
+# Local learning and reference artifacts; not required by the application
+/assets/
+/lessons/
+/reference/
+/MISSION.md
+/NOTES.md
+/RESOURCES.md
+ahdsd.md
