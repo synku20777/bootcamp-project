@@ -182,6 +182,10 @@ The Dash application provides:
 5. **Forecast:** model choice, holdout MAE/RMSE, history, 1-30-day forecast, and empirical interval.
 6. **Annotations:** create and filter comments stored in MongoDB.
 
+Country Explorer keeps the COVID outcome hierarchy first: COVID KPIs precede a compact five-card WDI baseline row, and the four primary COVID charts precede the larger GDP panel. The GDP chart includes zero in its value scale and delegates change interpretation to signed, two-decimal badges so three annual observations do not exaggerate small movements. Cards use fixed, unit-specific precision and show missing source observations as unavailable rather than zero.
+
+The WDI section uses the context already present in the combined Country Explorer payload, so it adds no browser request or Snowflake statement. Population, density, age and health expenditure remain baseline cards; only real GDP per capita has public annual history for 2019-2021. One section footer identifies the active WDI snapshot without repeating operational metadata on every card.
+
 Responsive Mantine components, loading overlays, empty states, error alerts, accessible status roles, and a compact/mobile sidebar support usability. Page-level `dcc.Store` objects ensure render callbacks do not call the API again. A remaining analytical-UX improvement is explicit source/methodology text on every chart and download controls for reproducible offline analysis.
 
 ## 9. Forecasting methodology and result

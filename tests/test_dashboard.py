@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import unittest
+from copy import deepcopy
 from unittest.mock import patch
 
 from dash.exceptions import PreventUpdate
@@ -49,6 +50,150 @@ def component_by_id(component, component_id: str):
         for item in walk_components(component)
         if getattr(item, "id", None) == component_id
     )
+
+
+WORLD_BANK_SNAPSHOT_ID = "wdi2-2019-2021-372906f371e0391f"
+
+
+def context_indicator(
+    value: float | int | None,
+    year: int,
+    unit: str,
+    indicator_code: str,
+    *,
+    status: str | None = None,
+) -> dict[str, object]:
+    return {
+        "value": value,
+        "status": status or ("available" if value is not None else "missing"),
+        "year": year,
+        "unit": unit,
+        "indicator_code": indicator_code,
+        "snapshot_id": WORLD_BANK_SNAPSHOT_ID,
+    }
+
+
+def context_change(
+    value: float | None,
+    baseline_year: int,
+    comparison_year: int,
+    *,
+    status: str = "available",
+) -> dict[str, object]:
+    return {
+        "value": value,
+        "status": status,
+        "baseline_year": baseline_year,
+        "comparison_year": comparison_year,
+        "unit": "percent",
+    }
+
+
+def latvia_context() -> dict[str, object]:
+    annual_gdp = [
+        context_indicator(value, year, "constant 2015 US$", "NY.GDP.PCAP.KD")
+        for year, value in (
+            (2019, 15328.38599333),
+            (2020, 14900.729571887),
+            (2021, 16070.168003232),
+        )
+    ]
+    return {
+        "country": "Latvia",
+        "iso2": "LV",
+        "iso3": "LVA",
+        "location_key": "LVA",
+        "population_2020_context": context_indicator(
+            1900449,
+            2020,
+            "people",
+            "SP.POP.TOTL",
+        ),
+        "covid_rate_population_2020": context_indicator(
+            1900000,
+            2020,
+            "people",
+            "SP.POP.TOTL",
+        ),
+        "population_density_2019": context_indicator(
+            30.755491989,
+            2019,
+            "people per sq. km of land area",
+            "EN.POP.DNST",
+        ),
+        "population_age_65_plus_pct_2019": context_indicator(
+            20.40722722,
+            2019,
+            "% of total population",
+            "SP.POP.65UP.TO.ZS",
+        ),
+        "real_gdp_per_capita_2019": annual_gdp[0],
+        "health_expenditure_per_capita_ppp_2019": context_indicator(
+            2202.675929217,
+            2019,
+            "current international $",
+            "SH.XPD.CHEX.PP.CD",
+        ),
+        "real_gdp_per_capita_annual": annual_gdp,
+        "real_gdp_per_capita_change_2020_vs_2019": context_change(
+            -2.78996380720768,
+            2019,
+            2020,
+        ),
+        "real_gdp_per_capita_change_2021_vs_2019": context_change(
+            4.83927016337389,
+            2019,
+            2021,
+        ),
+        "real_gdp_per_capita_change_2021_vs_2020": context_change(
+            7.84819579271718,
+            2020,
+            2021,
+        ),
+        "covid_latest_report_date": "2020-12-14",
+        "snapshot_id": WORLD_BANK_SNAPSHOT_ID,
+        "methodology": {
+            "classification": "descriptive",
+            "caveat": "Changes during the pandemic period do not establish causality.",
+        },
+    }
+
+
+def country_dashboard_payload(
+    context: dict[str, object] | None,
+    *,
+    country: str = "Latvia",
+    iso2: str = "LV",
+    iso3: str = "LVA",
+) -> dict[str, object]:
+    point = [{"report_date": "2020-12-14", "value": 1.0}]
+    return {
+        "country": country,
+        "iso2": iso2,
+        "iso3": iso3,
+        "location_key": iso3,
+        "start_date": "2020-03-01",
+        "end_date": "2020-12-14",
+        "summary": {
+            "country": country,
+            "iso2": iso2,
+            "iso3": iso3,
+            "location_key": iso3,
+            "report_date": "2020-12-14",
+            "covid_rate_population_2020": 1900000,
+            "cases_cumulative": 25000,
+            "deaths_cumulative": 350,
+            "cases_per_100k": 1315.79,
+            "deaths_per_100k": 18.42,
+            "mortality_rate_percent": 1.4,
+        },
+        "selected": {"metric": "cases_per_100k", "points": point},
+        "daily_cases": {"metric": "new_cases", "points": point},
+        "daily_deaths": {"metric": "new_deaths", "points": point},
+        "mortality": {"metric": "mortality_rate_percent", "points": point},
+        "context": context,
+        "context_status": "available" if context else "context_data_unavailable",
+    }
 
 
 class DashboardSmokeTests(unittest.TestCase):
@@ -261,33 +406,7 @@ class DashboardSmokeTests(unittest.TestCase):
         self,
         get_json,
     ) -> None:
-        get_json.return_value = {
-            "country": "Latvia",
-            "iso2": "LV",
-            "iso3": "LVA",
-            "location_key": "LVA",
-            "start_date": "2020-03-01",
-            "end_date": "2020-12-14",
-            "summary": {
-                "country": "Latvia",
-                "iso2": "LV",
-                "iso3": "LVA",
-                "location_key": "LVA",
-                "report_date": "2020-12-14",
-                "covid_rate_population_2020": 1_900_000,
-                "cases_cumulative": 25_000,
-                "deaths_cumulative": 350,
-                "cases_per_100k": 1315.79,
-                "deaths_per_100k": 18.42,
-                "mortality_rate_percent": 1.4,
-            },
-            "selected": {"metric": "cases_per_100k", "points": []},
-            "daily_cases": {"metric": "new_cases", "points": []},
-            "daily_deaths": {"metric": "new_deaths", "points": []},
-            "mortality": {"metric": "mortality_rate_percent", "points": []},
-            "context": None,
-            "context_status": "context_data_unavailable",
-        }
+        get_json.return_value = country_dashboard_payload(None)
 
         state = load_country_page(
             "LV",
@@ -300,8 +419,183 @@ class DashboardSmokeTests(unittest.TestCase):
 
         get_json.reset_mock()
         rendered = render_country_content(state)
-        self.assertIn("Latvia", str(rendered))
+        rendered_text = str(rendered)
+        self.assertIn("Latvia", rendered_text)
+        self.assertIn("Cases", rendered_text)
+        self.assertIn(
+            "World Bank context is unavailable for this country or active snapshot.",
+            rendered_text,
+        )
         get_json.assert_not_called()
+
+    def test_country_renderer_displays_complete_latvia_context(self) -> None:
+        rendered = render_country_content(
+            {"state": "success", "payload": country_dashboard_payload(latvia_context())}
+        )
+        rendered_text = str(rendered)
+
+        for expected in (
+            "1,900,449",
+            "30.8",
+            "20.4%",
+            "$15,328",
+            "$2,203",
+            "SP.POP.TOTL",
+            "EN.POP.DNST",
+            "SP.POP.65UP.TO.ZS",
+            "NY.GDP.PCAP.KD",
+            "SH.XPD.CHEX.PP.CD",
+            "-2.79%",
+            "+4.84%",
+            "+7.85%",
+            "Changes during the pandemic period do not establish causality.",
+        ):
+            self.assertIn(expected, rendered_text)
+
+        footer = "World Development Indicators · Snapshot: " f"{WORLD_BANK_SNAPSHOT_ID}"
+        self.assertEqual(rendered_text.count(footer), 1)
+
+        components = list(walk_components(rendered))
+        covid_card_index = next(
+            index
+            for index, component in enumerate(components)
+            if getattr(component, "children", None) == "COVID rate denominator, 2020"
+        )
+        context_index = next(
+            index
+            for index, component in enumerate(components)
+            if getattr(component, "children", None) == "World Bank country context"
+        )
+        daily_cases_index = next(
+            index
+            for index, component in enumerate(components)
+            if component.__class__.__name__ == "Graph"
+            and component.figure.layout.title.text == "Daily cases"
+        )
+        gdp_graph_index = next(
+            index
+            for index, component in enumerate(components)
+            if component.__class__.__name__ == "Graph"
+            and component.figure.layout.title.text == "Real GDP per capita, 2019-2021"
+        )
+        self.assertLess(covid_card_index, context_index)
+        self.assertLess(context_index, daily_cases_index)
+        self.assertLess(daily_cases_index, gdp_graph_index)
+
+        gdp_graph = components[gdp_graph_index]
+        self.assertEqual(gdp_graph.figure.layout.yaxis.rangemode, "tozero")
+        self.assertEqual(gdp_graph.figure.layout.yaxis.tickformat, ",.0f")
+        self.assertIn("$%{y:,.2f}", gdp_graph.figure.data[0].hovertemplate)
+        self.assertEqual(
+            list(gdp_graph.figure.data[0].y),
+            [15328.38599333, 14900.729571887, 16070.168003232],
+        )
+
+    def test_country_renderer_handles_committed_missing_data_patterns(self) -> None:
+        aruba = latvia_context()
+        aruba["health_expenditure_per_capita_ppp_2019"] = context_indicator(
+            None,
+            2019,
+            "current international $",
+            "SH.XPD.CHEX.PP.CD",
+        )
+
+        eritrea = latvia_context()
+        eritrea["real_gdp_per_capita_2019"] = context_indicator(
+            None,
+            2019,
+            "constant 2015 US$",
+            "NY.GDP.PCAP.KD",
+        )
+        eritrea["real_gdp_per_capita_annual"] = [
+            context_indicator(
+                None,
+                year,
+                "constant 2015 US$",
+                "NY.GDP.PCAP.KD",
+            )
+            for year in (2019, 2020, 2021)
+        ]
+        for key, baseline_year, comparison_year in (
+            ("real_gdp_per_capita_change_2020_vs_2019", 2019, 2020),
+            ("real_gdp_per_capita_change_2021_vs_2019", 2019, 2021),
+            ("real_gdp_per_capita_change_2021_vs_2020", 2020, 2021),
+        ):
+            eritrea[key] = context_change(
+                None,
+                baseline_year,
+                comparison_year,
+                status="missing_input",
+            )
+
+        kosovo = latvia_context()
+        kosovo["population_density_2019"] = context_indicator(
+            None,
+            2019,
+            "people per sq. km of land area",
+            "EN.POP.DNST",
+        )
+        kosovo["health_expenditure_per_capita_ppp_2019"] = context_indicator(
+            None,
+            2019,
+            "current international $",
+            "SH.XPD.CHEX.PP.CD",
+        )
+
+        isolated_density = deepcopy(latvia_context())
+        isolated_density["population_density_2019"] = context_indicator(
+            None,
+            2019,
+            "people per sq. km of land area",
+            "EN.POP.DNST",
+        )
+
+        cases = (
+            ("Aruba", aruba, 2),
+            ("Kosovo", kosovo, 4),
+            ("Synthetic isolated density", isolated_density, 2),
+        )
+        for name, context, expected_unavailable_count in cases:
+            with self.subTest(name=name):
+                rendered = render_country_content(
+                    {
+                        "state": "success",
+                        "payload": country_dashboard_payload(context),
+                    }
+                )
+                rendered_text = str(rendered)
+                self.assertEqual(
+                    rendered_text.count("Not available"),
+                    expected_unavailable_count,
+                )
+                self.assertNotIn("World Bank context is unavailable", rendered_text)
+
+        eritrea_rendered = str(
+            render_country_content(
+                {
+                    "state": "success",
+                    "payload": country_dashboard_payload(eritrea),
+                }
+            )
+        )
+        self.assertEqual(eritrea_rendered.count("Not available"), 5)
+        self.assertIn("Real GDP per capita is not available", eritrea_rendered)
+        self.assertIn("A required annual GDP value is missing.", eritrea_rendered)
+
+    def test_country_renderer_explains_zero_gdp_denominator(self) -> None:
+        context = latvia_context()
+        context["real_gdp_per_capita_change_2020_vs_2019"] = context_change(
+            None,
+            2019,
+            2020,
+            status="zero_denominator",
+        )
+
+        rendered = render_country_content(
+            {"state": "success", "payload": country_dashboard_payload(context)}
+        )
+
+        self.assertIn("The baseline GDP value is zero.", str(rendered))
 
     @patch("app.dashboard.app.get_json")
     def test_forecast_loader_makes_one_request_and_renders_evaluation(
@@ -350,6 +644,8 @@ class DashboardSmokeTests(unittest.TestCase):
         rendered = render_forecast_content(state)
         self.assertIn("Linear Trend", str(rendered))
         self.assertIn("Temporal validation", str(rendered))
+        self.assertNotIn("World Bank country context", str(rendered))
+        self.assertNotIn("Pre-pandemic country context", str(rendered))
         get_json.assert_not_called()
 
     @patch("app.dashboard.app.ctx")

@@ -143,6 +143,43 @@ def comparison_figure(
     return apply_dashboard_chart_layout(figure)
 
 
+def world_bank_gdp_figure(indicators: list[dict[str, Any]]) -> go.Figure:
+    available = [
+        indicator
+        for indicator in indicators
+        if indicator.get("status") == "available" and indicator.get("value") is not None
+    ]
+    if not available:
+        return empty_figure("Real GDP per capita is not available")
+
+    figure = go.Figure(
+        go.Scatter(
+            x=[str(indicator["year"]) for indicator in available],
+            y=[indicator["value"] for indicator in available],
+            mode="lines+markers",
+            name="Real GDP per capita",
+            line={"color": COLORS[0], "width": 2},
+            marker={"color": COLORS[0], "size": 8},
+            connectgaps=False,
+            hovertemplate=("%{x}<br>Real GDP per capita: $%{y:,.2f}<extra></extra>"),
+        )
+    )
+    figure.update_layout(
+        title="Real GDP per capita, 2019-2021",
+        showlegend=False,
+    )
+    # A zero-inclusive scale keeps a three-point series from overstating small
+    # movements. Exact values and signed changes remain available separately.
+    figure.update_yaxes(
+        rangemode="tozero",
+        tickprefix="$",
+        tickformat=",.0f",
+        title_text="Constant 2015 US$",
+    )
+    figure.update_xaxes(type="category", title_text=None)
+    return apply_dashboard_chart_layout(figure)
+
+
 def forecast_figure(
     history: list[dict[str, Any]],
     forecast: list[dict[str, Any]],

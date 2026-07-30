@@ -34,6 +34,48 @@ def create_kpi_card(title: str, value: str, icon: str | None = None) -> dmc.Pape
     )
 
 
+def create_context_metric_card(
+    title: str,
+    value: str,
+    metadata: str,
+    status: str,
+    icon: str,
+    *,
+    note: str | None = None,
+) -> dmc.Paper:
+    """Keep source metadata visible without competing with the metric value."""
+    available = status == "available"
+    children: list[Any] = [
+        dmc.Group(
+            justify="space-between",
+            align="flex-start",
+            children=[
+                dmc.Text(title, size="sm", c="dimmed", fw=500),
+                DashIconify(icon=icon, width=20, color="#687489"),
+            ],
+            mb="xs",
+        ),
+        dmc.Text(value, size="xl", fw=700),
+        dmc.Text(metadata, size="xs", c="dimmed", mt=4),
+        dmc.Badge(
+            "Available" if available else "Not available",
+            color="blue" if available else "gray",
+            variant="light",
+            size="sm",
+            mt="sm",
+        ),
+    ]
+    if note:
+        children.append(dmc.Text(note, size="xs", c="dimmed", mt="sm"))
+    return dmc.Paper(
+        p="md",
+        radius="md",
+        withBorder=True,
+        h="100%",
+        children=children,
+    )
+
+
 def create_chart_card(figure: Any) -> dmc.Paper:
     """Wraps Plotly figures in a themed Mantine card."""
     return dmc.Paper(
