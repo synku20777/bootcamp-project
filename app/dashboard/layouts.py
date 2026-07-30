@@ -174,6 +174,91 @@ def overview_page() -> html.Div:
     )
 
 
+def patterns_page(catalog_state: dict[str, Any] | None) -> html.Div:
+    options = _catalog_options(catalog_state)
+    catalog_error = _catalog_error(catalog_state)
+    return html.Div(
+        [
+            create_page_header(
+                "Sustained reporting patterns",
+                "Explore uninterrupted runs of increasing reported daily cases.",
+            ),
+            catalog_error,
+            dmc.Paper(
+                p="md",
+                radius="md",
+                withBorder=True,
+                mb="lg",
+                children=dmc.Group(
+                    align="flex-end",
+                    children=[
+                        dmc.Select(
+                            id="patterns-country",
+                            label="Country",
+                            placeholder="All countries",
+                            data=options,
+                            value=None,
+                            clearable=True,
+                            searchable=True,
+                            disabled=not options,
+                            w=220,
+                        ),
+                        dmc.DateInput(
+                            id="patterns-start-date",
+                            label="Start Date",
+                            value=DEFAULT_START_DATE,
+                            valueFormat="YYYY-MM-DD",
+                            minDate=DEFAULT_START_DATE,
+                            maxDate=DEFAULT_END_DATE,
+                            w=150,
+                        ),
+                        dmc.DateInput(
+                            id="patterns-end-date",
+                            label="End Date",
+                            value=DEFAULT_END_DATE,
+                            valueFormat="YYYY-MM-DD",
+                            minDate=DEFAULT_START_DATE,
+                            maxDate=DEFAULT_END_DATE,
+                            w=150,
+                        ),
+                        dmc.Select(
+                            id="patterns-minimum-increases",
+                            label="Minimum increases",
+                            data=[
+                                {
+                                    "label": f"{value} increases",
+                                    "value": str(value),
+                                }
+                                for value in (3, 5, 7, 10, 14)
+                            ],
+                            value="3",
+                            clearable=False,
+                            w=175,
+                        ),
+                        dmc.Button(
+                            RETRY_DATA_LABEL,
+                            id="patterns-retry",
+                            n_clicks=0,
+                            variant="light",
+                            leftSection=DashIconify(icon="tabler:refresh", width=16),
+                        ),
+                    ],
+                ),
+            ),
+            create_alert(
+                "These are uninterrupted sequences in reported daily cases. They "
+                "describe reporting patterns, not epidemiological regimes or "
+                "causal changes in transmission.",
+                "info",
+            ),
+            create_loading_state(
+                html.Div(id="patterns-content"),
+                loading_id="patterns-loading",
+            ),
+        ]
+    )
+
+
 def _catalog_options(catalog_state: dict[str, Any] | None) -> list[dict[str, str]]:
     if not catalog_state or catalog_state.get("state") != "success":
         return []

@@ -1182,6 +1182,21 @@ def _jhu_extension_ready(connection: Any) -> bool:
                     COUNT(DISTINCT IFF(MATCH_STATUS = 'BOTH', ISO3, NULL))
                         AS BOTH_COUNTRIES
                 FROM COVID_ANALYTICS.APP.ECDC_JHU_OVERLAP_AUDIT
+            ),
+            PATTERN_PROFILE AS (
+                SELECT
+                    COUNT(*) AS PATTERN_COUNT,
+                    COUNT_IF(DAYS_IN_PATTERN != CONSECUTIVE_INCREASES + 1)
+                        AS INVALID_DURATION_ROWS,
+                    COUNT_IF(CONSECUTIVE_INCREASES < 3)
+                        AS INVALID_INCREASE_ROWS,
+                    COUNT_IF(SERIES_SEGMENT NOT IN (
+                        'ECDC_BASELINE',
+                        'JHU_CONTINUATION',
+                        'JHU_ONLY'
+                    )) AS INVALID_SEGMENT_ROWS,
+                    MAX(END_DATE) AS LAST_PATTERN_DATE
+                FROM COVID_ANALYTICS.MARTS.CASE_INCREASE_PATTERNS_EXTENDED
             )
             SELECT
                 jhu.ROW_COUNT = 224028
@@ -1203,6 +1218,11 @@ def _jhu_extension_ready(connection: Any) -> bool:
                 AND jhu_only.LAST_DATE = DATE '2023-03-09'
                 AND overlap.BOTH_ROWS = 53954
                 AND overlap.BOTH_COUNTRIES = 188
+                AND patterns.PATTERN_COUNT > 0
+                AND patterns.INVALID_DURATION_ROWS = 0
+                AND patterns.INVALID_INCREASE_ROWS = 0
+                AND patterns.INVALID_SEGMENT_ROWS = 0
+                AND patterns.LAST_PATTERN_DATE <= DATE '2023-03-09'
                     AS IS_READY
             FROM JHU_PROFILE AS jhu
             CROSS JOIN JHU_DUPLICATES AS duplicates
@@ -1210,6 +1230,7 @@ def _jhu_extension_ready(connection: Any) -> bool:
             CROSS JOIN BOUNDARY_PROFILE AS boundaries
             CROSS JOIN JHU_ONLY_PROFILE AS jhu_only
             CROSS JOIN OVERLAP_PROFILE AS overlap
+            CROSS JOIN PATTERN_PROFILE AS patterns
             """,
         )
         return row is not None and bool(row[0])

@@ -102,6 +102,71 @@ def overview_map(locations: list[dict[str, Any]]) -> go.Figure:
     return apply_dashboard_chart_layout(figure)
 
 
+def case_increase_patterns_figure(
+    patterns: list[dict[str, Any]],
+) -> go.Figure:
+    if not patterns:
+        return empty_figure("No case-increase patterns match these filters")
+
+    ranked = sorted(
+        patterns,
+        key=lambda row: (
+            row["consecutive_increases"],
+            row.get("end_cases") or 0,
+        ),
+        reverse=True,
+    )[:20]
+    ranked.reverse()
+    labels = [
+        f"{row['country']} · {row['start_date']}–{row['end_date']}" for row in ranked
+    ]
+    customdata = [
+        [
+            row["days_in_pattern"],
+            row["start_date"],
+            row["end_date"],
+            row["start_cases"],
+            row["end_cases"],
+        ]
+        for row in ranked
+    ]
+    figure = go.Figure(
+        go.Bar(
+            x=[row["consecutive_increases"] for row in ranked],
+            y=labels,
+            orientation="h",
+            marker_color=COLORS[0],
+            text=[row["consecutive_increases"] for row in ranked],
+            textposition="outside",
+            cliponaxis=False,
+            customdata=customdata,
+            hovertemplate=(
+                "%{y}<br>Consecutive increases: %{x}<br>"
+                "Days in pattern: %{customdata[0]}<br>"
+                "Start cases: %{customdata[3]:,.0f}<br>"
+                "End cases: %{customdata[4]:,.0f}<extra></extra>"
+            ),
+        )
+    )
+    figure.update_layout(
+        title="Longest daily case-increase patterns",
+        showlegend=False,
+        hovermode="closest",
+    )
+    figure.update_xaxes(
+        rangemode="tozero",
+        title_text="Consecutive daily increases",
+        dtick=1,
+    )
+    figure.update_yaxes(title_text=None)
+    figure = apply_dashboard_chart_layout(
+        figure,
+        height=max(420, 31 * len(ranked) + 150),
+    )
+    figure.update_layout(margin={"l": 230, "r": 64, "t": 56, "b": 48})
+    return figure
+
+
 def metric_figure(
     points: list[dict[str, Any]],
     title: str,

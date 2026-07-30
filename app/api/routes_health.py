@@ -61,5 +61,6 @@ def snowflake(
         objects={
             "COVID_ENRICHED": "accessible",
             "COUNTRY_LATEST_METRICS": "accessible",
+            "CASE_INCREASE_PATTERNS": "accessible",
         },
     )

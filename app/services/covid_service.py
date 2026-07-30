@@ -14,6 +14,9 @@ from app.exceptions import (
     DomainValidationError,
 )
 from app.models.covid import (
+    CaseIncreasePattern,
+    CaseIncreasePatterns,
+    CaseIncreasePatternSummary,
     ComparisonSeries,
     ContextChange,
     ContextIndicator,
@@ -555,6 +558,71 @@ class CovidService:
             compute=compute,
         )
         return result.root, status
+
+    def case_increase_patterns(
+        self,
+        country: str | None,
+        start_date: date,
+        end_date: date,
+        minimum_consecutive_increases: int,
+        limit: int,
+    ) -> tuple[CaseIncreasePatterns, CacheStatus]:
+        self._validate_dates(start_date, end_date)
+        normalized_country = self._identifier(country) if country else None
+
+        def compute() -> CaseIncreasePatterns:
+            rows = self.repository.fetch_case_increase_patterns(
+                normalized_country,
+                start_date,
+                end_date,
+                minimum_consecutive_increases,
+                limit,
+            )
+            first = rows[0] if rows else {}
+            patterns = [
+                CaseIncreasePattern(
+                    **self._identity(row),
+                    start_date=row["START_DATE"],
+                    end_date=row["END_DATE"],
+                    days_in_pattern=row["DAYS_IN_PATTERN"],
+                    consecutive_increases=row["CONSECUTIVE_INCREASES"],
+                    start_cases=row["START_CASES"],
+                    end_cases=row["END_CASES"],
+                )
+                for row in rows
+                if row.get("LOCATION_KEY") is not None
+            ]
+            return CaseIncreasePatterns(
+                start_date=start_date,
+                end_date=end_date,
+                minimum_consecutive_increases=minimum_consecutive_increases,
+                returned_patterns=len(patterns),
+                summary=CaseIncreasePatternSummary(
+                    total_patterns=first.get("TOTAL_PATTERNS") or 0,
+                    countries_with_patterns=(first.get("COUNTRIES_WITH_PATTERNS") or 0),
+                    longest_consecutive_increases=first.get(
+                        "LONGEST_CONSECUTIVE_INCREASES"
+                    ),
+                    latest_pattern_end_date=first.get("LATEST_PATTERN_END_DATE"),
+                ),
+                patterns=patterns,
+            )
+
+        return self.cache.get_or_compute(
+            endpoint="case-increase-patterns",
+            key_payload={
+                "dataset": self.settings.covid_dataset,
+                "country": normalized_country or "ALL",
+                "start_date": start_date.isoformat(),
+                "end_date": end_date.isoformat(),
+                "minimum_consecutive_increases": minimum_consecutive_increases,
+                "limit": limit,
+                "version": 1,
+            },
+            ttl_seconds=self.settings.cache_ttl_patterns_seconds,
+            model_type=CaseIncreasePatterns,
+            compute=compute,
+        )
 
     def summary(self, identifier: str) -> tuple[CountrySummary, CacheStatus]:
         normalized = self._identifier(identifier)

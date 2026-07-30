@@ -646,6 +646,17 @@ class BootstrapTests(unittest.TestCase):
         self.assertIn("COVID_COUNTRY_DAILY_EXTENDED", normalized)
         self.assertIn("COVID_ENRICHED_EXTENDED", normalized)
         self.assertIn("COUNTRY_LATEST_METRICS_EXTENDED", normalized)
+        self.assertIn("CASE_INCREASE_PATTERNS_EXTENDED", normalized)
+        self.assertIn(
+            "PARTITION BY LOCATION_KEY, COUNTRY, COUNTRY_ISO2, COUNTRY_ISO3, "
+            "SERIES_SEGMENT",
+            normalized,
+        )
+        self.assertIn("PATTERN (START_DAY INCREASE_DAY{3,})", normalized)
+        self.assertIn(
+            "DATEDIFF('DAY', LAG(REPORT_DATE), REPORT_DATE) = 1",
+            normalized,
+        )
         self.assertIn("'ECDC_BASELINE'", normalized)
         self.assertIn("'JHU_CONTINUATION'", normalized)
         self.assertIn("'JHU_ONLY'", normalized)
@@ -653,6 +664,21 @@ class BootstrapTests(unittest.TestCase):
             "CREATE OR REPLACE VIEW COVID_ANALYTICS.MARTS.COVID_ENRICHED AS",
             normalized,
         )
+
+    def test_analysis_and_eda_use_dataset_selected_extended_objects(self) -> None:
+        analysis_sql = (
+            bootstrap.REPOSITORY_ROOT / "sql/07_analysis_queries.sql"
+        ).read_text(encoding="utf-8")
+        eda_script = (bootstrap.REPOSITORY_ROOT / "scripts/run_eda.py").read_text(
+            encoding="utf-8"
+        )
+
+        self.assertIn("COUNTRY_LATEST_METRICS_EXTENDED", analysis_sql)
+        self.assertIn("CASE_INCREASE_PATTERNS_EXTENDED", analysis_sql)
+        self.assertIn("COVID_DATASET_OBJECTS", eda_script)
+        self.assertIn("sys.path.insert(0, str(REPOSITORY_ROOT))", eda_script)
+        self.assertIn("dataset_objects.patterns", eda_script)
+        self.assertIn('"case_increase_patterns"', eda_script)
 
 
 if __name__ == "__main__":

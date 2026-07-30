@@ -2,13 +2,21 @@ from __future__ import annotations
 
 import logging
 import os
+import sys
 from pathlib import Path
 
 import pandas as pd
 import snowflake.connector
 from dotenv import load_dotenv
 
-from app.logging_config import configure_logging
+# Keep the documented ``python scripts/run_eda.py`` command importable without
+# requiring a project-wide PYTHONPATH setting.
+REPOSITORY_ROOT = Path(__file__).resolve().parents[1]
+if str(REPOSITORY_ROOT) not in sys.path:
+    sys.path.insert(0, str(REPOSITORY_ROOT))
+
+from app.logging_config import configure_logging  # noqa: E402
+from app.repositories.snowflake_repository import COVID_DATASET_OBJECTS  # noqa: E402
 
 logger = logging.getLogger(__name__)
 
@@ -42,11 +50,18 @@ def main() -> None:
     load_dotenv()
     configure_logging("covid-eda", os.getenv("LOG_LEVEL", "INFO"))
 
+    dataset_name = os.getenv("COVID_DATASET", "extended").strip().lower()
+    try:
+        dataset_objects = COVID_DATASET_OBJECTS[dataset_name]
+    except KeyError as exc:
+        allowed = ", ".join(sorted(COVID_DATASET_OBJECTS))
+        raise RuntimeError(f"COVID_DATASET must be one of: {allowed}") from exc
+
     output_directory = Path("outputs/eda")
     output_directory.mkdir(parents=True, exist_ok=True)
 
     queries = {
-        "dataset_coverage": """
+        "dataset_coverage": f"""
             SELECT
                 COUNT(*) AS TOTAL_ROWS,
                 COUNT(DISTINCT COUNTRY) AS COUNTRIES,
@@ -54,32 +69,32 @@ def main() -> None:
                 MAX(REPORT_DATE) AS LAST_DATE,
                 COUNT_IF(COVID_RATE_POPULATION_2020 IS NULL)
                     AS ROWS_WITHOUT_POPULATION
-            FROM COVID_ANALYTICS.MARTS.COVID_ENRICHED
+            FROM {dataset_objects.enriched}
         """,
-        "missing_population": """
+        "missing_population": f"""
             SELECT DISTINCT
                 COUNTRY,
                 COUNTRY_ISO2,
                 COUNTRY_ISO3,
                 DENOMINATOR_JOIN_STATUS
-            FROM COVID_ANALYTICS.MARTS.COVID_ENRICHED
+            FROM {dataset_objects.enriched}
             WHERE COVID_RATE_POPULATION_2020 IS NULL
             ORDER BY DENOMINATOR_JOIN_STATUS, COUNTRY
         """,
-        "data_corrections": """
+        "data_corrections": f"""
             SELECT
                 COUNTRY,
                 COUNT_IF(HAS_NEGATIVE_CASE_CORRECTION)
                     AS NEGATIVE_CASE_CORRECTIONS,
                 COUNT_IF(HAS_NEGATIVE_DEATH_CORRECTION)
                     AS NEGATIVE_DEATH_CORRECTIONS
-            FROM COVID_ANALYTICS.MARTS.COVID_ENRICHED
+            FROM {dataset_objects.enriched}
             GROUP BY COUNTRY
             HAVING NEGATIVE_CASE_CORRECTIONS > 0
                 OR NEGATIVE_DEATH_CORRECTIONS > 0
             ORDER BY NEGATIVE_CASE_CORRECTIONS DESC
         """,
-        "latest_country_metrics": """
+        "latest_country_metrics": f"""
             SELECT
                 COUNTRY,
                 REPORT_DATE,
@@ -89,13 +104,28 @@ def main() -> None:
                 CASES_PER_100K,
                 DEATHS_PER_100K,
                 MORTALITY_RATE_PERCENT
-            FROM COVID_ANALYTICS.MARTS.COVID_ENRICHED
+            FROM {dataset_objects.enriched}
             WHERE COVID_RATE_POPULATION_2020 IS NOT NULL
             QUALIFY ROW_NUMBER() OVER (
                 PARTITION BY COUNTRY
                 ORDER BY REPORT_DATE DESC
             ) = 1
             ORDER BY CASES_PER_100K DESC
+        """,
+        "case_increase_patterns": f"""
+            SELECT
+                COUNTRY,
+                COUNTRY_ISO2,
+                COUNTRY_ISO3,
+                LOCATION_KEY,
+                START_DATE,
+                END_DATE,
+                DAYS_IN_PATTERN,
+                CONSECUTIVE_INCREASES,
+                START_CASES,
+                END_CASES
+            FROM {dataset_objects.patterns}
+            ORDER BY CONSECUTIVE_INCREASES DESC, END_CASES DESC, COUNTRY
         """,
     }
 

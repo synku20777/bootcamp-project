@@ -46,6 +46,7 @@ class Settings(BaseSettings):
     cache_ttl_country_page_seconds: int = 86_400
     cache_ttl_country_context_seconds: int = 86_400
     cache_ttl_comparison_page_seconds: int = 86_400
+    cache_ttl_patterns_seconds: int = 86_400
     cache_ttl_annotation_target_seconds: int = 86_400
     cache_lock_seconds: int = 30
     cache_lock_wait_seconds: float = 10.0

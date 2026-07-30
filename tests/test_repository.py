@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import unittest
+from datetime import date
 from unittest.mock import MagicMock, patch
 
 from pydantic import ValidationError
@@ -87,6 +88,76 @@ class SnowflakeRepositoryTests(unittest.TestCase):
         self.assertIn("resolved.REPORT_DATE AS COVID_LATEST_REPORT_DATE", sql)
         self.assertIn("LEFT JOIN COVID_ANALYTICS.MARTS.COUNTRY_CONTEXT_ANALYSIS", sql)
         self.assertEqual(parameters, ("FSM", "FSM", "FSM", "FSM"))
+
+    @patch("app.repositories.snowflake_repository.snowflake.connector.connect")
+    def test_patterns_use_selected_object_binds_and_exact_prelimit_summary(
+        self,
+        connect,
+    ) -> None:
+        cursor = MagicMock()
+        cursor.description = []
+        cursor.fetchall.return_value = []
+        connection = MagicMock()
+        connection.cursor.return_value = cursor
+        connect.return_value = connection
+        repository = SnowflakeRepository(
+            Settings(
+                _env_file=None,
+                snowflake_account="account",
+                snowflake_user="user",
+                snowflake_password="password",
+            )
+        )
+
+        repository.fetch_case_increase_patterns(
+            "FSM",
+            date(2022, 1, 1),
+            date(2023, 3, 9),
+            5,
+            25,
+        )
+
+        sql, parameters = cursor.execute.call_args.args
+        normalized = " ".join(sql.split())
+        self.assertIn("CASE_INCREASE_PATTERNS_EXTENDED", normalized)
+        self.assertIn("END_DATE >= %s", normalized)
+        self.assertIn("START_DATE <= %s", normalized)
+        self.assertIn("COUNT(*) AS TOTAL_PATTERNS", normalized)
+        self.assertLess(normalized.index("SUMMARY AS"), normalized.index("RANKED AS"))
+        self.assertEqual(
+            parameters,
+            (
+                date(2022, 1, 1),
+                date(2023, 3, 9),
+                5,
+                "FSM",
+                "FSM",
+                "FSM",
+                "FSM",
+                25,
+            ),
+        )
+
+        cursor.reset_mock()
+        legacy = SnowflakeRepository(
+            Settings(
+                _env_file=None,
+                snowflake_account="account",
+                snowflake_user="user",
+                snowflake_password="password",
+                covid_dataset="legacy",
+            )
+        )
+        legacy.fetch_case_increase_patterns(
+            None,
+            date(2020, 3, 1),
+            date(2020, 12, 14),
+            3,
+            100,
+        )
+        legacy_sql = " ".join(cursor.execute.call_args.args[0].split())
+        self.assertIn("MARTS.CASE_INCREASE_PATTERNS ", legacy_sql)
+        self.assertNotIn("CASE_INCREASE_PATTERNS_EXTENDED", legacy_sql)
 
     @patch("app.repositories.snowflake_repository.snowflake.connector.connect")
     def test_summary_uses_bind_parameters_and_one_statement(self, connect) -> None:

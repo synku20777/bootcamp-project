@@ -22,6 +22,7 @@ SNOWFLAKE_SOURCE = "Snowflake"
 class CovidDatasetObjects:
     enriched: str
     latest: str
+    patterns: str
     denominator_publication_status: str
 
 
@@ -29,6 +30,7 @@ COVID_DATASET_OBJECTS: dict[str, CovidDatasetObjects] = {
     "extended": CovidDatasetObjects(
         enriched="COVID_ANALYTICS.MARTS.COVID_ENRICHED_EXTENDED",
         latest="COVID_ANALYTICS.MARTS.COUNTRY_LATEST_METRICS_EXTENDED",
+        patterns="COVID_ANALYTICS.MARTS.CASE_INCREASE_PATTERNS_EXTENDED",
         denominator_publication_status=(
             "COALESCE(DENOMINATOR_PUBLICATION_STATUS, 'ACTIVE')"
         ),
@@ -36,6 +38,7 @@ COVID_DATASET_OBJECTS: dict[str, CovidDatasetObjects] = {
     "legacy": CovidDatasetObjects(
         enriched="COVID_ANALYTICS.MARTS.COVID_ENRICHED",
         latest="COVID_ANALYTICS.MARTS.COUNTRY_LATEST_METRICS",
+        patterns="COVID_ANALYTICS.MARTS.CASE_INCREASE_PATTERNS",
         denominator_publication_status="'ACTIVE'",
     ),
 }
@@ -150,7 +153,11 @@ class SnowflakeRepository:
             )
         if any(
             object_name in message
-            for object_name in ("covid_enriched", "country_latest_metrics")
+            for object_name in (
+                "covid_enriched",
+                "country_latest_metrics",
+                "case_increase_patterns",
+            )
         ):
             if "insufficient privilege" in message:
                 return DataSourceUnavailableError(
@@ -263,7 +270,12 @@ class SnowflakeRepository:
                     SELECT 1
                     FROM {self.covid_objects.latest}
                     LIMIT 1
-                ) AS COUNTRY_LATEST_METRICS_ACCESSIBLE
+                ) AS COUNTRY_LATEST_METRICS_ACCESSIBLE,
+                (
+                    SELECT 1
+                    FROM {self.covid_objects.patterns}
+                    LIMIT 1
+                ) AS CASE_INCREASE_PATTERNS_ACCESSIBLE
             """,
         )
 
@@ -312,6 +324,96 @@ class SnowflakeRepository:
             FROM {self.covid_objects.latest}
             ORDER BY COUNTRY
             """,
+        )
+
+    def fetch_case_increase_patterns(
+        self,
+        country: str | None,
+        start_date: Any,
+        end_date: Any,
+        minimum_consecutive_increases: int,
+        limit: int,
+    ) -> list[dict[str, Any]]:
+        country_filter = ""
+        parameters: list[Any] = [
+            start_date,
+            end_date,
+            minimum_consecutive_increases,
+        ]
+        if country is not None:
+            country_filter = """
+                AND (
+                    UPPER(COUNTRY) = %s
+                    OR UPPER(COALESCE(COUNTRY_ISO2, '')) = %s
+                    OR UPPER(COALESCE(COUNTRY_ISO3, '')) = %s
+                    OR UPPER(LOCATION_KEY) = %s
+                )
+            """
+            parameters.extend((country, country, country, country))
+        parameters.append(limit)
+
+        return self._execute(
+            "case_increase_patterns",
+            f"""
+            WITH FILTERED AS (
+                SELECT
+                    COUNTRY,
+                    COUNTRY_ISO2,
+                    COUNTRY_ISO3,
+                    LOCATION_KEY,
+                    START_DATE,
+                    END_DATE,
+                    DAYS_IN_PATTERN,
+                    CONSECUTIVE_INCREASES,
+                    START_CASES,
+                    END_CASES
+                FROM {self.covid_objects.patterns}
+                WHERE END_DATE >= %s
+                  AND START_DATE <= %s
+                  AND CONSECUTIVE_INCREASES >= %s
+                  {country_filter}
+            ),
+            SUMMARY AS (
+                SELECT
+                    COUNT(*) AS TOTAL_PATTERNS,
+                    COUNT(DISTINCT LOCATION_KEY) AS COUNTRIES_WITH_PATTERNS,
+                    MAX(CONSECUTIVE_INCREASES)
+                        AS LONGEST_CONSECUTIVE_INCREASES,
+                    MAX(END_DATE) AS LATEST_PATTERN_END_DATE
+                FROM FILTERED
+            ),
+            RANKED AS (
+                SELECT
+                    filtered.*,
+                    ROW_NUMBER() OVER (
+                        ORDER BY
+                            CONSECUTIVE_INCREASES DESC,
+                            END_CASES DESC NULLS LAST,
+                            COUNTRY,
+                            START_DATE
+                    ) AS RESULT_ORDER
+                FROM FILTERED AS filtered
+            )
+            SELECT
+                ranked.COUNTRY,
+                ranked.COUNTRY_ISO2,
+                ranked.COUNTRY_ISO3,
+                ranked.LOCATION_KEY,
+                ranked.START_DATE,
+                ranked.END_DATE,
+                ranked.DAYS_IN_PATTERN,
+                ranked.CONSECUTIVE_INCREASES,
+                ranked.START_CASES,
+                ranked.END_CASES,
+                summary.TOTAL_PATTERNS,
+                summary.COUNTRIES_WITH_PATTERNS,
+                summary.LONGEST_CONSECUTIVE_INCREASES,
+                summary.LATEST_PATTERN_END_DATE
+            FROM SUMMARY AS summary
+            LEFT JOIN RANKED AS ranked ON ranked.RESULT_ORDER <= %s
+            ORDER BY ranked.RESULT_ORDER NULLS LAST
+            """,
+            parameters,
         )
 
     def fetch_summary(self, identifier: str) -> list[dict[str, Any]]:

@@ -312,7 +312,7 @@ For individual recovery steps, use [Advanced: manual setup and recovery](#advanc
 - Build daily, cumulative, per-capita, mortality, and country-context marts.
 - Detect sustained case increases with Snowflake `MATCH_RECOGNIZE`.
 - Export repeatable EDA results as CSV files.
-- Serve typed FastAPI endpoints and a six-page Dash application.
+- Serve typed FastAPI endpoints and a seven-page Dash application.
 - Cache analytical responses with Redis.
 - Store indexed annotations in MongoDB.
 - Compare two simple forecast models with temporal validation.
@@ -593,6 +593,7 @@ COVID19_EPIDEMIOLOGICAL_DATA.PUBLIC.JHU_COVID_19_TIMESERIES
 STAGING.COVID_COUNTRY_DAILY
     + STAGING.JHU_COUNTRY_DAILY
     -> STAGING.COVID_COUNTRY_DAILY_EXTENDED
+    -> MARTS.CASE_INCREASE_PATTERNS_EXTENDED
     -> MARTS.COVID_ENRICHED_EXTENDED
     -> MARTS.COUNTRY_LATEST_METRICS_EXTENDED
 ```
@@ -641,6 +642,7 @@ Open <http://localhost:8050/overview>. Confirm that the Overview page contains d
 - [ ] `MARTS.COUNTRY_LATEST_METRICS` contains rows.
 - [ ] `STAGING.COVID_COUNTRY_DAILY_EXTENDED` contains 222 locations.
 - [ ] `MARTS.COUNTRY_LATEST_METRICS_EXTENDED` contains 222 rows.
+- [ ] `MARTS.CASE_INCREASE_PATTERNS_EXTENDED` contains valid pattern rows.
 - [ ] All four local services are healthy.
 - [ ] The liveness, readiness, and Snowflake checks succeed.
 - [ ] Two equal overview requests return `MISS` and then `HIT`.
@@ -658,6 +660,7 @@ Open <http://localhost:8050/overview>. Confirm that the Overview page contains d
 | `GET` | `/countries/{identifier}/context` | Get versioned WDI context |
 | `GET` | `/compare` | Compare one metric for two to ten countries |
 | `GET` | `/forecast` | Get an evaluated daily forecast |
+| `GET` | `/patterns/case-increases` | Explore sustained daily case-increase patterns |
 | `GET` | `/dashboard/overview` | Get the complete Overview payload |
 | `GET` | `/dashboard/countries/{identifier}` | Get the complete Country Explorer payload |
 | `GET` | `/dashboard/compare` | Get the complete Comparison payload |
@@ -685,13 +688,14 @@ curl -i "http://localhost:8000/dashboard/compare?country=LV&country=EE&start_dat
 curl -i http://localhost:8000/countries/LV/summary
 curl -i http://localhost:8000/countries/LV/context
 curl -i "http://localhost:8000/forecast?country=LV&metric=new_cases&days=30&lookback_days=90"
+curl -i "http://localhost:8000/patterns/case-increases?start_date=2020-03-01&end_date=2023-03-09&minimum_consecutive_increases=3&limit=100"
 ```
 
 The first overview response should include `X-Cache: MISS`. The second equal request should include `X-Cache: HIT`.
 
 ### Cache policy
 
-Stable analytical responses use a 24-hour time to live. Forecasts use a six-hour time to live. Comparison cache keys use contract version 2 and include the committed WDI snapshot ID. Therefore, a new WDI publication cannot reuse a response from an older snapshot.
+Stable analytical responses, including case-increase patterns, use a 24-hour time to live. Forecasts use a six-hour time to live. Comparison cache keys use contract version 2 and include the committed WDI snapshot ID. Therefore, a new WDI publication cannot reuse a response from an older snapshot.
 
 Context cache keys include the active WDI snapshot identifier. This rule prevents cached context from crossing snapshot versions.
 

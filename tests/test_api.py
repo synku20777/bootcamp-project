@@ -15,6 +15,9 @@ from app.dependencies import (
 from app.exceptions import DataSourceUnavailableError
 from app.main import app
 from app.models.covid import (
+    CaseIncreasePattern,
+    CaseIncreasePatterns,
+    CaseIncreasePatternSummary,
     ComparisonSeries,
     ContextChange,
     ContextIndicator,
@@ -147,6 +150,43 @@ class FakeCovidService:
 
     def summary(self, _identifier):
         return LATVIA_SUMMARY, CacheStatus.MISS
+
+    def case_increase_patterns(
+        self,
+        _country,
+        start_date,
+        end_date,
+        minimum_consecutive_increases,
+        _limit,
+    ):
+        pattern = CaseIncreasePattern(
+            country="Micronesia",
+            iso2="FM",
+            iso3="FSM",
+            location_key="FSM",
+            start_date=date(2022, 8, 1),
+            end_date=date(2022, 8, 5),
+            days_in_pattern=5,
+            consecutive_increases=4,
+            start_cases=2,
+            end_cases=40,
+        )
+        return (
+            CaseIncreasePatterns(
+                start_date=start_date,
+                end_date=end_date,
+                minimum_consecutive_increases=minimum_consecutive_increases,
+                returned_patterns=1,
+                summary=CaseIncreasePatternSummary(
+                    total_patterns=1,
+                    countries_with_patterns=1,
+                    longest_consecutive_increases=4,
+                    latest_pattern_end_date=date(2022, 8, 5),
+                ),
+                patterns=[pattern],
+            ),
+            CacheStatus.MISS,
+        )
 
     def context(self, _identifier):
         return LATVIA_CONTEXT, CacheStatus.MISS
@@ -351,6 +391,10 @@ class ApiTests(unittest.TestCase):
 
         self.assertEqual(success.status_code, 200)
         self.assertEqual(success.json()["status"], "connected")
+        self.assertEqual(
+            success.json()["objects"]["CASE_INCREASE_PATTERNS"],
+            "accessible",
+        )
         self.assertEqual(repository.calls, 1)
 
         app.dependency_overrides[get_snowflake_repository] = lambda: (
@@ -413,6 +457,16 @@ class ApiTests(unittest.TestCase):
                     "lookback_days": 90,
                 },
             )
+            patterns = client.get(
+                "/patterns/case-increases",
+                params={
+                    "country": "FSM",
+                    "start_date": "2022-01-01",
+                    "end_date": "2023-03-09",
+                    "minimum_consecutive_increases": 3,
+                    "limit": 100,
+                },
+            )
 
         self.assertEqual(overview.status_code, 200)
         self.assertEqual(overview.headers["X-Cache"], "MISS")
@@ -467,6 +521,34 @@ class ApiTests(unittest.TestCase):
         self.assertEqual(
             forecast.json()["evaluation"]["selected_model"], "linear_trend"
         )
+        self.assertEqual(patterns.status_code, 200)
+        self.assertEqual(patterns.headers["X-Cache"], "MISS")
+        self.assertEqual(patterns.json()["patterns"][0]["iso3"], "FSM")
+        self.assertNotIn("source_name", patterns.text.lower())
+        self.assertNotIn("series_segment", patterns.text.lower())
+
+    def test_pattern_parameter_bounds_are_validated(self) -> None:
+        app.dependency_overrides[get_covid_service] = lambda: FakeCovidService()
+        with TestClient(app) as client:
+            too_short = client.get(
+                "/patterns/case-increases",
+                params={
+                    "start_date": "2020-03-01",
+                    "end_date": "2023-03-09",
+                    "minimum_consecutive_increases": 2,
+                },
+            )
+            too_large = client.get(
+                "/patterns/case-increases",
+                params={
+                    "start_date": "2020-03-01",
+                    "end_date": "2023-03-09",
+                    "limit": 201,
+                },
+            )
+
+        self.assertEqual(too_short.status_code, 422)
+        self.assertEqual(too_large.status_code, 422)
 
     def test_country_dashboard_redis_failure_skips_snowflake(self) -> None:
         repository = CountingSummaryRepository()

@@ -88,6 +88,31 @@ class DashboardOverview(BaseModel):
     locations: list[OverviewLocation]
 
 
+class CaseIncreasePattern(CountryIdentity):
+    start_date: date
+    end_date: date
+    days_in_pattern: int
+    consecutive_increases: int
+    start_cases: int
+    end_cases: int
+
+
+class CaseIncreasePatternSummary(BaseModel):
+    total_patterns: int
+    countries_with_patterns: int
+    longest_consecutive_increases: int | None
+    latest_pattern_end_date: date | None
+
+
+class CaseIncreasePatterns(BaseModel):
+    start_date: date
+    end_date: date
+    minimum_consecutive_increases: int
+    returned_patterns: int
+    summary: CaseIncreasePatternSummary
+    patterns: list[CaseIncreasePattern]
+
+
 class MetricSeries(BaseModel):
     metric: Metric
     points: list[MetricPoint]

@@ -7,6 +7,7 @@ from fastapi import APIRouter, Query, Request, Response
 
 from app.dependencies import CovidServiceDependency
 from app.models.covid import (
+    CaseIncreasePatterns,
     CountryComparison,
     CountryContext,
     CountryDashboard,
@@ -95,6 +96,31 @@ def countries(
     service: CovidServiceDependency,
 ) -> list[CountryIdentity]:
     result, cache_status = service.countries()
+    _record_cache_status(request, response, cache_status)
+    return result
+
+
+@router.get(
+    "/patterns/case-increases",
+    response_model=CaseIncreasePatterns,
+)
+def case_increase_patterns(
+    start_date: date,
+    end_date: date,
+    request: Request,
+    response: Response,
+    service: CovidServiceDependency,
+    country: Annotated[str | None, Query(min_length=1)] = None,
+    minimum_consecutive_increases: Annotated[int, Query(ge=3, le=30)] = 3,
+    limit: Annotated[int, Query(ge=1, le=200)] = 100,
+) -> CaseIncreasePatterns:
+    result, cache_status = service.case_increase_patterns(
+        country,
+        start_date,
+        end_date,
+        minimum_consecutive_increases,
+        limit,
+    )
     _record_cache_status(request, response, cache_status)
     return result
 

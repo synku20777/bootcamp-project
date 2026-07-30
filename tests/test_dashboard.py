@@ -13,11 +13,13 @@ from app.dashboard.app import (
     load_country_catalog,
     load_country_page,
     load_forecast_page,
+    load_patterns_page,
     notify_annotation_saved,
     render_annotation_content,
     render_comparison_content,
     render_country_content,
     render_forecast_content,
+    render_patterns_content,
     render_snowflake_status,
     retrieve_snowflake_status,
     server,
@@ -25,12 +27,14 @@ from app.dashboard.app import (
     update_app_shell_navbar,
     update_world_bank_comparison_chart,
 )
+from app.dashboard.charts import case_increase_patterns_figure
 from app.dashboard.layouts import (
     annotation_page,
     comparison_page,
     country_page,
     forecast_page,
     overview_page,
+    patterns_page,
     status_page,
 )
 
@@ -246,6 +250,48 @@ def comparison_payload(
     }
 
 
+def patterns_payload() -> dict[str, object]:
+    patterns = [
+        {
+            "country": "Micronesia",
+            "iso2": "FM",
+            "iso3": "FSM",
+            "location_key": "FSM",
+            "start_date": "2022-08-01",
+            "end_date": "2022-08-05",
+            "days_in_pattern": 5,
+            "consecutive_increases": 4,
+            "start_cases": 2,
+            "end_cases": 40,
+        },
+        {
+            "country": "Latvia",
+            "iso2": "LV",
+            "iso3": "LVA",
+            "location_key": "LVA",
+            "start_date": "2021-10-01",
+            "end_date": "2021-10-08",
+            "days_in_pattern": 8,
+            "consecutive_increases": 7,
+            "start_cases": 100,
+            "end_cases": 900,
+        },
+    ]
+    return {
+        "start_date": "2020-03-01",
+        "end_date": "2023-03-09",
+        "minimum_consecutive_increases": 3,
+        "returned_patterns": 2,
+        "summary": {
+            "total_patterns": 17,
+            "countries_with_patterns": 6,
+            "longest_consecutive_increases": 7,
+            "latest_pattern_end_date": "2022-08-05",
+        },
+        "patterns": patterns,
+    }
+
+
 class DashboardSmokeTests(unittest.TestCase):
     @staticmethod
     def _catalog_state() -> dict[str, object]:
@@ -300,13 +346,14 @@ class DashboardSmokeTests(unittest.TestCase):
         pages = [
             status_page("http://localhost:8000"),
             overview_page(),
+            patterns_page(catalog),
             country_page(catalog),
             comparison_page(catalog),
             forecast_page(catalog),
             annotation_page(catalog),
         ]
 
-        self.assertEqual(len(pages), 6)
+        self.assertEqual(len(pages), 7)
         self.assertEqual(app.layout.__class__.__name__, "MantineProvider")
 
     def test_dmc_component_properties_match_runtime_contracts(self) -> None:
@@ -342,6 +389,76 @@ class DashboardSmokeTests(unittest.TestCase):
             component_by_id(comparison_page(catalog), "compare-end-date").value,
             date(2023, 3, 9),
         )
+        self.assertEqual(
+            component_by_id(patterns_page(catalog), "patterns-end-date").value,
+            date(2023, 3, 9),
+        )
+
+    @patch("app.dashboard.app.get_json")
+    def test_patterns_page_uses_one_request_and_reconciles_chart_and_table(
+        self,
+        get_json,
+    ) -> None:
+        get_json.return_value = patterns_payload()
+
+        state = load_patterns_page(
+            None,
+            "2020-03-01",
+            "2023-03-09",
+            "3",
+            0,
+        )
+
+        get_json.assert_called_once_with(
+            "http://localhost:8000",
+            "/patterns/case-increases",
+            params={
+                "start_date": "2020-03-01",
+                "end_date": "2023-03-09",
+                "minimum_consecutive_increases": "3",
+                "limit": "100",
+            },
+        )
+        get_json.reset_mock()
+        rendered = render_patterns_content(state)
+        get_json.assert_not_called()
+        rendered_text = str(rendered)
+        self.assertIn("17", rendered_text)
+        self.assertIn("Showing 2 of 17", rendered_text)
+        self.assertIn("Micronesia", rendered_text)
+        self.assertIn("Source boundaries are never crossed", rendered_text)
+
+        figure = case_increase_patterns_figure(patterns_payload()["patterns"])
+        self.assertEqual(figure.layout.xaxis.rangemode, "tozero")
+        self.assertEqual(len(figure.data), 1)
+        self.assertEqual(list(figure.data[0].x), [4, 7])
+
+    @patch("app.dashboard.app.get_json")
+    def test_invalid_pattern_filters_do_not_call_api(self, get_json) -> None:
+        reversed_range = load_patterns_page(
+            None,
+            "2023-03-09",
+            "2020-03-01",
+            "3",
+            0,
+        )
+        invalid_minimum = load_patterns_page(
+            None,
+            "2020-03-01",
+            "2023-03-09",
+            "31",
+            0,
+        )
+
+        self.assertIn("Start date", reversed_range["message"])
+        self.assertIn("between 3 and 30", invalid_minimum["message"])
+        get_json.assert_not_called()
+
+    def test_patterns_page_explains_reporting_not_causality(self) -> None:
+        page_text = str(patterns_page(self._catalog_state()))
+
+        self.assertIn("reporting patterns", page_text)
+        self.assertIn("not epidemiological regimes", page_text)
 
     def test_candidate_denominator_renders_country_warning(self) -> None:
         payload = country_dashboard_payload(latvia_context())
