@@ -1,0 +1,96 @@
+# Development
+
+Use this workflow when you run Python outside Docker. Dashboard users do not need this workflow.
+
+## Install the environment
+
+Run:
+
+```bash
+uv sync --locked
+uv run python --version
+```
+
+The Python version must meet `.python-version` and `pyproject.toml`.
+
+## Run the API
+
+Start MongoDB and Redis before you run the API.
+
+Run:
+
+```bash
+uv run uvicorn app.main:app --reload
+```
+
+Compose supplies service connection strings automatically. Use Compose when you do not need a host Python process.
+
+## Change dependencies
+
+`pyproject.toml` declares dependencies. `uv.lock` records exact resolved versions.
+
+Add a production dependency:
+
+```bash
+uv add package-name
+```
+
+Add a development dependency:
+
+```bash
+uv add --dev development-package
+```
+
+Check and install the lockfile:
+
+```bash
+uv lock --check
+uv sync --locked
+```
+
+Commit `pyproject.toml` and `uv.lock` after each dependency change. Do not edit `uv.lock` manually.
+
+## Run code checks
+
+Install the Git hook once:
+
+```bash
+uv run pre-commit install
+```
+
+Run all hooks:
+
+```bash
+uv run pre-commit run --all-files
+```
+
+Run individual checks:
+
+```bash
+uv run isort --check-only --diff .
+uv run black --check --diff .
+uv run ruff check .
+uv run python -m unittest discover -s tests -v
+```
+
+Run the Spark tests after you install the Spark dependency group:
+
+```bash
+uv sync --locked --group spark
+uv run --group spark python -m unittest discover -s spark_tests -v
+```
+
+GitHub Actions runs the locked environment and code checks for each push and pull request.
+
+## Useful entry points
+
+| Path | Purpose |
+| --- | --- |
+| `app/main.py` | Create the FastAPI application |
+| `app/dashboard/app.py` | Create the Dash application |
+| `scripts/bootstrap.py` | Run setup and diagnostics |
+| `scripts/run_spark_bronze.py` | Run Spark ingestion and benchmarks |
+| `sql/` | Deploy Snowflake objects |
+| `tests/` | Test the application |
+| `spark_tests/` | Test the Spark workflow |
+
