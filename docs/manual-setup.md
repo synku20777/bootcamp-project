@@ -208,8 +208,6 @@ Open <http://localhost:8050/overview>. Confirm that the Overview page contains d
 - [ ] `MARTS.COUNTRY_BASELINE_2019` contains eligible countries.
 - [ ] `MARTS.COVID_ENRICHED` contains rows.
 - [ ] `STAGING.COVID_COUNTRY_DAILY_EXTENDED` contains 222 locations.
-- [ ] `MARTS.COVID_ENRICHED_EXTENDED_DATA` contains rows.
-- [ ] `MARTS.CASE_INCREASE_PATTERNS_EXTENDED_DATA` contains valid patterns.
 - [ ] `MARTS.COUNTRY_LATEST_METRICS_EXTENDED` contains 222 rows.
 - [ ] All four local services are healthy.
 - [ ] The liveness, readiness, and Snowflake checks succeed.

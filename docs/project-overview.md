@@ -47,9 +47,7 @@ flowchart LR
 
 The production API reads the extended marts by default. Set `COVID_DATASET=legacy` to read the ECDC-only marts.
 
-The extended serving views read from transient publication tables. Setup computes the source splice, window functions, and patterns before API requests.
-
-The public Snowflake object names do not change.
+The extended serving views project from transient publication tables. This boundary moves the demonstrated compilation-heavy source splice, window, and pattern work out of API requests while preserving public object names.
 
 Redis protects the Snowflake query budget. Analytical routes fail when Redis is unavailable.
 
@@ -140,4 +138,3 @@ MongoDB stores annotations only. Snowflake remains the source for analytical dat
 - [API reference](api-reference.md)
 - [World Bank country context](architecture/world-bank-context.md)
 - [Spark workflow](spark.md)
-- [Snowflake optimization evidence](../reports/snowflake/optimization_evidence_2026-07-31.md)

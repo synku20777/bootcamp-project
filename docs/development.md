@@ -82,20 +82,6 @@ uv run --group spark python -m unittest discover -s spark_tests -v
 
 GitHub Actions runs the locked environment and code checks for each push and pull request.
 
-## Capture Snowflake performance evidence
-
-Use this command only when you need a controlled live Snowflake measurement:
-
-```bash
-uv run python scripts/capture_snowflake_performance.py --phase post_materialization --env-file .env --output reports/snowflake/performance_evidence.json --warmups 1 --repetitions 5
-```
-
-Use `pre_materialization` for the first phase. Use the same environment file and output path for both phases.
-
-The script disables result-cache reuse. It writes sanitized query and timing evidence.
-
-See the [Snowflake optimization evidence](../reports/snowflake/optimization_evidence_2026-07-31.md) for the controlled method and results.
-
 ## Useful entry points
 
 | Path | Purpose |
@@ -103,7 +89,7 @@ See the [Snowflake optimization evidence](../reports/snowflake/optimization_evid
 | `app/main.py` | Create the FastAPI application |
 | `app/dashboard/app.py` | Create the Dash application |
 | `scripts/bootstrap.py` | Run setup and diagnostics |
-| `scripts/run_spark_bronze.py` | Run Spark ingestion, benchmarks, and offline clustering |
+| `scripts/run_spark_bronze.py` | Run Spark ingestion and benchmarks |
 | `sql/` | Deploy Snowflake objects |
 | `tests/` | Test the application |
 | `spark_tests/` | Test the Spark workflow |
