@@ -45,6 +45,52 @@ class FakeCursor:
                 [("Namibia", None, "Namibia", "NA", "NAM", True)],
                 [],
             ]
+        elif self.executions == 3:
+            self.description = [
+                ("COUNTRY",),
+                ("COUNTRY_ISO2",),
+                ("COUNTRY_ISO3",),
+                ("LOCATION_KEY",),
+                ("REPORT_DATE",),
+                ("NEW_CASES_RAW",),
+                ("NEW_DEATHS_RAW",),
+                ("CASES_CUMULATIVE",),
+                ("DEATHS_CUMULATIVE",),
+                ("COVID_RATE_POPULATION_2020",),
+                ("NEW_CASES_PER_100K",),
+                ("NEW_DEATHS_PER_100K",),
+                ("CASES_PER_100K",),
+                ("DEATHS_PER_100K",),
+                ("HAS_NEGATIVE_CASE_CORRECTION",),
+                ("HAS_NEGATIVE_DEATH_CORRECTION",),
+                ("SOURCE_NAME",),
+                ("SERIES_SEGMENT",),
+            ]
+            self._pending = [
+                [
+                    (
+                        "Latvia",
+                        "LV",
+                        "LVA",
+                        "LVA",
+                        "2020-03-01",
+                        1,
+                        0,
+                        1,
+                        0,
+                        1_900_000,
+                        0.0526,
+                        0.0,
+                        0.0526,
+                        0.0,
+                        False,
+                        False,
+                        "ECDC",
+                        "ECDC_BASELINE",
+                    )
+                ],
+                [],
+            ]
         else:
             self.description = [
                 ("ISO3",),
@@ -132,9 +178,26 @@ class SparkSourceExportTests(unittest.TestCase):
                 (target / "manifest.json").read_text(encoding="utf-8")
             )
 
-            self.assertEqual(connection.cursor_instance.executions, 3)
+            self.assertEqual(connection.cursor_instance.executions, 4)
+            self.assertEqual(manifest["manifest_version"], 3)
+            self.assertEqual(manifest["source_kind"], "snowflake_export")
             self.assertEqual(manifest["files"]["ecdc"]["row_count"], 1)
             self.assertEqual(manifest["files"]["mapping"]["row_count"], 1)
+            self.assertEqual(manifest["files"]["covid_extended"]["country_count"], 1)
+            self.assertEqual(manifest["files"]["covid_extended"]["row_count"], 1)
+            self.assertEqual(
+                manifest["files"]["covid_extended"]["minimum_report_date"],
+                "2020-03-01",
+            )
+            self.assertEqual(
+                manifest["files"]["covid_extended"]["maximum_report_date"],
+                "2020-03-01",
+            )
+            self.assertEqual(
+                manifest["sources"]["covid_extended"],
+                "COVID_ANALYTICS.MARTS.COVID_ENRICHED_EXTENDED",
+            )
+            self.assertEqual(len(manifest["files"]["covid_extended"]["sha256"]), 64)
             self.assertEqual(len(manifest["batch_sha256"]), 64)
             self.assertEqual(manifest["snowflake_context_fingerprint"]["row_count"], 1)
             with self.assertRaises(FileExistsError):

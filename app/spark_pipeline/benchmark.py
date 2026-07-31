@@ -164,6 +164,7 @@ def layout_decision(
     *,
     measured_parquet_bytes: int,
     monthly_parquet_bytes: list[int],
+    target_file_bytes: int = TARGET_FILE_BYTES,
 ) -> dict[str, Any]:
     month_count = len(monthly_parquet_bytes)
     median_month_bytes = (
@@ -174,12 +175,12 @@ def layout_decision(
         and month_count <= MAX_MONTH_DIRECTORIES
         and median_month_bytes >= MIN_MONTH_PARTITION_BYTES
     )
-    target_files = max(1, -(-measured_parquet_bytes // TARGET_FILE_BYTES))
+    target_files = max(1, -(-measured_parquet_bytes // target_file_bytes))
     return {
         "partition_columns": (
             ["report_year", "report_month"] if partition_by_month else []
         ),
-        "target_file_bytes": TARGET_FILE_BYTES,
+        "target_file_bytes": target_file_bytes,
         "target_file_count": target_files,
         "measured_parquet_bytes": measured_parquet_bytes,
         "month_count": month_count,
@@ -217,7 +218,7 @@ def plan_evidence(dataframe: DataFrame) -> dict[str, Any]:
         and "mapping_code_key" in line
         and "isnull(source_code_key" in line
         and "isnull(mapping_code_key" in line
-        for line in broadcast_lines
+        for line in lines
     )
     return {
         "sha256": hashlib.sha256(plan.encode("utf-8")).hexdigest(),
@@ -458,6 +459,24 @@ def summarize_benchmarks(
                 "input_bytes": _summary(
                     [item.get("input_bytes", 0) for item in measurements]
                 ),
+                "memory_bytes_spilled": _summary(
+                    [item.get("memory_bytes_spilled", 0) for item in measurements]
+                ),
+                "disk_bytes_spilled": _summary(
+                    [item.get("disk_bytes_spilled", 0) for item in measurements]
+                ),
+                "peak_execution_memory_bytes": _summary(
+                    [
+                        item.get("peak_execution_memory_bytes", 0)
+                        for item in measurements
+                    ]
+                ),
+                "executor_run_time_ms": _summary(
+                    [item.get("executor_run_time_ms", 0) for item in measurements]
+                ),
+                "jvm_gc_time_ms": _summary(
+                    [item.get("jvm_gc_time_ms", 0) for item in measurements]
+                ),
             }
     return benchmarks
 
@@ -497,10 +516,40 @@ def parse_event_logs(event_log_directory: Path) -> dict[str, dict[str, int]]:
                     stage_metrics[stage_id]["input_bytes"] += int(
                         input_metrics.get("Bytes Read", 0)
                     )
+                    stage_metrics[stage_id]["memory_bytes_spilled"] += int(
+                        metrics.get("Memory Bytes Spilled", 0)
+                    )
+                    stage_metrics[stage_id]["disk_bytes_spilled"] += int(
+                        metrics.get("Disk Bytes Spilled", 0)
+                    )
+                    stage_metrics[stage_id]["executor_run_time_ms"] += int(
+                        metrics.get("Executor Run Time", 0)
+                    )
+                    stage_metrics[stage_id]["jvm_gc_time_ms"] += int(
+                        metrics.get("JVM GC Time", 0)
+                    )
+                    stage_metrics[stage_id]["peak_execution_memory_bytes"] = max(
+                        stage_metrics[stage_id]["peak_execution_memory_bytes"],
+                        int(metrics.get("Peak Execution Memory", 0)),
+                    )
 
     group_metrics: dict[str, dict[str, int]] = defaultdict(lambda: defaultdict(int))
+    all_metrics: dict[str, int] = defaultdict(int)
+    for metrics in stage_metrics.values():
+        for metric, value in metrics.items():
+            if metric == "peak_execution_memory_bytes":
+                all_metrics[metric] = max(all_metrics[metric], value)
+            else:
+                all_metrics[metric] += value
     for stage_id, groups in stage_groups.items():
         for group in groups:
             for metric, value in stage_metrics[stage_id].items():
-                group_metrics[group][metric] += value
-    return {group: dict(metrics) for group, metrics in group_metrics.items()}
+                if metric == "peak_execution_memory_bytes":
+                    group_metrics[group][metric] = max(
+                        group_metrics[group][metric], value
+                    )
+                else:
+                    group_metrics[group][metric] += value
+    result = {group: dict(metrics) for group, metrics in group_metrics.items()}
+    result["__all__"] = dict(all_metrics)
+    return result

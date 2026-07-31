@@ -53,6 +53,30 @@ ECDC_QUERY = """
     ORDER BY DATE, COUNTRY_REGION, ISO3166_1
 """
 
+COVID_EXTENDED_QUERY = """
+    SELECT
+        COUNTRY,
+        COUNTRY_ISO2,
+        COUNTRY_ISO3,
+        LOCATION_KEY,
+        REPORT_DATE,
+        NEW_CASES_RAW,
+        NEW_DEATHS_RAW,
+        CASES_CUMULATIVE,
+        DEATHS_CUMULATIVE,
+        COVID_RATE_POPULATION_2020,
+        NEW_CASES_PER_100K,
+        NEW_DEATHS_PER_100K,
+        CASES_PER_100K,
+        DEATHS_PER_100K,
+        HAS_NEGATIVE_CASE_CORRECTION,
+        HAS_NEGATIVE_DEATH_CORRECTION,
+        SOURCE_NAME,
+        SERIES_SEGMENT
+    FROM COVID_ANALYTICS.MARTS.COVID_ENRICHED_EXTENDED
+    ORDER BY REPORT_DATE, COUNTRY_ISO3, LOCATION_KEY
+"""
+
 MAPPING_QUERY = """
     SELECT
         SOURCE_COUNTRY_NAME,
@@ -150,6 +174,32 @@ def _csv_row_count(path: Path) -> int:
         return max(sum(1 for _ in csv.reader(source)) - 1, 0)
 
 
+def _extended_source_metadata(path: Path) -> dict[str, object]:
+    minimum_report_date: str | None = None
+    maximum_report_date: str | None = None
+    countries: set[str] = set()
+    with path.open("r", encoding="utf-8", newline="") as source:
+        for row in csv.DictReader(source):
+            report_date = row.get("REPORT_DATE")
+            iso3 = row.get("COUNTRY_ISO3")
+            if report_date:
+                minimum_report_date = min(
+                    report_date,
+                    minimum_report_date or report_date,
+                )
+                maximum_report_date = max(
+                    report_date,
+                    maximum_report_date or report_date,
+                )
+            if iso3:
+                countries.add(iso3)
+    return {
+        "minimum_report_date": minimum_report_date,
+        "maximum_report_date": maximum_report_date,
+        "country_count": len(countries),
+    }
+
+
 def export_source_batch(
     *,
     source_batch_id: str,
@@ -180,19 +230,28 @@ def export_source_batch(
         cursor = active_connection.cursor()
         try:
             ecdc_path = staging / "ecdc_global.csv"
+            covid_extended_path = staging / "covid_enriched_extended.csv"
             mapping_path = staging / "country_mapping.csv"
             population_copy = staging / "population.csv"
             indicators_copy = staging / "world_bank_indicators.csv"
             ecdc_rows = export_query(cursor, ECDC_QUERY, ecdc_path)
             mapping_rows = export_query(cursor, MAPPING_QUERY, mapping_path)
+            covid_extended_rows = export_query(
+                cursor,
+                COVID_EXTENDED_QUERY,
+                covid_extended_path,
+            )
             snowflake_context_fingerprint = fetch_context_fingerprint(cursor)
             shutil.copy2(population_path, population_copy)
             shutil.copy2(indicators_path, indicators_copy)
         finally:
             cursor.close()
 
+        extended_entry = _manifest_entry(covid_extended_path, covid_extended_rows)
+        extended_entry.update(_extended_source_metadata(covid_extended_path))
         files = {
             "ecdc": _manifest_entry(ecdc_path, ecdc_rows),
+            "covid_extended": extended_entry,
             "mapping": _manifest_entry(mapping_path, mapping_rows),
             "population": _manifest_entry(
                 population_copy,
@@ -205,11 +264,13 @@ def export_source_batch(
         }
         checksum_payload = "".join(str(files[name]["sha256"]) for name in sorted(files))
         manifest = {
-            "manifest_version": 2,
+            "manifest_version": 3,
+            "source_kind": "snowflake_export",
             "source_batch_id": source_batch_id,
             "extracted_at_utc": datetime.now(UTC).isoformat(),
             "sources": {
                 "ecdc": "COVID19_EPIDEMIOLOGICAL_DATA.PUBLIC.ECDC_GLOBAL",
+                "covid_extended": ("COVID_ANALYTICS.MARTS.COVID_ENRICHED_EXTENDED"),
                 "mapping": "COVID_ANALYTICS.RAW.COUNTRY_CODE_MAPPING",
                 "population": "World Bank SP.POP.TOTL 2020 snapshot",
                 "indicators": "World Development Indicators source 2, 2019-2021",
@@ -241,6 +302,7 @@ def export_source_batch(
             "source_batch_id": source_batch_id,
             "ecdc_row_count": ecdc_rows,
             "mapping_row_count": mapping_rows,
+            "covid_extended_row_count": covid_extended_rows,
         },
     )
     return target
