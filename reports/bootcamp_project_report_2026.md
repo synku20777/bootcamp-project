@@ -15,7 +15,7 @@ The implementation now covers every required in-repository functional task and t
 
 The strongest engineering qualities are reproducibility, explicit data contracts, least-privilege access, source-correction fidelity, bounded warehouse queries, fail-closed cache protection, and unusually careful Spark evidence. The project does not claim Spark is generally faster at this data volume: early projection, AQE, and caching a reused frame measured slower, while three explicit broadcasts and one appropriately sized Parquet file measured faster.
 
-The exact Python 3.12.13, PySpark 3.5.6, and Java 17.0.19 runtime passed all 31 Spark tests, including the new feature, exclusion, stability, deterministic-labelling, local-publication, runtime-policy, broadcast-fallback, skew, metric-evidence, and complete fixture-pipeline contracts. Static checks and 14 focused export/publication tests also passed. Committed dated artifacts still record the accepted Snowflake publication, mart verification, API smoke test, migration reconciliation, and Spark evidence version 3. No credentials or extended immutable source batch were available, so fixture diagnostics did not replace that real-data evidence. A final submission should perform the credentialed five-file Spark run and a clean-VM acceptance run.
+The exact Python 3.12.13, PySpark 3.5.6, and Java 17.0.19 runtime passed all 32 Spark tests, including the new feature, exclusion, stability, deterministic-labelling, local-publication, runtime-policy, broadcast-fallback, skew, metric-evidence, and complete fixture-pipeline contracts. Static checks and 13 focused non-Spark export/publication tests also passed. Committed dated artifacts still record the accepted Snowflake publication, mart verification, API smoke test, migration reconciliation, and Spark evidence version 3. No credentials or extended immutable source batch were available, so fixture diagnostics did not replace that real-data evidence. A final submission should perform the credentialed five-file Spark run and a clean-VM acceptance run.
 
 ## 2. Requirement compliance
 
@@ -291,7 +291,7 @@ Verification through 31 July 2026:
 | Check | Result |
 | --- | --- |
 | Previously accepted application/unit/contract suite | 101 passed; unchanged historical review evidence |
-| Changed-path export, event-metric, schema, and publication tests | 14 passed in this worktree |
+| Changed-path non-Spark export, schema, and publication tests | 13 passed in this worktree |
 | Ruff | Passed |
 | isort and Black | Passed |
 | Compose configuration | Parsed successfully |
@@ -300,7 +300,7 @@ Verification through 31 July 2026:
 | Dated context/API smoke | Passed with `COVID_APP_ROLE`; combined page context available |
 | Snowflake context export fingerprint | Passed; immutable batch records 213 baseline rows |
 | Pinned Docker Spark image | Previously built successfully; current dependencies unchanged |
-| Exact pinned Spark runtime suite | 31 passed with Python 3.12.13, PySpark 3.5.6, and Java 17.0.19 |
+| Exact pinned Spark runtime suite | 32 passed with Python 3.12.13, PySpark 3.5.6, and Java 17.0.19 |
 | Committed Spark evidence | Version 3; four source checksums, five correctness gates, three broadcasts, 213-row cross-engine match, and curated publication passed |
 | Extended clustering evidence | Implementation and fixtures passed; credentialed five-file version 4 run pending |
 
