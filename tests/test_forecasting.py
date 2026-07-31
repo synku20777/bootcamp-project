@@ -93,6 +93,7 @@ class ForecastingTests(unittest.TestCase):
         self.assertEqual(result.history[-1].value, -5)
         self.assertTrue(all(point.predicted >= 0 for point in result.forecast))
         self.assertTrue(any("corrections" in caveat for caveat in result.caveats))
+        self.assertTrue(any("2020-02-11" in caveat for caveat in result.caveats))
 
     def test_context_values_cannot_change_forecast_output(self) -> None:
         start = date(2020, 1, 1)

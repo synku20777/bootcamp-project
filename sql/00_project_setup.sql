@@ -22,14 +22,25 @@ WITH
 CREATE WAREHOUSE IF NOT EXISTS COVID_WH
 WITH
     WAREHOUSE_SIZE = XSMALL
+    GENERATION = '2'
     AUTO_SUSPEND = 60
     AUTO_RESUME = TRUE
     INITIALLY_SUSPENDED = TRUE
+    ENABLE_QUERY_ACCELERATION = FALSE
     COMMENT = 'Warehouse for the COVID-19 Bootcamp project';
 
--- Run this even when COVID_WH already existed.
+-- Reassert the low-cost runtime contract even when COVID_WH already existed.
+-- Gen2 enables Query Acceleration by default in supported regions; this project
+-- disables it because the measured workload used zero accelerated bytes and the
+-- serverless credits are outside the warehouse resource monitor.
 ALTER WAREHOUSE COVID_WH
-SET RESOURCE_MONITOR = COVID_PROJECT_MONITOR;
+SET
+    WAREHOUSE_SIZE = XSMALL
+    GENERATION = '2'
+    AUTO_SUSPEND = 60
+    AUTO_RESUME = TRUE
+    ENABLE_QUERY_ACCELERATION = FALSE
+    RESOURCE_MONITOR = COVID_PROJECT_MONITOR;
 
 CREATE DATABASE IF NOT EXISTS COVID_ANALYTICS
 COMMENT = 'Database for the COVID-19 analytics project';

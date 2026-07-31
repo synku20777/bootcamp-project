@@ -169,10 +169,40 @@ class WorldBankContextTests(unittest.TestCase):
         self.assertEqual(result, "cached-comparison")
         self.assertEqual(cache_status, CacheStatus.HIT)
         self.assertEqual(cache.arguments["endpoint"], "comparison-page")
+        self.assertEqual(cache.arguments["key_payload"]["dataset"], "extended")
         self.assertEqual(cache.arguments["key_payload"]["version"], 2)
         self.assertEqual(
             cache.arguments["key_payload"]["context_snapshot_id"],
             SNAPSHOT_ID,
+        )
+        repository.fetch_dashboard_comparison.assert_not_called()
+
+    @patch(
+        "app.services.covid_service.committed_snapshot_id",
+        side_effect=DataSourceUnavailableError(
+            "World Bank context",
+            code="context_data_unavailable",
+        ),
+    )
+    def test_optional_manifest_failure_uses_unavailable_page_cache_revision(
+        self,
+        _snapshot_id,
+    ) -> None:
+        cache = RecordingCache()
+        repository = MagicMock()
+        service = CovidService(repository, cache, Settings(_env_file=None))
+
+        result, cache_status = service.dashboard_comparison(
+            ["LV", "EE"],
+            date(2020, 3, 1),
+            date(2020, 12, 14),
+        )
+
+        self.assertEqual(result, "cached-comparison")
+        self.assertEqual(cache_status, CacheStatus.HIT)
+        self.assertEqual(
+            cache.arguments["key_payload"]["context_snapshot_id"],
+            "unavailable",
         )
         repository.fetch_dashboard_comparison.assert_not_called()
 

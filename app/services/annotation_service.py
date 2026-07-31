@@ -60,7 +60,11 @@ class AnnotationService:
 
         target, _cache_status = self.cache.get_or_compute(
             endpoint="annotation-country",
-            key_payload={"identifier": normalized, "version": 1},
+            key_payload={
+                "dataset": self.settings.covid_dataset,
+                "identifier": normalized,
+                "version": 1,
+            },
             ttl_seconds=self.settings.cache_ttl_annotation_target_seconds,
             model_type=AnnotationTarget,
             compute=compute,
@@ -91,6 +95,7 @@ class AnnotationService:
         target, _cache_status = self.cache.get_or_compute(
             endpoint="annotation-target",
             key_payload={
+                "dataset": self.settings.covid_dataset,
                 "identifier": normalized,
                 "report_date": report_date.isoformat(),
                 "version": 1,

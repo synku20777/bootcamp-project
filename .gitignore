@@ -43,6 +43,8 @@ reports/*
 !reports/bootcamp_project_report_2026.md
 !reports/world_bank/
 !reports/world_bank/**
+!reports/snowflake/
+!reports/snowflake/**
 
 # Local learning and reference artifacts; not required by the application
 /assets/

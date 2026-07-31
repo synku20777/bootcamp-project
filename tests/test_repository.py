@@ -17,6 +17,83 @@ class SnowflakeRepositoryTests(unittest.TestCase):
             Settings(_env_file=None, covid_dataset="arbitrary_table")
 
     @patch("app.repositories.snowflake_repository.snowflake.connector.connect")
+    def test_connection_sets_timeouts_result_cache_and_operation_query_tag(
+        self,
+        connect,
+    ) -> None:
+        cursor = MagicMock()
+        cursor.description = []
+        connection = MagicMock()
+        connection.cursor.return_value = cursor
+        connect.return_value = connection
+        repository = SnowflakeRepository(
+            Settings(
+                _env_file=None,
+                snowflake_account="account",
+                snowflake_user="user",
+                snowflake_password="password",
+                snowflake_login_timeout_seconds=7,
+                snowflake_network_timeout_seconds=19,
+                snowflake_statement_timeout_seconds=23,
+                snowflake_query_tag_prefix="test-api",
+                snowflake_use_cached_result=False,
+            )
+        )
+
+        repository.check_health()
+
+        parameters = connect.call_args.kwargs
+        self.assertEqual(parameters["login_timeout"], 7)
+        self.assertEqual(parameters["network_timeout"], 19)
+        self.assertEqual(
+            parameters["session_parameters"],
+            {
+                "QUERY_TAG": "test-api:extended:health_check",
+                "STATEMENT_TIMEOUT_IN_SECONDS": 23,
+                "USE_CACHED_RESULT": False,
+            },
+        )
+
+    @patch("app.repositories.snowflake_repository.snowflake.connector.connect")
+    def test_success_log_contains_timings_and_query_id_but_not_query_text(
+        self,
+        connect,
+    ) -> None:
+        cursor = MagicMock()
+        cursor.description = []
+        cursor.sfqid = "sanitized-query-id"
+        connection = MagicMock()
+        connection.cursor.return_value = cursor
+        connect.return_value = connection
+        repository = SnowflakeRepository(
+            Settings(
+                _env_file=None,
+                snowflake_account="account",
+                snowflake_user="user",
+                snowflake_password="password",
+            )
+        )
+
+        with self.assertLogs(
+            "app.repositories.snowflake_repository",
+            level="INFO",
+        ) as captured:
+            repository.check_health()
+
+        success = next(
+            record
+            for record in captured.records
+            if record.getMessage() == "snowflake_query_succeeded"
+        )
+        self.assertEqual(success.operation, "health_check")
+        self.assertEqual(success.query_id, "sanitized-query-id")
+        self.assertEqual(success.returned_row_count, 0)
+        self.assertIsInstance(success.connection_ms, float)
+        self.assertIsInstance(success.query_and_fetch_ms, float)
+        self.assertFalse(hasattr(success, "sql"))
+        self.assertFalse(hasattr(success, "parameters"))
+
+    @patch("app.repositories.snowflake_repository.snowflake.connector.connect")
     def test_dataset_selection_uses_allowlisted_extended_and_legacy_objects(
         self,
         connect,

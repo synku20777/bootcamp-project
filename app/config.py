@@ -26,6 +26,11 @@ class Settings(BaseSettings):
     snowflake_warehouse: str = "COVID_WH"
     snowflake_database: str = "COVID_ANALYTICS"
     snowflake_api_schema: str = "MARTS"
+    snowflake_login_timeout_seconds: int = 10
+    snowflake_network_timeout_seconds: int = 30
+    snowflake_statement_timeout_seconds: int = 30
+    snowflake_query_tag_prefix: str = "covid-api"
+    snowflake_use_cached_result: bool = True
     covid_dataset: Literal["extended", "legacy"] = "extended"
 
     mongodb_uri: str = "mongodb://localhost:27017/covid_app"
@@ -48,8 +53,8 @@ class Settings(BaseSettings):
     cache_ttl_comparison_page_seconds: int = 86_400
     cache_ttl_patterns_seconds: int = 86_400
     cache_ttl_annotation_target_seconds: int = 86_400
-    cache_lock_seconds: int = 30
-    cache_lock_wait_seconds: float = 10.0
+    cache_lock_seconds: int = 60
+    cache_lock_wait_seconds: float = 15.0
     cache_lock_poll_seconds: float = 0.1
 
 

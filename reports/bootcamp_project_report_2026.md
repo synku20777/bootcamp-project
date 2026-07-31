@@ -9,26 +9,26 @@ Implementation report
 
 ## 1. Executive summary
 
-This project integrates the free Snowflake Marketplace COVID-19 Epidemiological Data share with a versioned, checksum-verified World Development Indicators history for 2019–2021. A source-faithful active WDI snapshot supplies country context, while a separately frozen 2020 population denominator preserves existing epidemiological rates. Snowflake owns the analytical truth, PySpark demonstrates an immutable Bronze and profiling path, FastAPI exposes typed analytical and forecasting contracts, Redis protects the Snowflake trial budget, MongoDB stores user annotations, and Dash provides six interactive pages.
+This project integrates the free Snowflake Marketplace COVID-19 Epidemiological Data share with a normalized ECDC/JHU country series through March 2023 and a versioned, checksum-verified World Development Indicators history for 2019–2021. A source-faithful active WDI snapshot supplies country context, while a separately frozen 2020 population denominator preserves existing epidemiological rates. Snowflake owns the analytical truth, PySpark demonstrates an immutable Bronze and profiling path, FastAPI exposes typed analytical and forecasting contracts, Redis protects the Snowflake trial budget, MongoDB stores user annotations, and Dash provides seven interactive pages.
 
 The implementation now covers every required in-repository functional task and the clustering bonus. Forecasting compares a 7-day mean with a recent linear trend using rolling temporal holdout. Offline Spark clustering segments ISO3 countries from five population-normalized COVID outcomes, evaluates multiple `k` values and seeds, rejects small or unstable solutions, and publishes immutable local analytical artifacts. Clustering is implemented and fixture-validated; a credentialed extended-mart run is still required before claiming authoritative real-data cluster results.
 
-The strongest engineering qualities are reproducibility, explicit data contracts, least-privilege access, source-correction fidelity, bounded warehouse queries, fail-closed cache protection, and unusually careful Spark evidence. The project does not claim Spark is generally faster at this data volume: early projection, AQE, and caching a reused frame measured slower, while three explicit broadcasts and one appropriately sized Parquet file measured faster.
+The strongest engineering qualities are reproducibility, explicit data contracts, least-privilege access, source-correction fidelity, bounded warehouse queries, fail-closed cache protection, and measured optimization decisions in both Snowflake and Spark. The project does not claim Spark is generally faster at this data volume: early projection, AQE, and caching a reused frame measured slower, while three explicit broadcasts and one appropriately sized Parquet file measured faster. The Snowflake review follows the same evidence rule: it materializes the demonstrated compilation bottleneck but rejects clustering, Search Optimization, QAS, and connection pooling at the measured scale.
 
-The exact Python 3.12.13, PySpark 3.5.6, and Java 17.0.19 runtime passed all 31 Spark tests, including the new feature, exclusion, stability, deterministic-labelling, local-publication, runtime-policy, broadcast-fallback, skew, metric-evidence, and complete fixture-pipeline contracts. Static checks and 14 focused export/publication tests also passed. Committed dated artifacts still record the accepted Snowflake publication, mart verification, API smoke test, migration reconciliation, and Spark evidence version 3. No credentials or extended immutable source batch were available, so fixture diagnostics did not replace that real-data evidence. A final submission should perform the credentialed five-file Spark run and a clean-VM acceptance run.
+At review time, 101 application, API, dashboard, repository, ingestion, checksum, export, denominator-lifecycle, and forecasting tests passed. The rebuilt pinned Spark image passed all 22 Spark tests. Ruff, isort, Black, and Docker Compose validation passed. These are regression controls, not the basis for the architectural conclusions. The Task 7 assessment rests on tagged live Snowflake query history, operator profiles, object hashes, and warehouse state. Dated artifacts also record the WDI publication, API smoke test, migration reconciliation, and Spark/Snowflake context-equivalence gates. A final submission should commit and push the working tree and perform one clean-VM acceptance run of the complete platform.
 
 ## 2. Requirement compliance
 
 | Assignment task | Status | Implementation evidence | Qualification |
 | --- | --- | --- | --- |
-| 1. Marketplace data and resource monitor | Complete | Imported ECDC source contract; AWS Stockholm setup instructions; 5-credit monthly monitor; X-Small warehouse; 60-second auto-suspend | Marketplace installation remains a manual account action because it requires the student's Snowflake account acceptance |
+| 1. Marketplace data and resource monitor | Complete | Imported ECDC/JHU source contract; AWS Stockholm setup instructions; five-credit normal monthly monitor; X-Small Gen2 warehouse; 60-second auto-suspend; QAS disabled | The live quota was temporarily raised to 25 credits for this audit; Marketplace installation remains a manual account action |
 | 2. Exploration and enhancement | Complete | Reusable SQL EDA, automated CSV exports, explicit Spark profiling, versioned WDI population, density, age, real-GDP-per-capita and health-expenditure context, normalized per-capita and mortality metrics | Pandemic-period indicator changes are descriptive and make no causal claim |
 | 3. NoSQL model | Complete | MongoDB annotations with Pydantic validation, canonical analytical identity, UTC dates, and two compound indexes | No database-side JSON Schema validator; API validation is authoritative |
 | 4. Python API | Complete | FastAPI queries Snowflake, reads/writes MongoDB, performs on-the-fly metrics and forecasting, and returns typed JSON | No public authentication or rate limiting |
-| 5. Interactive visualization | Complete | Dash pages for status, overview, country exploration, comparison, forecasting, and annotations | Browser QA should be repeated on the final clean VM |
-| 6. Analytical features | Complete plus fixture-validated bonus | Forecasting uses rolling holdout MAE/RMSE and a 1-30-day empirical interval; offline Spark clustering uses COVID-only normalized features, multi-seed silhouette/stability gates, deterministic labels, and local model artifacts | Neither model is epidemiological or causal; authoritative clustering evidence awaits a credentialed extended-mart run |
-| 7. Performance optimization | Complete with evidence limitation | Snowflake monitor/auto-suspend, precomputed latest snapshot, projection, bounded date/country filters, one-statement repository budget, consolidated page payloads | No newly captured Snowflake Query Profile comparison in this review |
-| 8. API caching | Complete | Redis TTLs, versioned keys, Pydantic cache revalidation, prefix-scoped invalidation, stampede lock, fail-closed behavior | Redis becomes an intentional availability dependency to protect trial credits |
+| 5. Interactive visualization | Complete | Dash pages for status, overview, country exploration, comparison, forecasting, increase patterns, and annotations | Browser QA should be repeated on the final clean VM |
+| 6. Time-series forecasting | Complete | 7-day mean versus recent linear trend, rolling holdout, MAE/RMSE, 1-30-day horizon, empirical interval, API and dashboard | This is an interpretable baseline, not an epidemiological model; clustering is bonus and not implemented |
+| 7. Performance optimization | Complete with live evidence | Materialized extended serving boundary, stable public views, precomputed latest snapshot, bounded queries, tagged before/after Query Profile evidence, deterministic X-Small Gen2 warehouse policy | Detailed-query Snowflake medians fell 70.7% to 90.1%; no clustering or Search Optimization is justified at 224,265 rows |
+| 8. API caching | Complete | Redis TTLs, dataset- and snapshot-aware keys, Pydantic cache revalidation, prefix-scoped invalidation, 60-second lease, 15-second waiter, fail-closed behavior | Redis becomes an intentional availability dependency to protect trial credits |
 | 9. Pattern identification | Complete | Snowflake `MATCH_RECOGNIZE` identifies at least three consecutive daily increases | Results are reporting patterns, not causal transmission regimes |
 | 10. GitHub and configuration | Partial until final push | GitHub repository, Dockerfiles, Compose, `.env.example`, uv lockfile, CI, setup scripts, tests, and report | The final working-tree changes must be committed and pushed before submission |
 
@@ -41,7 +41,7 @@ The exact Python 3.12.13, PySpark 3.5.6, and Java 17.0.19 runtime passed all 31 
 3. A country mapping table resolves known source exceptions. The staging view aggregates duplicate country-date records, creates stable location keys, and derives cumulative measures while preserving negative daily corrections.
 4. The World Bank path preserves immutable historical observations and a snapshot registry. A current-snapshot view selects exactly one active WDI release; identity, allowlist, year, decimal, duplicate and coverage gates run before publication.
 5. `COUNTRY_COVID_DENOMINATOR` preserves the original committed 2020 population values independently. `COVID_ENRICHED` uses only that frozen policy object to derive cases and deaths per 100,000, cumulative measures, mortality percentage, join status, and data-correction flags.
-6. A small transient latest-country table serves overview and identity resolution. A separate pattern view applies `MATCH_RECOGNIZE` to daily data.
+6. A small transient latest-country table serves overview and identity resolution. In the promoted extended path, deterministic source-splice, enrichment, window, and `MATCH_RECOGNIZE` work is materialized during controlled publication; stable public views preserve the consumer contract.
 7. FastAPI separates routes, services, typed models, and repositories. Every public Snowflake repository method executes one bounded statement.
 8. Redis serves validated analytical responses and blocks cache stampedes. MongoDB owns user-authored annotations.
 9. Dash requests combined page payloads and fans them out from browser-side stores, preventing one warehouse request per chart.
@@ -51,7 +51,7 @@ The exact Python 3.12.13, PySpark 3.5.6, and Java 17.0.19 runtime passed all 31 
 
 #### Snowflake as analytical source of truth
 
-**Why:** Marketplace sharing avoids copying provider-owned raw data, and SQL window, normalization, and pattern operations run close to managed compute. **Tradeoff:** the main enriched mart is a view, so general time-series requests recompute transformations. Redis and the latest-country snapshot offset that cost without introducing a second analytical truth.
+**Why:** Marketplace sharing avoids copying provider-owned raw data, and SQL window, normalization, and pattern operations run close to managed compute. Live profiling showed that repeatedly compiling the layered extended views, rather than scanning or spilling, dominated detailed requests. The extended serving path therefore materializes deterministic refresh-time transformations while preserving `COVID_ENRICHED_EXTENDED` and `CASE_INCREASE_PATTERNS_EXTENDED` as stable compatibility views. **Tradeoff:** publication owns more work and storage, and source-splice or denominator-policy changes must rerun `sql/09_create_jhu_extension.sql`. The legacy ECDC path remains unchanged, and result hashes protect the materialization boundary from semantic drift.
 
 #### ISO-first integration with explicit exceptions
 
@@ -87,11 +87,11 @@ The exact Python 3.12.13, PySpark 3.5.6, and Java 17.0.19 runtime passed all 31 
 
 ## 4. Snowflake setup and data exploration
 
-The documented account path uses AWS Europe (Stockholm). `sql/00_project_setup.sql` creates a 5-credit monthly resource monitor with notification at 50%, suspension at 80%, and immediate suspension at 100%. `COVID_WH` is X-Small, starts suspended, resumes on demand, and auto-suspends after 60 seconds. `COVID_PROJECT_ADMIN` owns deployment work; `COVID_APP_ROLE` receives only warehouse usage plus read access to the marts.
+The documented account path uses AWS Europe (Stockholm). `sql/00_project_setup.sql` creates a five-credit normal bootcamp resource monitor with notification at 50%, suspension at 80%, and immediate suspension at 100%. It reasserts `COVID_WH` as X-Small Gen2 with 60-second auto-suspend, auto-resume, monitor attachment, and Query Acceleration disabled even when the warehouse already exists. The live quota was temporarily raised to 25 credits for the controlled audit; that higher allowance is not committed as the default. `COVID_PROJECT_ADMIN` owns deployment work; `COVID_APP_ROLE` receives only warehouse usage plus read access to the marts.
 
 The exploration SQL inventories Marketplace objects and columns before encoding assumptions. It checks date coverage, duplicate country-date rows, null percentages, and negative daily values. The key semantic result is that `CASES` and `DEATHS` are daily measures rather than cumulative totals. Cumulative values are therefore calculated with ordered window sums, not by subtracting adjacent source rows.
 
-The live snapshot verified on 26 July 2026 contained 61,900 daily rows across 214 locations from 31 December 2019 through 14 December 2020. Population matched 203 locations and 59,336 rows; 11 source-unavailable locations accounted for 2,564 rows. These values are evidence from the deployed snapshot, not universal properties of every future Marketplace refresh.
+The legacy ECDC snapshot verified on 26 July 2026 contained 61,900 daily rows across 214 locations from 31 December 2019 through 14 December 2020. The promoted ECDC/JHU extended mart verified on 31 July contains 224,265 rows, 221 ISO3 countries, and coverage through 9 March 2023. It has zero duplicate location/date keys; 4,194 rows explicitly classify an unavailable COVID rate denominator. These values are evidence from the deployed snapshot, not universal properties of every future Marketplace refresh.
 
 Automated EDA has two levels. `scripts/run_eda.py` exports coverage, missing population, correction, and latest-country CSVs from the Snowflake mart. The PySpark entry point adds explicit-schema profiling, null and distinct counts, numeric summaries, bounds, duplicate checks, schema-drift detection, and machine-readable quality publication.
 
@@ -121,6 +121,13 @@ The analytical model deliberately favors a narrow serving mart over a full star 
 | `MARTS.COUNTRY_LATEST_METRICS` | Transient table | Small precomputed snapshot for overview and identity lookups |
 | `MARTS.COUNTRY_CONTEXT_ANALYSIS` | View | Baseline, latest COVID metrics and descriptive real-GDP-per-capita changes |
 | `MARTS.CASE_INCREASE_PATTERNS` | View | Sustained daily-increase pattern results |
+| `STAGING.JHU_COUNTRY_DAILY` | Transient table | Normalized JHU continuation at the same country/date grain |
+| `STAGING.COVID_COUNTRY_DAILY_EXTENDED` | View | Deterministic ECDC/JHU splice under the reviewed handoff policy |
+| `MARTS.COVID_ENRICHED_EXTENDED_DATA` | Transient table | Refresh-time extended enrichment and cumulative windows |
+| `MARTS.COVID_ENRICHED_EXTENDED` | View | Stable public projection over the materialized extended rows |
+| `MARTS.CASE_INCREASE_PATTERNS_EXTENDED_DATA` | Transient table | Refresh-time segmented pattern recognition |
+| `MARTS.CASE_INCREASE_PATTERNS_EXTENDED` | View | Stable public projection over materialized patterns |
+| `MARTS.COUNTRY_LATEST_METRICS_EXTENDED` | Transient table | Extended overview and canonical identity lookup snapshot |
 
 `NULLIF` prevents division by zero. Missing observations and zero are never conflated. Per-capita metrics use the frozen denominator and mortality uses cumulative deaths divided by cumulative confirmed cases. These are reported-data indicators, not estimates of infections or infection fatality.
 
@@ -167,9 +174,11 @@ GET /forecast?country=LV&metric=new_cases&days=30&lookback_days=90
 
 It accepts daily cases or deaths, a 1-30-day horizon, and a 42-180-observation window. Snowflake applies the history limit before data crosses the network. The response includes reported history, predictions, lower and upper bounds, both candidates' MAE/RMSE, the selected model, and caveats.
 
-Redis uses versioned canonical keys and validates cached JSON back into the declared Pydantic model. Context keys have the visible namespace `covid-api:v3:<snapshot-id>:country-context:<iso3>`, so a newly deployed snapshot cannot reuse stale country context. Stable analytical payloads default to 24 hours; forecasts default to 6 hours. A per-key lease prevents concurrent misses from duplicating a Snowflake query. Prefix-scoped invalidation uses incremental `SCAN`, never database-wide `FLUSHDB`.
+Redis uses versioned canonical keys and validates cached JSON back into the declared Pydantic model. Every COVID-derived key includes `COVID_DATASET`; WDI-only context keys remain snapshot-based. Comparison and combined-page keys include both identities, so neither a dataset cutover nor a WDI publication can reuse an ambiguous response. Stable analytical payloads default to 24 hours and forecasts to 6 hours. A 60-second per-key lease prevents concurrent misses from duplicating a Snowflake query, while waiters stop after 15 seconds. Prefix-scoped invalidation uses incremental `SCAN`, never database-wide `FLUSHDB`.
 
-The committed manifest is loaded at application startup. If it differs from Snowflake's active snapshot, the context endpoint alone returns `503 context_data_unavailable`. COVID summary, time-series and forecast routes remain available, and the Country Explorer renders epidemiological content with a context warning. This failure boundary prevents optional context rollout from becoming a platform-wide outage.
+The committed manifest is loaded at application startup. If it differs from Snowflake's active snapshot, the context endpoint alone returns `503 context_data_unavailable`. If the manifest itself cannot be read, combined-page cache identity uses the explicit revision `unavailable`, allowing COVID-only degradation without sharing a key with verified context. COVID summary, time-series and forecast routes remain available, and the Country Explorer renders epidemiological content with a context warning. This failure boundary prevents optional context rollout from becoming a platform-wide outage.
+
+Snowflake sessions use a 10-second login timeout, 30-second network timeout, and 30-second statement timeout. Query tags use `<application-prefix>:<dataset>:<repository-operation>`. Success logs retain only the operation, Snowflake query ID, connection duration, query-and-fetch duration, row count, and selected dataset; SQL text, parameters, credentials, and connector URLs are excluded.
 
 ## 8. Dashboard implementation
 
@@ -198,9 +207,9 @@ The modelling copy uses non-negative incident counts; negative source correction
 
 The final 14 observations form a rolling-origin, one-step-ahead holdout. At each validation date, both candidates see only earlier data. Random train/test splitting was rejected because it leaks future regimes into past predictions. The candidate with lower MAE wins; an exact tie selects the simpler weekly mean. RMSE is also reported so large misses remain visible.
 
-For Latvia's latest 90 daily case observations, verified live on 29 July 2026, the history ran from 16 September through 14 December 2020. The 7-day mean won with holdout MAE 160.827 and RMSE 214.183; the trend scored MAE 173.407 and RMSE 225.542. The first forecast was 623.143 cases for 15 December 2020 with an empirical band of 210.429 to 1,035.857. The 30th point remained 623.143 with a widened band of 0 to 1,559.091. The widening is intentionally conservative and demonstrates why long-horizon projections from this baseline should not be over-interpreted.
+In the legacy ECDC-only verification on 29 July 2026, Latvia's latest 90 daily case observations ran from 16 September through 14 December 2020. The 7-day mean won with holdout MAE 160.827 and RMSE 214.183; the trend scored MAE 173.407 and RMSE 225.542. The first forecast was 623.143 cases for 15 December 2020 with an empirical band of 210.429 to 1,035.857. The 30th point remained 623.143 with a widened band of 0 to 1,559.091. This remains a reproducible model example, not the coverage claim for the promoted extended dataset.
 
-The interval uses the larger of the selected model's holdout RMSE and nearest-rank 90th-percentile absolute error, widened by the square root of forecast horizon. It is descriptive, not a calibrated probabilistic confidence interval. The data ends in 2020, so no forecast in this project is current public-health guidance.
+The interval uses the larger of the selected model's holdout RMSE and nearest-rank 90th-percentile absolute error, widened by the square root of forecast horizon. It is descriptive, not a calibrated probabilistic confidence interval. The API caveat now reports the actual final historical date returned by the selected Snowflake dataset instead of hardcoding 2020. Even with extended coverage through March 2023, no forecast in this project is current public-health guidance.
 
 ### 9.1 Offline clustering bonus
 
@@ -218,19 +227,41 @@ The implementation passed fixture validation in the pinned runtime. No credentia
 
 ## 10. Pattern recognition
 
-`CASE_INCREASE_PATTERNS` uses Snowflake `MATCH_RECOGNIZE` to find a start day followed by at least three consecutive calendar days where daily cases exceed the previous day. Requiring a one-day date difference prevents a gap from masquerading as an uninterrupted run.
+`CASE_INCREASE_PATTERNS_EXTENDED_DATA` uses Snowflake `MATCH_RECOGNIZE` during controlled publication to find a start day followed by at least three consecutive calendar days where daily cases exceed the previous day. Requiring a one-day date difference prevents a gap from masquerading as an uninterrupted run. `CASE_INCREASE_PATTERNS_EXTENDED` remains the stable public view; the legacy ECDC object is unchanged.
 
-The verified snapshot produced 1,769 matches across 170 locations. Examples include Russian Federation with 23 consecutive increases from 14 September to 7 October 2020, Spain with 20 from 24 February to 15 March 2020, and the United States with 16 from 8 to 24 March 2020. These are reproducible reporting patterns. They do not prove transmission mechanisms, policy effects, or clinical severity.
+The extended snapshot produced 5,135 matches across 193 locations, with zero invalid durations and zero matches below the required three increases. The prior legacy snapshot produced 1,769 matches across 170 locations. These are reproducible reporting patterns. They do not prove transmission mechanisms, policy effects, or clinical severity.
 
 ## 11. Performance optimization
 
 ### 11.1 Snowflake and API path
 
-The warehouse is intentionally X-Small with 60-second auto-suspend because the project is interactive and low volume. A monthly resource monitor bounds total cost. The latest-country transient table reduces overview and identity work to roughly one row per location. Time-series queries project named columns, filter by resolved location and date, and never use `SELECT *`. Forecast history is capped in Snowflake. Combined page endpoints and 24-hour/6-hour cache policies reduce repeated scans. The Comparison endpoint joins the narrow, one-row-per-country WDI baseline into its existing parameterized COVID statement. This repeats five baseline values across daily rows, but it is cheaper and more predictable for an interactive page than a browser fan-out or up to ten additional Snowflake statements. Contract version 2 and the committed WDI snapshot ID form part of the Comparison cache identity.
+The review first separated client-observed duration from Snowflake elapsed, compilation, and execution time. With result-cache reuse disabled, the pre-change detailed paths had 1,471–2,350 ms median Snowflake elapsed time, of which 1,057–1,832 ms was compilation. Measured queries scanned only about 7.1–7.2 MB, had zero overload or provisioning queue, used zero QAS bytes, and spilled zero bytes locally or remotely. The decision was therefore to remove repeated logical expansion, not to buy more scan capacity.
 
-No clustering key, materialized view, or Search Optimization Service is configured. At 61,900 mart rows, their maintenance and credit cost would likely exceed pruning benefits. This is an optimization decision, not an omission. A future scale trigger should use Query Profile evidence: bytes scanned, partitions pruned, latency percentiles, and credits per representative endpoint.
+`COVID_ENRICHED_EXTENDED_DATA` now materializes the deterministic ECDC/JHU splice, denominator and WDI enrichment, and window calculations as a transient refresh table. `CASE_INCREASE_PATTERNS_EXTENDED_DATA` materializes the segmented `MATCH_RECOGNIZE` result. Their established public names remain simple compatibility views, so repository object names, routes, and response contracts do not change. `sql/09_create_jhu_extension.sql` owns both rebuilds and then rebuilds `COUNTRY_LATEST_METRICS_EXTENDED`; the legacy ECDC objects remain unchanged.
 
-`COUNTRY_LATEST_METRICS` is atomically replaced from the verified enriched view, so readers never observe an intentionally empty snapshot. WDI publication first commits immutable candidate observations and an inactive registry row, then performs a separate controlled activation transaction. If downstream mart verification fails and a predecessor exists, bootstrap reactivates it and rebuilds the previous marts. This favors last-known-good availability over minimal orchestration.
+The live before/after comparison used one warmup and five measured repetitions for six representative repository operations. Every statement had a run-specific operation tag and query ID, and operator statistics were captured. Detailed medians changed as follows:
+
+| Operation | Snowflake before | Snowflake after | Compilation before | Compilation after | Result |
+| --- | ---: | ---: | ---: | ---: | --- |
+| Time series | 1,471 ms | 149 ms | 1,178 ms | 117 ms | 89.9% lower elapsed |
+| Country dashboard | 1,607 ms | 470 ms | 1,134 ms | 284 ms | 70.8% lower elapsed |
+| Comparison | 1,582 ms | 464 ms | 1,057 ms | 310 ms | 70.7% lower elapsed |
+| Patterns | 2,350 ms | 233 ms | 1,832 ms | 189 ms | 90.1% lower elapsed |
+| Forecast history | 1,438 ms | 158 ms | 1,118 ms | 124 ms | 89.0% lower elapsed |
+
+All detailed paths passed the keep threshold and none regressed. The overview was already correctly materialized through `COUNTRY_LATEST_METRICS_EXTENDED`; its 106 ms to 118 ms Snowflake movement is 12 ms of variance outside the changed boundary, while client duration fell from 759.1 ms to 474.1 ms. Public and materialized row counts and unordered hashes are equal: 224,265 enriched rows, 5,135 patterns, and 222 latest-country rows. The extended mart retains 221 ISO3 countries, 31 December 2019 to 9 March 2023 coverage, zero duplicate location/date keys, and the same 4,194 null-denominator classifications.
+
+The post-change detailed scans are still below 9 MB and the materialized enriched table is only 8.43 MB across eight micro-partitions. Some enriched query-history byte counts increased modestly even as compilation and execution fell sharply, confirming that logical-plan work rather than storage throughput was the limiting factor. A clustering key, automatic clustering, materialized view service, or Search Optimization would add maintenance or serverless cost without a demonstrated latency need. These features should be reconsidered only if row count, partitions, concurrency, or service objectives change materially.
+
+The warehouse contract is reasserted on every setup: X-Small Gen2, 60-second auto-suspend, auto-resume, attached resource monitor, and QAS disabled. QAS had zero accelerated bytes in the controlled pre-change run and zero credits in the preceding seven-day history. Snowflake describes QAS as separately billed serverless compute, while resource monitors control warehouses rather than serverless features; disabling it makes this bootcamp cost boundary easier to reason about. The checked-in monthly quota remains five credits, although the live audit allowance was temporarily 25. See the [QAS](https://docs.snowflake.com/en/user-guide/query-acceleration-service) and [resource-monitor](https://docs.snowflake.com/en/user-guide/resource-monitors) documentation.
+
+API sessions now have bounded failure behavior: 10-second login, 30-second network, and 30-second statement timeouts. Query tags include application prefix, selected dataset, and repository operation. Sanitized success logs include query ID, operation, connection time, query-and-fetch time, returned rows, and dataset, but exclude SQL, bind values, credentials, and URLs. Post-change connection medians were 223.7–292.3 ms. That is now a visible part of an uncached request, but Redis limits how often it is paid; without evidence of sustained cache-miss concurrency, connection pooling would add lifecycle and stale-session risk without a demonstrated need.
+
+Cache identity now includes `COVID_DATASET` for every COVID-derived response. WDI-only context stays snapshot-based, and combined pages use the explicit revision `unavailable` if the optional manifest cannot be read. The 60-second lease covers the statement bound; the 15-second waiter prevents request threads from waiting for the entire lease. After live publication and equivalence validation, the prefix-scoped cache clear removed one project key.
+
+The sanitized evidence is included in [`reports/snowflake/optimization_evidence_2026-07-31.md`](snowflake/optimization_evidence_2026-07-31.md) with per-query JSON in [`reports/snowflake/performance_evidence.json`](snowflake/performance_evidence.json). Immediate measurements use Information Schema query history because Snowflake documents up to 45 minutes of latency for Account Usage `QUERY_HISTORY`. Resource-monitor and warehouse credit totals are aggregate and cannot be attributed solely to API traffic; query tags delimit the measured statements. See the [QUERY_HISTORY reference](https://docs.snowflake.com/en/sql-reference/account-usage/query_history) and [Python Connector session-parameter guidance](https://docs.snowflake.com/en/developer-guide/python-connector/python-connector-connect).
+
+`COUNTRY_LATEST_METRICS_EXTENDED` is rebuilt after the verified compatibility view is switched, so overview and identity access remain appropriately materialized. WDI publication still uses separate controlled activation and downstream verification, favoring last-known-good availability over minimal orchestration.
 
 ### 11.2 Spark optimization evidence
 
@@ -268,7 +299,7 @@ The key lesson is that Spark optimization is workload-specific. Version 3 suppor
 
 ## 12. COVID-19 insights
 
-All findings describe the historical snapshot ending 14 December 2020.
+The findings below describe the legacy ECDC snapshot ending 14 December 2020; they are retained as reproducible historical analysis and are not the coverage statement for the promoted extended dataset.
 
 1. Latest-location totals were 71,503,614 confirmed cases and 1,612,833 deaths, a reported cumulative case-fatality ratio of 2.2556%. Because each location contributes its own latest available row, the snapshot is not perfectly synchronized.
 2. Cases per 100,000 were highest for Andorra (9,483.1), Montenegro (6,611.3), and Luxembourg (6,546.8). Small denominators make normalized burden very different from absolute burden.
@@ -276,7 +307,7 @@ All findings describe the historical snapshot ending 14 December 2020.
 4. Among locations with at least 10,000 cases, reported mortality was highest for Mexico (9.1159%), Ecuador (6.8651%), and Sudan (6.2985%). Testing access, outcome lag, and attribution differences prevent a causal ranking of healthcare quality.
 5. Lithuania recorded 3,381.1 cases per 100,000 versus Estonia at 1,358.0 and Latvia at 1,351.0. Lithuania's recorded incidence was about 2.5 times the other Baltic states, while reported mortality ranked differently: Latvia 1.3593%, Lithuania 0.8682%, Estonia 0.8253%.
 6. Eighteen negative-case rows and eight negative-death rows occurred across 17 locations. Correction handling is therefore materially important, not a theoretical edge case.
-7. The 1,769 sustained-increase patterns across 170 locations show repeated bursts in reported daily cases, but the algorithm detects monotonic reporting sequences rather than epidemiological regimes.
+7. The legacy snapshot's 1,769 sustained-increase patterns across 170 locations show repeated bursts in reported daily cases, but the algorithm detects monotonic reporting sequences rather than epidemiological regimes. The promoted extended snapshot contains 5,135 patterns across 193 locations.
 
 Confirmed cases are not infections. Countries differed in testing availability, reporting definitions, weekend effects, backfills, and death attribution. These caveats apply to charts, rankings, patterns, and forecasts.
 
@@ -298,6 +329,7 @@ Verification through 31 July 2026:
 | Dated Snowflake WDI publication and mart verification | Passed; committed evidence in `reports/world_bank/snowflake_verification.json` |
 | Dated legacy/new COVID reconciliation | Passed; 61,836 exact canonical rows and zero tolerance failures |
 | Dated context/API smoke | Passed with `COVID_APP_ROLE`; combined page context available |
+| Tagged Snowflake before/after profile | Passed; 36 statements per phase, equal hashes, 70.7% to 90.1% lower detailed-query medians, zero measured queue/QAS/spill |
 | Snowflake context export fingerprint | Passed; immutable batch records 213 baseline rows |
 | Pinned Docker Spark image | Previously built successfully; current dependencies unchanged |
 | Exact pinned Spark runtime suite | 31 passed with Python 3.12.13, PySpark 3.5.6, and Java 17.0.19 |
@@ -319,7 +351,7 @@ Engineering follow-ups:
 
 1. Add a production Compose override without bind mounts or reload, then add TLS, secret injection, authentication, and rate limiting.
 2. Add a MongoDB JSON Schema validator and integration tests with disposable Redis/MongoDB containers.
-3. Add Snowflake query tags, statement timeouts, Query Profile captures, and refresh orchestration with cache invalidation.
+3. Revalidate the materialization boundary, connection policy, and physical-design choices only when data volume, cache-miss concurrency, or service objectives change materially.
 4. Add chart-level source notes, correction markers, downloads, and synchronized-date options.
 5. Reassess clustering features and thresholds only from real extended-data diagnostics; do not interpret fixture segments or treat descriptive WDI profiles causally.
 
