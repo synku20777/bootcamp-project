@@ -134,10 +134,9 @@ uv run pre-commit run --all-files
 
 ## The Python quality workflow stops at Black
 
-The workflow stops at the first failed quality step. A failure in **Check
-formatting** means committed Python source does not match the pinned Black
-version; it is not a Ruff or unit-test failure. The CI command uses `--check`,
-so it reports a diff and exits without changing files.
+The workflow stops at the first failed quality step. A **Check formatting** failure means that Python source does not match the pinned Black version.
+
+The failure does not come from Ruff or the unit tests. The CI command reports a diff and does not change files.
 
 Reproduce and fix the result with the locked environment:
 
