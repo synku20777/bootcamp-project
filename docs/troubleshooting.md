@@ -107,17 +107,7 @@ See [World Bank country context](architecture/world-bank-context.md) for publica
 
 Setup exits with status `130` after an interruption. It keeps containers, volumes, and resumable state.
 
-On Windows, run:
-
-```powershell
-.\setup.ps1 --resume
-```
-
-On macOS or Linux, run:
-
-```bash
-./setup.sh --resume
-```
+Run the platform-specific resume command in [README step 6](../README.md#6-run-the-one-time-setup).
 
 Setup checks each completed step before it skips that step.
 
@@ -134,10 +124,9 @@ uv run pre-commit run --all-files
 
 ## The Python quality workflow stops at Black
 
-The workflow stops at the first failed quality step. A failure in **Check
-formatting** means committed Python source does not match the pinned Black
-version; it is not a Ruff or unit-test failure. The CI command uses `--check`,
-so it reports a diff and exits without changing files.
+The workflow stops at the first failed quality step. A **Check formatting** failure means that Python source does not match the pinned Black version.
+
+The failure does not come from Ruff or the unit tests. The CI command reports a diff and does not change files.
 
 Reproduce and fix the result with the locked environment:
 

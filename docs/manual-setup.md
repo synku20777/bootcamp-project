@@ -88,17 +88,7 @@ The queries check these conditions:
 
 Do not calculate ECDC daily values with another subtraction. The source already supplies daily measures.
 
-Confirm that both required Marketplace tables return data:
-
-```sql
-SELECT *
-FROM COVID19_EPIDEMIOLOGICAL_DATA.PUBLIC.ECDC_GLOBAL
-LIMIT 1;
-
-SELECT *
-FROM COVID19_EPIDEMIOLOGICAL_DATA.PUBLIC.JHU_COVID_19_TIMESERIES
-LIMIT 1;
-```
+Run the Marketplace queries in [README step 2](../README.md#2-add-the-marketplace-database). Both queries must return a row.
 
 ## 5. Create the ECDC staging layer
 
@@ -208,6 +198,8 @@ Open <http://localhost:8050/overview>. Confirm that the Overview page contains d
 - [ ] `MARTS.COUNTRY_BASELINE_2019` contains eligible countries.
 - [ ] `MARTS.COVID_ENRICHED` contains rows.
 - [ ] `STAGING.COVID_COUNTRY_DAILY_EXTENDED` contains 222 locations.
+- [ ] `MARTS.COVID_ENRICHED_EXTENDED_DATA` contains rows.
+- [ ] `MARTS.CASE_INCREASE_PATTERNS_EXTENDED_DATA` contains valid patterns.
 - [ ] `MARTS.COUNTRY_LATEST_METRICS_EXTENDED` contains 222 rows.
 - [ ] All four local services are healthy.
 - [ ] The liveness, readiness, and Snowflake checks succeed.

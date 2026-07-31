@@ -51,27 +51,21 @@ The first Overview response must include `X-Cache: MISS`. The second equal reque
 
 ## Cache behavior
 
-Stable analytical responses use a 24-hour lifetime. Forecast responses use a six-hour lifetime.
-
 Every COVID-derived cache key includes `COVID_DATASET`. Comparison and combined-page keys also include the committed WDI snapshot identifier.
 
 WDI-only context keys remain snapshot-based. A dataset cutover or WDI publication cannot reuse an ambiguous response.
 
-If the application cannot read the manifest, an optional combined page uses the explicit context revision `unavailable`. The page can then show COVID-only content.
+If the application cannot read the manifest, a combined page uses the context revision `unavailable`. The page can then show COVID-only content.
 
-The context-only route still fails closed. A cache-fill lock lasts 60 seconds, and waiters stop after 15 seconds.
+The context route returns `503` when its revision is unavailable.
 
 Page-level dashboard stores prevent one API request for each chart. Render callbacks use the stored page response.
 
-See [Configuration](configuration.md) for cache namespace and connection settings.
+See [Configuration](configuration.md) for lifetimes, locks, namespaces, and connection settings.
 
 ## Annotations
 
-Create or verify the MongoDB indexes:
-
-```bash
-docker compose exec api python -m scripts.setup_mongodb
-```
+Setup creates the MongoDB indexes. See [Manual setup](manual-setup.md#9-start-the-local-services) to recreate them.
 
 Create an annotation:
 

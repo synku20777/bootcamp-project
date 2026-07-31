@@ -1,5 +1,19 @@
 # Analytics
 
+## Case-increase patterns
+
+`GET /patterns/case-increases` returns periods with consecutive daily case increases.
+
+Snowflake creates the patterns during extension publication. This avoids another `MATCH_RECOGNIZE` run after each cache miss.
+
+A pattern has one start day and at least three increase days. Each increase day has more `NEW_CASES_RAW` than the previous day.
+
+The request accepts an optional country and a date range. The minimum is 3 through 30 increases.
+
+The row limit is 1 through 200. Response totals describe all matches before this limit.
+
+The response also gives the longest pattern and the latest pattern end date.
+
 ## Forecasting
 
 `GET /forecast` supports `new_cases` and `new_deaths`. The forecast horizon is 1 through 30 days.

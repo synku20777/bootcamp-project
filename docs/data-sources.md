@@ -21,6 +21,10 @@ Eight JHU-only countries keep their JHU history from 2020-01-22.
 
 Set `COVID_DATASET=extended` to use the promoted series. Set `COVID_DATASET=legacy` to use the ECDC-only marts.
 
+Spark uses ECDC for transformation benchmarks. It uses the governed extended mart for offline clustering.
+
+Spark does not calculate another splice boundary. This rule keeps one source policy in Snowflake.
+
 ## Sources not used as COVID facts
 
 | Group | Examples | Reason |
@@ -34,41 +38,19 @@ Set `COVID_DATASET=extended` to use the promoted series. Set `COVID_DATASET=lega
 
 ## World Bank context
 
-The project uses five WDI indicators for 2019 through 2021:
+The project uses WDI source 2 for 2019 through 2021. It accepts these indicators:
 
-| Indicator | Meaning | Use |
-| --- | --- | --- |
-| `SP.POP.TOTL` | Annual population | Country context only |
-| `EN.POP.DNST` | Population density | Contact-environment context |
-| `SP.POP.65UP.TO.ZS` | Population aged 65 and older | Age-vulnerability context |
-| `NY.GDP.PCAP.KD` | Real GDP per person | Baseline and descriptive change |
-| `SH.XPD.CHEX.PP.CD` | Health expenditure per person, PPP | Health-system context |
+- `SP.POP.TOTL`
+- `EN.POP.DNST`
+- `SP.POP.65UP.TO.ZS`
+- `NY.GDP.PCAP.KD`
+- `SH.XPD.CHEX.PP.CD`
 
-The 2019 values form the pre-pandemic baseline. WDI values do not enter the forecasting code.
+The 2019 values form the pre-pandemic baseline. This order reduces temporal leakage in descriptive comparisons.
 
-See [World Bank country context](architecture/world-bank-context.md) for the snapshot, identity, coverage, and rollback rules.
+WDI values do not enter the forecasting code. The forecast uses only COVID dates and incident measures.
 
-### World Bank snapshot maintenance
-
-Normal setup publishes the committed data. It does not contact the World Bank API.
-
-Use the network refresh only when you want to review a new source snapshot:
-
-```bash
-uv run python -m scripts.world_bank_indicators refresh
-```
-
-The refresh retrieves every result page for the indicator allowlist. It validates identities and coverage before it writes candidate files.
-
-Review the WDI CSV, manifest, identity report, and coverage report together. A failed check cannot replace the committed files.
-
-The raw WDI grain is:
-
-```text
-SNAPSHOT_ID + CANONICAL_ISO3 + INDICATOR_CODE + OBSERVATION_YEAR
-```
-
-Country names are display values. The project does not use them as WDI join keys.
+See [World Bank country context](architecture/world-bank-context.md) for indicator rationale, snapshots, identity, coverage, and rollback.
 
 ## Population denominator
 
@@ -117,6 +99,14 @@ COVID19_EPIDEMIOLOGICAL_DATA.PUBLIC.JHU_COVID_19_TIMESERIES
 STAGING.COVID_COUNTRY_DAILY
     + STAGING.JHU_COUNTRY_DAILY
     -> STAGING.COVID_COUNTRY_DAILY_EXTENDED
+
+STAGING.COVID_COUNTRY_DAILY_EXTENDED
+    -> MARTS.CASE_INCREASE_PATTERNS_EXTENDED_DATA
+    -> MARTS.CASE_INCREASE_PATTERNS_EXTENDED
+
+STAGING.COVID_COUNTRY_DAILY_EXTENDED
+    + MARTS.COUNTRY_COVID_DENOMINATOR_EXTENDED
+    -> MARTS.COVID_ENRICHED_EXTENDED_DATA
     -> MARTS.COVID_ENRICHED_EXTENDED
     -> MARTS.COUNTRY_LATEST_METRICS_EXTENDED
 ```

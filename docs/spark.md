@@ -128,23 +128,7 @@ This accepted evidence predates the fifth input and clustering stage. It remains
 
 Run a credentialed version 4 export before the project claims real extended-data cluster results.
 
-Spark reproduced the Snowflake context baseline with these values:
-
-- 213 rows.
-- 20,199 canonical bytes.
-- SHA-256 `6fa8fc8208d748a8dfbd2b4d606eb09cf2faae59869dfa52c62f3b3913872d83`.
-
-The optimized plan contains three build-right broadcast hash joins.
-
-| Comparison | Baseline median | Candidate median | Result |
-| --- | ---: | ---: | --- |
-| Early projection and filter | 183.939 ms | 216.075 ms | Candidate was not faster |
-| Three broadcast joins | 762.517 ms | 561.944 ms | Candidate was faster |
-| Adaptive duplicate aggregation | 347.056 ms | 426.586 ms | Candidate was not faster |
-| Reused-frame cache | 323.322 ms | 372.224 ms | Candidate was not faster |
-| File layout | 2,787.065 ms | 1,645.820 ms | Candidate was faster |
-
-The published Parquet size is 421,412 bytes. The pipeline writes one unpartitioned file at this size.
+See the [Spark evidence report](../reports/spark/README.md) for fingerprints, benchmark medians, and file-layout results.
 
 ## 5. Run the Spark tests
 
