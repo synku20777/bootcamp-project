@@ -59,7 +59,7 @@ docker compose logs dashboard api
 
 MongoDB applies root credentials only when it creates the data directory. Restore the credentials that created the current volume.
 
-Delete the volume only when local annotations are disposable. This operation cannot be reversed.
+Delete the volume only when you can discard the local annotations. You cannot reverse this operation.
 
 Run these commands only after you accept the data loss:
 

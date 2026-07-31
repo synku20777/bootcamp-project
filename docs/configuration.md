@@ -46,7 +46,9 @@ Set `COVID_DATASET=legacy` to read the original ECDC-only marts. This setting do
 
 Every COVID-derived cache key also includes `COVID_DATASET`. A legacy response and an extended response therefore cannot share a cache entry. Change `CACHE_NAMESPACE` when response semantics change.
 
-API query tags use `<prefix>:<dataset>:<operation>`. This format separates legacy and extended traffic and attributes each statement to one repository operation. The live profiler disables `SNOWFLAKE_USE_CACHED_RESULT`; normal API serving keeps it enabled.
+API query tags use `<prefix>:<dataset>:<operation>`. This format separates legacy and extended traffic. It also attributes each statement to one repository operation.
+
+The live profiler disables `SNOWFLAKE_USE_CACHED_RESULT`. Normal API serving keeps it enabled.
 
 ## MongoDB and Redis
 
@@ -60,7 +62,7 @@ API query tags use `<prefix>:<dataset>:<operation>`. This format separates legac
 
 If `MONGO_ROOT_PASSWORD` is blank, setup creates a strong password. Setup also builds the encoded MongoDB URI.
 
-Redis is required for analytical routes. The API does not query Snowflake when Redis is unavailable.
+Analytical routes require Redis. The API does not query Snowflake when Redis is unavailable.
 
 ## Cache settings
 
@@ -70,7 +72,9 @@ The cache lock lasts 60 seconds. A waiting request can wait up to 15 seconds for
 
 Every COVID-derived key includes `COVID_DATASET`. Comparison and combined-page keys also include the committed WDI snapshot identifier. WDI-only context keys remain snapshot-based.
 
-If the WDI manifest cannot be read, an optional combined page uses the explicit revision `unavailable`. This identity permits a cached COVID-only response without sharing a key with verified WDI context. The context-only route still fails closed.
+If the application cannot read the WDI manifest, an optional combined page uses the explicit revision `unavailable`. This identity permits a cached COVID-only response.
+
+The response does not share a key with verified WDI context. The context-only route still fails closed.
 
 After a mart refresh, first validate the new marts and rebuild `COUNTRY_LATEST_METRICS_EXTENDED`. Clear the project cache only after publication succeeds. This order preserves the last-known-good cache if publication fails.
 

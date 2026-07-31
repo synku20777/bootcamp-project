@@ -53,9 +53,13 @@ The first Overview response must include `X-Cache: MISS`. The second equal reque
 
 Stable analytical responses use a 24-hour lifetime. Forecast responses use a six-hour lifetime.
 
-Every COVID-derived cache key includes `COVID_DATASET`. Comparison and combined-page keys also include the committed WDI snapshot identifier; WDI-only context keys remain snapshot-based. A dataset cutover or WDI publication therefore cannot reuse an ambiguous response.
+Every COVID-derived cache key includes `COVID_DATASET`. Comparison and combined-page keys also include the committed WDI snapshot identifier.
 
-If the manifest cannot be read, an optional combined page uses the explicit context revision `unavailable` and can degrade to COVID-only content. The context-only route still fails closed. A cache-fill lock lasts 60 seconds, and waiters stop after 15 seconds.
+WDI-only context keys remain snapshot-based. A dataset cutover or WDI publication cannot reuse an ambiguous response.
+
+If the application cannot read the manifest, an optional combined page uses the explicit context revision `unavailable`. The page can then show COVID-only content.
+
+The context-only route still fails closed. A cache-fill lock lasts 60 seconds, and waiters stop after 15 seconds.
 
 Page-level dashboard stores prevent one API request for each chart. Render callbacks use the stored page response.
 

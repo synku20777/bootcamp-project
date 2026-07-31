@@ -127,7 +127,7 @@ Prepare these Snowflake values:
 | `SNOWFLAKE_NETWORK_TIMEOUT_SECONDS` | `30` by default |
 | `SNOWFLAKE_STATEMENT_TIMEOUT_SECONDS` | `30` by default for API statements |
 | `SNOWFLAKE_QUERY_TAG_PREFIX` | `covid-api` by default |
-| `COVID_DATASET` | `extended` for the promoted ECDC/JHU series; `legacy` for rollback |
+| `COVID_DATASET` | `extended` selects the promoted ECDC/JHU series. `legacy` selects rollback marts. |
 
 Keep the three roles separate. Do not use `ACCOUNTADMIN` as the API role.
 
@@ -199,7 +199,7 @@ Run:
 docker compose ps
 ```
 
-The `api`, `dashboard`, `mongo`, and `redis` services must be healthy.
+Make sure the `api`, `dashboard`, `mongo`, and `redis` services are healthy.
 
 On Windows PowerShell, run:
 
@@ -304,7 +304,13 @@ The production API reads the promoted parallel marts built from `COVID19_EPIDEMI
 
 `JHU_COVID_19_TIMESERIES` mixes country, province, and county rows and stores cumulative measures by case type. The extension normalizes it to one row per ISO3 and date before deriving daily changes.
 
-The sources are spliced rather than blended. Shared countries use ECDC through their governed boundary and JHU afterward. Spain switches on 2020-12-14; other shared countries switch on 2020-12-15. Eight JHU-only countries retain their full JHU history from 2020-01-22. `COVID_DATASET=extended` is the API default; `COVID_DATASET=legacy` restores the original ECDC-only reads without changing either set of marts. API summaries label populated denominators as `ACTIVE` or `CANDIDATE`; the status is `null` when no denominator is available.
+The project splices the sources instead of blending them. Shared countries use ECDC through their governed boundary and JHU after that boundary.
+
+Spain switches on 2020-12-14. Other shared countries switch on 2020-12-15. Eight JHU-only countries retain their full JHU history from 2020-01-22.
+
+The API uses `COVID_DATASET=extended` by default. Set `COVID_DATASET=legacy` to restore ECDC-only reads without changing either mart family.
+
+API summaries label populated denominators as `ACTIVE` or `CANDIDATE`. The status is `null` when no denominator is available.
 
 ### Tables not used as COVID facts
 
@@ -674,7 +680,9 @@ The first overview response should include `X-Cache: MISS`. The second equal req
 
 Stable analytical responses, including case-increase patterns, use a 24-hour time to live. Forecasts use a six-hour time to live. Every COVID-derived cache key includes `COVID_DATASET`, so legacy and extended responses cannot collide. Comparison and combined-page keys also include the committed WDI snapshot ID. WDI-only context keys remain snapshot-based.
 
-If the WDI manifest cannot be read, an optional combined page uses the explicit context revision `unavailable`. This allows the COVID-only response to be cached without sharing identity with a valid WDI snapshot. The context-only route still fails closed because it cannot satisfy its contract without a verified snapshot.
+If the application cannot read the WDI manifest, an optional combined page uses the explicit context revision `unavailable`. This revision permits a cached COVID-only response without sharing identity with a valid WDI snapshot.
+
+The context-only route still fails closed because it cannot satisfy its contract without a verified snapshot.
 
 The stampede lock has a 60-second lease and waiters stop after 15 seconds. These bounds cover the 30-second Snowflake statement timeout without permitting an abandoned lock to stall requests for a full cache TTL.
 
@@ -692,19 +700,40 @@ Page-level dashboard stores prevent one API request per chart. Render callbacks 
 
 The extended serving path materializes the expensive source splice, denominator enrichment, WDI joins, cumulative windows, and `MATCH_RECOGNIZE` work during controlled publication. `COVID_ENRICHED_EXTENDED` and `CASE_INCREASE_PATTERNS_EXTENDED` remain stable public views over transient `_DATA` tables, so API routes and response contracts do not change. Rerunning `sql/09_create_jhu_extension.sql` owns the complete refresh lifecycle.
 
-The live 31 July 2026 comparison used one warmup and five measured repetitions with Snowflake result-cache reuse disabled. Median Snowflake elapsed time fell from 1,471–2,350 ms to 149–470 ms across every detailed operation; compilation fell by 70.7–90.1%. Results, coverage, key uniqueness, and unordered hashes remained equal. All 30 measured post-change statements recorded zero queue time, spill, and Query Acceleration activity; the excluded first warmup recorded 82 ms of provisioning queue while the warehouse resumed. The full method, limits, query-tag runs, and results are in [`reports/snowflake/optimization_evidence_2026-07-31.md`](reports/snowflake/optimization_evidence_2026-07-31.md); sanitized per-query data is in [`reports/snowflake/performance_evidence.json`](reports/snowflake/performance_evidence.json).
+The live comparison on 31 July 2026 used one warmup and five measured repetitions. The comparison disabled Snowflake result-cache reuse.
 
-The warehouse contract is reasserted on every setup: X-Small Gen2, 60-second auto-suspend, attached resource monitor, and Query Acceleration disabled. QAS was not used by the measured workload and is separately billed serverless compute outside resource-monitor control. The checked-in monitor quota remains five credits for normal bootcamp use; the live account used a temporary 25-credit audit allowance.
+Median Snowflake elapsed time decreased from 1,471–2,350 ms to 149–470 ms across all detailed operations. Compilation time decreased by 70.7–90.1%.
 
-No clustering key, automatic clustering, or Search Optimization is configured. The materialized enriched table is only 224,265 rows and 8.43 MB across eight micro-partitions, while detailed Snowflake medians are already below 0.5 seconds. Their maintenance or serverless cost is not justified at this scale.
+Results, coverage, key uniqueness, and unordered hashes remained equal. All 30 measured post-change statements recorded zero queue time, spill, and Query Acceleration activity.
 
-To repeat the comparison, run the capture script with phase `pre_materialization`, deploy with the normal bootstrap path, then run it with phase `post_materialization`, using the same environment file and output path. The script disables result-cache reuse, applies run-specific query tags, and stores query IDs, connection and Snowflake timings, bytes, pruning, queue, QAS, and spill evidence. The command is:
+The excluded first warmup recorded 82 ms of provisioning queue while the warehouse resumed. The [evidence report](reports/snowflake/optimization_evidence_2026-07-31.md) gives the complete method and results. The [JSON evidence](reports/snowflake/performance_evidence.json) contains sanitized per-query data.
+
+Setup reasserts the warehouse contract on each run. The contract uses X-Small Gen2, 60-second auto-suspend, an attached resource monitor, and disabled Query Acceleration.
+
+The measured workload did not use QAS. Snowflake bills QAS separately from warehouse compute, and resource monitors do not control it.
+
+The repository keeps a five-credit quota for normal bootcamp use. The live audit temporarily used a 25-credit allowance.
+
+The project does not configure a clustering key, automatic clustering, or Search Optimization. The materialized enriched table contains 224,265 rows in eight micro-partitions.
+
+The table uses 8.43 MB, and detailed Snowflake medians are below 0.5 seconds. This scale does not justify the extra maintenance or serverless cost.
+
+To repeat the comparison:
+
+1. Run the capture script with phase `pre_materialization`.
+2. Deploy with the normal bootstrap path.
+3. Run the script with phase `post_materialization`.
+4. Use the same environment file and output path for both captures.
+
+The script disables result-cache reuse and applies run-specific query tags. It stores query IDs, timings, bytes, pruning, queue, QAS, and spill evidence.
 
 ```bash
 uv run python scripts/capture_snowflake_performance.py --phase post_materialization --env-file .env --output reports/snowflake/performance_evidence.json --warmups 1 --repetitions 5
 ```
 
-Use `pre_materialization` for the first phase. Account Usage `QUERY_HISTORY` can lag by up to 45 minutes, so the script uses Information Schema history for immediate measurements. Warehouse credits are aggregate and cannot be attributed solely to API traffic; the query tags identify the statements in scope.
+Use `pre_materialization` for the first phase. Account Usage `QUERY_HISTORY` can lag by up to 45 minutes.
+
+The script uses Information Schema history for immediate measurements. Warehouse credits are aggregate and cannot identify API traffic alone. Query tags identify the measured statements.
 
 ### Annotation workflow
 
@@ -744,11 +773,11 @@ The API validates the country and report date against Snowflake before insertion
 | `SNOWFLAKE_DATABASE` | Snowflake clients | Project database |
 | `SNOWFLAKE_SCHEMA` | Deployment scripts | Default deployment schema |
 | `SNOWFLAKE_API_SCHEMA` | FastAPI | Analytical schema |
-| `SNOWFLAKE_LOGIN_TIMEOUT_SECONDS` | FastAPI | Connector login retry bound; default 10 seconds |
-| `SNOWFLAKE_NETWORK_TIMEOUT_SECONDS` | FastAPI | Connector network retry bound; default 30 seconds |
-| `SNOWFLAKE_STATEMENT_TIMEOUT_SECONDS` | FastAPI | Snowflake statement bound; default 30 seconds |
-| `SNOWFLAKE_QUERY_TAG_PREFIX` | FastAPI | Query attribution prefix; default `covid-api` |
-| `SNOWFLAKE_USE_CACHED_RESULT` | FastAPI and profiler | Snowflake result-cache policy; enabled for serving and disabled by the profiler |
+| `SNOWFLAKE_LOGIN_TIMEOUT_SECONDS` | FastAPI | Connector login retry bound. The default is 10 seconds. |
+| `SNOWFLAKE_NETWORK_TIMEOUT_SECONDS` | FastAPI | Connector network retry bound. The default is 30 seconds. |
+| `SNOWFLAKE_STATEMENT_TIMEOUT_SECONDS` | FastAPI | Snowflake statement bound. The default is 30 seconds. |
+| `SNOWFLAKE_QUERY_TAG_PREFIX` | FastAPI | Query attribution prefix. The default is `covid-api`. |
+| `SNOWFLAKE_USE_CACHED_RESULT` | FastAPI and profiler | Serving enables the result cache. The profiler disables it. |
 | `COVID_DATASET` | FastAPI | Select `extended` or the `legacy` rollback marts |
 | `MONGO_ROOT_USERNAME` | Compose | MongoDB root user |
 | `MONGO_ROOT_PASSWORD` | Compose | MongoDB root password |
@@ -757,8 +786,8 @@ The API validates the country and report date against Snowflake before insertion
 | `REDIS_URL` | FastAPI | Redis connection string |
 | `CACHE_NAMESPACE` | FastAPI | Version prefix for cache keys |
 | `CACHE_TTL_*` | FastAPI | Endpoint time-to-live values |
-| `CACHE_LOCK_SECONDS` | FastAPI | Per-key lock lease; default 60 seconds |
-| `CACHE_LOCK_WAIT_SECONDS` | FastAPI | Cache-fill waiter bound; default 15 seconds |
+| `CACHE_LOCK_SECONDS` | FastAPI | Per-key lock lease. The default is 60 seconds. |
+| `CACHE_LOCK_WAIT_SECONDS` | FastAPI | Cache-fill waiter bound. The default is 15 seconds. |
 | `DASHBOARD_API_BASE_URL` | Dash | Internal API URL |
 | `DASHBOARD_PUBLIC_API_BASE_URL` | Browser links | Host-visible API URL |
 
@@ -838,7 +867,9 @@ COVID_DATASET=extended
 CACHE_NAMESPACE=covid-api:v4
 ```
 
-For an immediate application rollback, set `COVID_DATASET=legacy`, choose a new cache namespace, and restart the API. This changes reads only; it does not rename, replace, or delete either mart family.
+For an immediate application rollback, set `COVID_DATASET=legacy`. Choose a new cache namespace, and restart the API.
+
+This setting changes reads only. It does not rename, replace, or delete either mart family.
 
 Run the migration reconciliation before a consumer cutover:
 
@@ -915,7 +946,17 @@ uv run python scripts/export_spark_sources.py \
 
 This is the only Spark step that contacts Snowflake. It writes one immutable batch under `data/source/`.
 
-The version 3 source contract contains five files: ECDC daily data, the governed `COVID_ANALYTICS.MARTS.COVID_ENRICHED_EXTENDED` series, the frozen 2020 population denominator, explicit country mappings, and active versioned WDI observations. The extended entry records its selected Snowflake object, row count, date range, country count, byte count, and SHA-256 checksum. The manifest also records the WDI snapshot ID and accepted Snowflake country-context fingerprint. The exporter never overwrites an existing batch identifier.
+The version 3 source contract contains these five files:
+
+- ECDC daily data.
+- The governed `COVID_ANALYTICS.MARTS.COVID_ENRICHED_EXTENDED` series.
+- The frozen 2020 population denominator.
+- Explicit country mappings.
+- Active versioned WDI observations.
+
+The extended entry records its Snowflake object, row count, date range, country count, byte count, and SHA-256 checksum. The manifest also records the WDI snapshot ID and accepted Snowflake country-context fingerprint.
+
+The exporter never overwrites an existing batch identifier.
 
 ### 2. Run Bronze ingestion and profiling
 
@@ -950,19 +991,45 @@ Schema failures publish only quality evidence. Other failures can publish Bronze
 
 Warnings allow curated publication. The Bronze manifest records the ruleset, quality result, quality-document checksum, source kind, runtime policy, and calculated versus actual file counts.
 
-The runtime policy derives bounded shuffle partitions from total input bytes and a configurable advisory partition size. Broadcast hints are applied only when each dimension's manifest byte count is below the configured limit. The optimized physical plan must match those decisions. Country-key skew is recorded from median, p95, maximum, maximum share, and maximum-to-median ratio. Event-log evidence includes shuffle and input bytes plus memory spill, disk spill, peak execution memory, executor runtime, and JVM garbage-collection time.
+The runtime policy derives bounded shuffle partitions from total input bytes and a configurable advisory partition size. The job applies a broadcast hint only below the configured manifest byte limit.
 
-Bronze and curated publication target approximately 128 MiB files. Coalescing is used only to reduce an existing partition count; repartitioning is used only when the target count must increase. Curated month-layout calibration measures the actual compressed month directories before choosing a partitioned or compact layout.
+The optimized physical plan must match these decisions. The job records median, p95, maximum, maximum share, and maximum-to-median ratio for country-key skew.
+
+Event-log evidence includes input and shuffle bytes. It also includes spill, peak execution memory, executor runtime, and JVM garbage-collection time.
+
+Bronze and curated publication target files of approximately 128 MiB. The job coalesces only to reduce a partition count. It repartitions only to increase the count.
+
+Curated month-layout calibration measures the compressed month directories before it selects a partitioned or compact layout.
 
 ### 3. Offline clustering methodology and outputs
 
-ISO3 is the analytical unit. Eligible countries need a valid population denominator, complete normalized measures, and at least 180 distinct daily observations. Negative source corrections remain unchanged in Bronze; only the clustering working copy floors incident rates at zero before complete 14-day rolling means are calculated.
+ISO3 is the analytical unit. Eligible countries need a valid population denominator, complete normalized measures, and at least 180 distinct daily observations.
 
-Five COVID-only features are fitted: latest cumulative cases and deaths per 100,000, peak 14-day mean cases and deaths per 100,000, and volatility of the 14-day mean case rate. Each feature receives `log1p` and standardization before Spark ML KMeans. WDI variables join only after fitting for descriptive local profiles and cannot affect membership.
+Bronze retains negative source corrections. The clustering working copy floors incident rates at zero before it calculates complete 14-day rolling means.
 
-The selector evaluates `k=2..6` over seeds 13, 29, 47, 71, and 97. Runs with a cluster smaller than `max(3, 2% of eligible countries)` are rejected. Publication requires at least four valid seeds, positive median silhouette, and median pairwise Adjusted Rand Index of at least 0.75. The highest median silhouette wins; candidates within 0.01 use the smaller `k`. The authoritative seed is closest to the median silhouette, with lower seed as the tie-break. Cluster IDs are relabelled by ascending standardized centroid burden.
+The model fits five COVID-only features:
 
-Complete assignments, raw/log/standardized features, centroid distance, exclusions, post-fit WDI profiles, scaler, and KMeans model are written atomically under ignored `outputs/spark/<run>/clustering/model_id=<run>/`. Only diagnostics may be committed; they contain feature and selection contracts, aggregate counts, checksums, runtime/skew/task metrics, and lineage—not country assignments or WDI profiles.
+- Latest cumulative cases per 100,000.
+- Latest cumulative deaths per 100,000.
+- Peak 14-day mean cases per 100,000.
+- Peak 14-day mean deaths per 100,000.
+- Volatility of the 14-day mean case rate.
+
+The pipeline applies `log1p` and standardization before Spark ML KMeans. WDI variables join only after fitting and cannot affect membership.
+
+The selector evaluates `k=2..6` over seeds 13, 29, 47, 71, and 97. It rejects runs with a cluster below `max(3, 2% of eligible countries)`.
+
+Publication requires four valid seeds, a positive median silhouette, and a median pairwise Adjusted Rand Index of at least 0.75. The highest median silhouette wins.
+
+Candidates within 0.01 use the smaller `k`. The authoritative seed is closest to the median silhouette. A lower seed breaks a tie.
+
+The pipeline relabels cluster IDs by ascending standardized centroid burden.
+
+The job writes all model artifacts atomically under ignored `outputs/spark/<run>/clustering/model_id=<run>/`. Artifacts include assignments, features, distances, exclusions, profiles, the scaler, and the KMeans model.
+
+Only diagnostics can enter the repository. They contain contracts, aggregate counts, checksums, runtime metrics, skew metrics, task metrics, and lineage.
+
+Diagnostics do not contain country assignments or WDI profiles.
 
 ### 4. Run a new benchmark
 
@@ -972,7 +1039,7 @@ docker compose --profile spark run --rm spark benchmark \
   --benchmark-run-id benchmark-v2
 ```
 
-Each comparison uses one warm-up and five measured repetitions in one JVM. The benchmark alternates the variant order.
+Each comparison uses one warmup and five measured repetitions in one JVM. The benchmark alternates the variant order.
 
 Both variants must pass a correctness gate before timing. The gate checks schema, row count, and a row-multiset checksum.
 
@@ -998,7 +1065,9 @@ Current authoritative evidence remains version 3 from source batch `wdi-context-
 | Reused-frame cache | 323.322 ms | 372.224 ms | Candidate was not faster |
 | File layout | 2,787.065 ms | 1,645.820 ms | Candidate was faster |
 
-The version 3 final published Parquet size is 421,412 bytes, below the 128 MiB target. The new implementation replaces its proportional month estimate with actual compressed month output, but no real-data version 4 measurement is claimed yet. Clustering is implemented and fixture-validated; authoritative extended-data evidence remains pending a credentialed export.
+The final version 3 Parquet file contains 421,412 bytes, below the 128 MiB target. The new implementation measures compressed month output instead of estimating it.
+
+The project does not claim a real-data version 4 measurement. The project implements clustering and validates it with fixtures. Authoritative extended-data evidence needs a credentialed export.
 
 ### 5. Runtime controls and Spark tests
 

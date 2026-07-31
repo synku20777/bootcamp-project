@@ -74,11 +74,25 @@ Shuffle partitions derive from total input bytes and a configurable advisory siz
 
 ## 3. Build offline clusters
 
-ISO3 is the analytical unit. Eligible countries need a positive population denominator, complete normalized measures, and at least 180 daily observations. The working copy floors negative incident corrections at zero before it calculates complete 14-day rolling means; Bronze retains the original values.
+ISO3 is the analytical unit. Eligible countries need a positive population denominator, complete normalized measures, and at least 180 daily observations.
 
-The model uses five COVID-only features: latest cumulative cases and deaths per 100,000, peak 14-day mean cases and deaths per 100,000, and volatility of the 14-day mean case rate. It applies `log1p` and standardization before Spark ML KMeans. WDI variables join only after fitting for descriptive profiles and cannot affect cluster membership.
+The working copy floors negative incident corrections at zero before it calculates complete 14-day rolling means. Bronze retains the original values.
 
-Model selection evaluates `k=2..6` across five fixed seeds. It rejects small clusters and requires at least four valid seeds, a positive median silhouette, and median pairwise Adjusted Rand Index of at least 0.75. The selected run writes assignments, features, distances, exclusions, descriptive profiles, and fitted artifacts atomically. Only aggregate diagnostics are eligible for commit.
+The model uses these five COVID-only features:
+
+- Latest cumulative cases per 100,000.
+- Latest cumulative deaths per 100,000.
+- Peak 14-day mean cases per 100,000.
+- Peak 14-day mean deaths per 100,000.
+- Volatility of the 14-day mean case rate.
+
+The pipeline applies `log1p` and standardization before Spark ML KMeans. WDI variables join only after fitting and cannot affect cluster membership.
+
+Model selection evaluates `k=2..6` across five fixed seeds. It rejects small clusters.
+
+Publication requires four valid seeds, a positive median silhouette, and a median pairwise Adjusted Rand Index of at least 0.75. The selected run writes all artifacts atomically.
+
+The artifacts contain assignments, features, distances, exclusions, descriptive profiles, and fitted models. Only aggregate diagnostics can enter the repository.
 
 ## 4. Run another benchmark
 
@@ -90,7 +104,7 @@ docker compose --profile spark run --rm spark benchmark \
   --benchmark-run-id benchmark-v2
 ```
 
-Each comparison uses one warm-up and five measured repetitions. The benchmark alternates the variant order.
+Each comparison uses one warmup and five measured repetitions. The benchmark alternates the variant order.
 
 Both variants must pass the correctness gate before timing. The gate checks schema, row count, and a row-multiset checksum.
 
@@ -110,7 +124,9 @@ The measured fixture does not prove that every common optimization is faster. Th
 
 Evidence version 3 uses source batch `wdi-context-qa-v1` and snapshot `wdi2-2019-2021-372906f371e0391f`.
 
-This accepted evidence predates the fifth input and clustering stage. It remains the authoritative real-data record. A credentialed version 4 export is still required before the project can claim real extended-data cluster results.
+This accepted evidence predates the fifth input and clustering stage. It remains the authoritative real-data record.
+
+Run a credentialed version 4 export before the project claims real extended-data cluster results.
 
 Spark reproduced the Snowflake context baseline with these values:
 
