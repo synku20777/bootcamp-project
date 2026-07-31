@@ -15,7 +15,7 @@ from app.spark_pipeline.schemas import (
 )
 from app.spark_pipeline.transformations import duplicate_population_keys
 
-QUALITY_RULESET_VERSION = "bronze-quality-v1"
+QUALITY_RULESET_VERSION = "bronze-quality-v2"
 EXACT_DISTINCT_MAX_ROWS = 1_000_000
 APPROX_DISTINCT_RSD = 0.02
 
@@ -169,12 +169,162 @@ def _check(
     }
 
 
+def _extended_quality_checks(
+    extended: DataFrame,
+    profiles: dict[str, dict[str, Any]],
+    *,
+    cluster_min_observations: int,
+) -> tuple[list[dict[str, Any]], dict[str, int]]:
+    columns = profiles["covid_extended"]["columns"]
+    checks: list[dict[str, Any]] = []
+    for column in (
+        "COUNTRY",
+        "LOCATION_KEY",
+        "REPORT_DATE",
+        "NEW_CASES_RAW",
+        "NEW_DEATHS_RAW",
+        "CASES_CUMULATIVE",
+        "DEATHS_CUMULATIVE",
+        "SOURCE_NAME",
+        "SERIES_SEGMENT",
+    ):
+        checks.append(
+            _check(
+                f"covid_extended.required.{column.lower()}",
+                "FAIL",
+                columns[column]["null_count"],
+                "The governed extended country-day contract cannot contain nulls.",
+            )
+        )
+
+    missing_identity = (
+        extended.where(
+            F.col("COUNTRY_ISO3").isNull() | (F.length(F.trim("COUNTRY_ISO3")) != 3)
+        )
+        .select("LOCATION_KEY")
+        .distinct()
+        .count()
+    )
+    duplicate_country_dates = (
+        extended.groupBy(
+            F.coalesce("COUNTRY_ISO3", "LOCATION_KEY").alias("country_key"),
+            "REPORT_DATE",
+        )
+        .count()
+        .where(F.col("count") > 1)
+        .count()
+    )
+    non_positive_population = (
+        extended.where(
+            F.col("COVID_RATE_POPULATION_2020").isNotNull()
+            & (F.col("COVID_RATE_POPULATION_2020") <= 0)
+        )
+        .select(F.coalesce("COUNTRY_ISO3", "LOCATION_KEY"))
+        .distinct()
+        .count()
+    )
+    missing_population = (
+        extended.where(F.col("COVID_RATE_POPULATION_2020").isNull())
+        .select(F.coalesce("COUNTRY_ISO3", "LOCATION_KEY"))
+        .distinct()
+        .count()
+    )
+    missing_normalized_measures = (
+        extended.where(
+            F.col("NEW_CASES_PER_100K").isNull()
+            | F.col("NEW_DEATHS_PER_100K").isNull()
+            | F.col("CASES_PER_100K").isNull()
+            | F.col("DEATHS_PER_100K").isNull()
+        )
+        .select(F.coalesce("COUNTRY_ISO3", "LOCATION_KEY"))
+        .distinct()
+        .count()
+    )
+    inconsistent_segments = extended.where(
+        ~(
+            (
+                (F.col("SOURCE_NAME") == "ECDC")
+                & (F.col("SERIES_SEGMENT") == "ECDC_BASELINE")
+            )
+            | (
+                (F.col("SOURCE_NAME") == "JHU")
+                & F.col("SERIES_SEGMENT").isin("JHU_CONTINUATION", "JHU_ONLY")
+            )
+        )
+    ).count()
+    insufficient_history = (
+        extended.where(
+            F.col("COUNTRY_ISO3").isNotNull()
+            & (F.length(F.trim("COUNTRY_ISO3")) == 3)
+            & (F.col("COVID_RATE_POPULATION_2020") > 0)
+        )
+        .groupBy("COUNTRY_ISO3")
+        .agg(F.countDistinct("REPORT_DATE").alias("observations"))
+        .where(F.col("observations") < cluster_min_observations)
+        .count()
+    )
+    checks.extend(
+        [
+            _check(
+                "covid_extended.missing_iso3",
+                "WARN",
+                missing_identity,
+                "Countries without canonical ISO3 are excluded from clustering.",
+            ),
+            _check(
+                "covid_extended.duplicate_country_date",
+                "FAIL",
+                duplicate_country_dates,
+                "Extended country-date rows must be unique before clustering.",
+            ),
+            _check(
+                "covid_extended.non_positive_population",
+                "WARN",
+                non_positive_population,
+                "Countries with non-positive denominators are excluded from clustering.",
+            ),
+            _check(
+                "covid_extended.missing_population",
+                "WARN",
+                missing_population,
+                "Countries without a governed denominator are excluded from clustering.",
+            ),
+            _check(
+                "covid_extended.missing_normalized_measures",
+                "WARN",
+                missing_normalized_measures,
+                "Countries with incomplete normalized measures are excluded.",
+            ),
+            _check(
+                "covid_extended.source_segment_consistency",
+                "FAIL",
+                inconsistent_segments,
+                "Source names and governed series segments must agree.",
+            ),
+            _check(
+                "covid_extended.insufficient_history",
+                "WARN",
+                insufficient_history,
+                "Countries below the configured observation threshold are excluded.",
+            ),
+        ]
+    )
+    return checks, {
+        "missing_iso3_countries": missing_identity,
+        "non_positive_population_countries": non_positive_population,
+        "missing_population_countries": missing_population,
+        "missing_normalized_measure_countries": missing_normalized_measures,
+        "insufficient_history_countries": insufficient_history,
+    }
+
+
 def evaluate_quality(
     profiles: dict[str, dict[str, Any]],
     headers: dict[str, dict[str, Any]],
     frames: dict[str, DataFrame],
     *,
     normalized_duplicate_count: int,
+    cluster_min_observations: int = 180,
 ) -> dict[str, Any]:
     checks: list[dict[str, Any]] = []
     for name, header in headers.items():
@@ -442,6 +592,13 @@ def evaluate_quality(
         ]
     )
 
+    extended_checks, extended_information = _extended_quality_checks(
+        frames["covid_extended"],
+        profiles,
+        cluster_min_observations=cluster_min_observations,
+    )
+    checks.extend(extended_checks)
+
     negative_cases = frames["ecdc"].where(F.col("CASES") < 0).count()
     negative_deaths = frames["ecdc"].where(F.col("DEATHS") < 0).count()
     failures = [
@@ -458,6 +615,13 @@ def evaluate_quality(
         "informational": {
             "negative_case_corrections": negative_cases,
             "negative_death_corrections": negative_deaths,
+            "extended_negative_case_corrections": frames["covid_extended"]
+            .where(F.col("NEW_CASES_RAW") < 0)
+            .count(),
+            "extended_negative_death_corrections": frames["covid_extended"]
+            .where(F.col("NEW_DEATHS_RAW") < 0)
+            .count(),
+            "clustering_exclusion_candidates": extended_information,
             "indicator_nulls_by_year": [
                 row.asDict(recursive=True)
                 for row in indicators.groupBy("INDICATOR_CODE", "OBSERVATION_YEAR")

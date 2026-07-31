@@ -21,6 +21,16 @@ from app.spark_pipeline.pipeline import (  # noqa: E402
     run_benchmark,
     run_ingest_profile,
 )
+from app.spark_pipeline.runtime_policy import (  # noqa: E402
+    DEFAULT_ADVISORY_PARTITION_BYTES,
+    DEFAULT_BROADCAST_MAX_BYTES,
+    DEFAULT_CLUSTER_K_MAX,
+    DEFAULT_CLUSTER_K_MIN,
+    DEFAULT_CLUSTER_MIN_OBSERVATIONS,
+    DEFAULT_SKEW_RATIO_WARN,
+    DEFAULT_SKEW_SHARE_WARN,
+    DEFAULT_TARGET_FILE_BYTES,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -45,6 +55,40 @@ def parse_args() -> argparse.Namespace:
         type=Path,
         default=Path("reports/spark/evidence.json"),
     )
+    parser.add_argument(
+        "--clustering-diagnostics-path",
+        type=Path,
+        default=Path("reports/spark/clustering_diagnostics.json"),
+    )
+    parser.add_argument("--shuffle-partitions", type=int)
+    parser.add_argument(
+        "--advisory-partition-bytes",
+        type=int,
+        default=DEFAULT_ADVISORY_PARTITION_BYTES,
+    )
+    parser.add_argument(
+        "--broadcast-max-bytes",
+        type=int,
+        default=DEFAULT_BROADCAST_MAX_BYTES,
+    )
+    parser.add_argument(
+        "--target-file-bytes",
+        type=int,
+        default=DEFAULT_TARGET_FILE_BYTES,
+    )
+    parser.add_argument(
+        "--skew-ratio-warn", type=float, default=DEFAULT_SKEW_RATIO_WARN
+    )
+    parser.add_argument(
+        "--skew-share-warn", type=float, default=DEFAULT_SKEW_SHARE_WARN
+    )
+    parser.add_argument(
+        "--cluster-min-observations",
+        type=int,
+        default=DEFAULT_CLUSTER_MIN_OBSERVATIONS,
+    )
+    parser.add_argument("--cluster-k-min", type=int, default=DEFAULT_CLUSTER_K_MIN)
+    parser.add_argument("--cluster-k-max", type=int, default=DEFAULT_CLUSTER_K_MAX)
     subparsers = parser.add_subparsers(dest="command", required=True)
 
     ingest = subparsers.add_parser("ingest-profile")
@@ -63,6 +107,18 @@ def parse_args() -> argparse.Namespace:
 def main() -> None:
     configure_logging("spark-bronze", os.getenv("LOG_LEVEL", "INFO"))
     args = parse_args()
+    runtime_options = {
+        "clustering_diagnostics_path": args.clustering_diagnostics_path,
+        "shuffle_partitions": args.shuffle_partitions,
+        "advisory_partition_bytes": args.advisory_partition_bytes,
+        "broadcast_max_bytes": args.broadcast_max_bytes,
+        "target_file_bytes": args.target_file_bytes,
+        "skew_ratio_warn": args.skew_ratio_warn,
+        "skew_share_warn": args.skew_share_warn,
+        "cluster_min_observations": args.cluster_min_observations,
+        "cluster_k_min": args.cluster_k_min,
+        "cluster_k_max": args.cluster_k_max,
+    }
     try:
         if args.command == "ingest-profile":
             run_ingest_profile(
@@ -75,6 +131,7 @@ def main() -> None:
                 output_root=args.output_root,
                 evidence_path=args.evidence_path,
                 exact_distinct_max_rows=args.exact_distinct_max_rows,
+                **runtime_options,
             )
         else:
             run_benchmark(
@@ -83,6 +140,7 @@ def main() -> None:
                 bronze_root=args.bronze_root,
                 output_root=args.output_root,
                 evidence_path=args.evidence_path,
+                **runtime_options,
             )
     except QualityFailure as exc:
         logger.warning("spark_quality_failed", extra={"detail": str(exc)})
