@@ -2,7 +2,7 @@
 
 Spark does not serve API requests. Snowflake SQL serves the current interactive workload.
 
-The Spark workflow shows explicit schemas, immutable Bronze data, quality gates, plan inspection, and measured file-layout decisions.
+The Spark workflow shows explicit schemas, immutable Bronze data, quality gates, plan inspection, measured file-layout decisions, and deterministic offline country clustering.
 
 The Spark image uses Python 3.12.13, PySpark 3.5.6, Java 17.0.19, and `local[2]`.
 
@@ -19,14 +19,15 @@ uv run python scripts/export_spark_sources.py \
 
 This is the only Spark step that contacts Snowflake. It writes one immutable batch under `data/source/`.
 
-The batch contains four files:
+The source contract contains five files:
 
 - ECDC daily data.
+- The governed `COVID_ANALYTICS.MARTS.COVID_ENRICHED_EXTENDED` series.
 - The frozen 2020 population denominator.
 - Explicit country mappings.
 - Active WDI observations.
 
-The manifest records row counts, byte counts, checksums, and the WDI snapshot identifier.
+The manifest records row counts, byte counts, checksums, and the WDI snapshot identifier. The extended entry also records the selected Snowflake object, date range, country count, and SHA-256 checksum.
 
 The exporter does not replace an existing batch identifier.
 
@@ -57,7 +58,9 @@ The job writes input and corrupt records to immutable Bronze Parquet. Quality fa
 | Missing required identity or date | Failure |
 | Invalid ISO length | Failure |
 | Duplicate mapping or population key | Failure |
-| Non-positive population | Failure |
+| Duplicate extended country-date or inconsistent source segment | Failure |
+| Missing or non-positive clustering denominator | Warning and country exclusion |
+| Null clustering measure or fewer than 180 observations | Warning and country exclusion |
 | Null daily measure | Warning |
 | Duplicate normalized country-date | Warning |
 | Recoverable missing ISO code | Warning |
@@ -65,9 +68,19 @@ The job writes input and corrupt records to immutable Bronze Parquet. Quality fa
 
 Schema failures publish only quality evidence. Other failures can publish Bronze and quarantine evidence.
 
-Warnings allow curated publication. The Bronze manifest records the ruleset and quality-document checksum.
+Warnings allow curated publication. The Bronze manifest records the ruleset, quality-document checksum, source kind, runtime policy, and calculated and actual file counts.
 
-## 3. Run another benchmark
+Shuffle partitions derive from total input bytes and a configurable advisory size. A dimension receives a broadcast hint only when its manifest byte count is below the configured limit. The recorded physical plan must agree with these decisions. Skew evidence records the median, p95, maximum, maximum share, and maximum-to-median ratio by country key. Event-log evidence records shuffle and input bytes, spill, peak execution memory, executor runtime, and JVM garbage-collection time.
+
+## 3. Build offline clusters
+
+ISO3 is the analytical unit. Eligible countries need a positive population denominator, complete normalized measures, and at least 180 daily observations. The working copy floors negative incident corrections at zero before it calculates complete 14-day rolling means; Bronze retains the original values.
+
+The model uses five COVID-only features: latest cumulative cases and deaths per 100,000, peak 14-day mean cases and deaths per 100,000, and volatility of the 14-day mean case rate. It applies `log1p` and standardization before Spark ML KMeans. WDI variables join only after fitting for descriptive profiles and cannot affect cluster membership.
+
+Model selection evaluates `k=2..6` across five fixed seeds. It rejects small clusters and requires at least four valid seeds, a positive median silhouette, and median pairwise Adjusted Rand Index of at least 0.75. The selected run writes assignments, features, distances, exclusions, descriptive profiles, and fitted artifacts atomically. Only aggregate diagnostics are eligible for commit.
+
+## 4. Run another benchmark
 
 Run:
 
@@ -81,7 +94,7 @@ Each comparison uses one warm-up and five measured repetitions. The benchmark al
 
 Both variants must pass the correctness gate before timing. The gate checks schema, row count, and a row-multiset checksum.
 
-A failed gate stops timing and keeps the previous evidence. A successful run replaces `reports/spark/evidence.json` atomically.
+A failed gate stops timing and keeps the previous evidence. Fixture runs create ignored preview evidence only. A checksum-verified Snowflake export can replace `reports/spark/evidence.json` only after the quality, correctness, physical-plan, and clustering gates pass.
 
 The benchmark measures these decisions:
 
@@ -96,6 +109,8 @@ The measured fixture does not prove that every common optimization is faster. Th
 ## Current evidence
 
 Evidence version 3 uses source batch `wdi-context-qa-v1` and snapshot `wdi2-2019-2021-372906f371e0391f`.
+
+This accepted evidence predates the fifth input and clustering stage. It remains the authoritative real-data record. A credentialed version 4 export is still required before the project can claim real extended-data cluster results.
 
 Spark reproduced the Snowflake context baseline with these values:
 
@@ -115,7 +130,7 @@ The optimized plan contains three build-right broadcast hash joins.
 
 The published Parquet size is 421,412 bytes. The pipeline writes one unpartitioned file at this size.
 
-## 4. Run the Spark tests
+## 5. Run the Spark tests
 
 Install the Spark dependency group:
 

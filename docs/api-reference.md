@@ -15,6 +15,7 @@ Open Swagger UI at <http://localhost:8000/docs> after the API starts.
 | `GET` | `/countries/{identifier}/context` | Get versioned WDI context |
 | `GET` | `/compare` | Compare one metric for two to ten countries |
 | `GET` | `/forecast` | Get an evaluated daily forecast |
+| `GET` | `/patterns/case-increases` | Explore sustained daily case-increase patterns |
 | `GET` | `/dashboard/overview` | Get the complete Overview payload |
 | `GET` | `/dashboard/countries/{identifier}` | Get the complete Country Explorer payload |
 | `GET` | `/dashboard/compare` | Get the complete Comparison payload |
@@ -43,6 +44,7 @@ curl -i "http://localhost:8000/dashboard/compare?country=LV&country=EE&start_dat
 curl -i http://localhost:8000/countries/LV/summary
 curl -i http://localhost:8000/countries/LV/context
 curl -i "http://localhost:8000/forecast?country=LV&metric=new_cases&days=30&lookback_days=90"
+curl -i "http://localhost:8000/patterns/case-increases?start_date=2020-03-01&end_date=2023-03-09&minimum_consecutive_increases=3&limit=100"
 ```
 
 The first Overview response must include `X-Cache: MISS`. The second equal request must include `X-Cache: HIT`.
@@ -51,7 +53,9 @@ The first Overview response must include `X-Cache: MISS`. The second equal reque
 
 Stable analytical responses use a 24-hour lifetime. Forecast responses use a six-hour lifetime.
 
-The comparison cache key includes the active WDI snapshot identifier. A new WDI publication cannot use an older context response.
+Every COVID-derived cache key includes `COVID_DATASET`. Comparison and combined-page keys also include the committed WDI snapshot identifier; WDI-only context keys remain snapshot-based. A dataset cutover or WDI publication therefore cannot reuse an ambiguous response.
+
+If the manifest cannot be read, an optional combined page uses the explicit context revision `unavailable` and can degrade to COVID-only content. The context-only route still fails closed. A cache-fill lock lasts 60 seconds, and waiters stop after 15 seconds.
 
 Page-level dashboard stores prevent one API request for each chart. Render callbacks use the stored page response.
 

@@ -49,7 +49,7 @@ The Python version must meet `.python-version` and `pyproject.toml`.
 The file creates these objects:
 
 - `COVID_PROJECT_MONITOR`, with a five-credit monthly quota.
-- `COVID_WH`, with an `XSMALL` size and automatic suspension.
+- `COVID_WH`, as X-Small Gen2 with 60-second automatic suspension, automatic resume, and Query Acceleration disabled.
 - `COVID_ANALYTICS`, which stores project data.
 - `COVID_PROJECT_ADMIN`, which deploys project objects.
 - `COVID_APP_ROLE`, which reads API marts.
@@ -57,6 +57,8 @@ The file creates these objects:
 The monitor sends a notification at 50 percent. It suspends the warehouse at 80 percent.
 
 Review the quota before you run the file. The trial-account owner remains responsible for credit use.
+
+The setup file reasserts the warehouse size, generation, suspension policy, monitor attachment, and Query Acceleration setting when the warehouse already exists. The checked-in five-credit quota is the normal bootcamp default. The 25-credit allowance used for the dated performance audit was temporary.
 
 Grant both project roles to the deployment user:
 
@@ -161,6 +163,8 @@ Run these files in the given order:
 5. [`sql/07_analysis_queries.sql`](../sql/07_analysis_queries.sql)
 
 This order keeps WDI publication separate from the COVID denominator. It also creates the ECDC-only marts before the extended marts.
+
+The extension script rebuilds `COVID_ENRICHED_EXTENDED_DATA` and `CASE_INCREASE_PATTERNS_EXTENDED_DATA` as transient publication tables. Their stable public view names remain unchanged. The script then rebuilds `COUNTRY_LATEST_METRICS_EXTENDED`. Clear the Redis project prefix only after these objects pass validation.
 
 ## 9. Start the local services
 

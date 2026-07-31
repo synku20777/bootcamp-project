@@ -11,14 +11,14 @@ The project combines a warehouse pipeline, an API, a dashboard, a cache, an anno
 - Keep WDI context separate from the frozen COVID rate denominator.
 - Build daily, cumulative, per-capita, mortality, and country-context marts.
 - Detect sustained case increases with Snowflake `MATCH_RECOGNIZE`.
-- Serve typed FastAPI endpoints and a six-page Dash application.
+- Serve typed FastAPI endpoints and a seven-page Dash application.
 - Cache analytical responses with Redis.
 - Store indexed annotations in MongoDB.
 - Compare two forecast models with temporal validation.
-- Build immutable Spark Bronze data and benchmark evidence.
+- Build immutable Spark Bronze data, benchmark evidence, and deterministic offline country clusters.
 - Run code checks and tests in GitHub Actions.
 
-The project does not include clustering, authentication, or user preferences.
+The project does not include authentication or user preferences. Offline clustering is an analytical artifact and is not part of request serving.
 
 ## Architecture
 
@@ -42,9 +42,12 @@ flowchart LR
     Marts --> Export[Immutable source export]
     Export --> Spark[Spark Bronze and profiling]
     Spark --> Evidence[(Quality and benchmark evidence)]
+    Spark --> Clusters[(Offline clustering artifacts)]
 ```
 
 The production API reads the extended marts by default. Set `COVID_DATASET=legacy` to read the ECDC-only marts.
+
+The extended serving views project from transient publication tables. This boundary moves the demonstrated compilation-heavy source splice, window, and pattern work out of API requests while preserving public object names.
 
 Redis protects the Snowflake query budget. Analytical routes fail when Redis is unavailable.
 
@@ -76,7 +79,7 @@ MongoDB stores annotations only. Snowflake remains the source for analytical dat
 |   |-- models/                          # Pydantic contracts
 |   |-- repositories/                    # Snowflake and MongoDB access
 |   |-- services/                        # Cache, analytics, forecast, and annotations
-|   |-- spark_pipeline/                  # Bronze, quality, and benchmark code
+|   |-- spark_pipeline/                  # Bronze, quality, benchmark, and clustering code
 |   |-- world_bank.py                    # WDI contracts and checksums
 |   |-- config.py                        # Typed settings
 |   `-- main.py                          # FastAPI application
@@ -97,6 +100,7 @@ MongoDB stores annotations only. Snowflake remains the source for analytical dat
 |   `-- troubleshooting.md
 |-- scripts/
 |   |-- bootstrap.py                     # Guided setup
+|   |-- capture_snowflake_performance.py # Tagged live Snowflake evidence
 |   |-- clear_cache.py                   # Prefix-scoped cache removal
 |   |-- export_spark_sources.py          # Snowflake source export
 |   |-- run_eda.py                       # EDA CSV export
@@ -104,6 +108,7 @@ MongoDB stores annotations only. Snowflake remains the source for analytical dat
 |   |-- setup_mongodb.py                 # MongoDB indexes
 |   |-- update_covid_denominator.py      # Denominator lifecycle
 |   `-- world_bank_indicators.py         # WDI refresh and publication
+|-- reports/snowflake/                   # Sanitized before-and-after evidence
 |-- sql/
 |   |-- 00_project_setup.sql
 |   |-- 00_project_objects.sql

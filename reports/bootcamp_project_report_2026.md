@@ -5,7 +5,7 @@ Implementation report
 **Student:** Nestor Kulik  
 **Date:** 31 July 2026<br>
 **Repository:** https://github.com/synku20777/bootcamp-project  
-**Reviewed branch and commit:** `extended_0.8`, base commit `9dc71b70b0cf9e506c601804124fa81783e30139` plus this implementation working tree
+**Reviewed merge:** `extended_0.8` at `b634bf5`; this report includes the documentation reconciliation in the current working tree
 
 ## 1. Executive summary
 
@@ -13,7 +13,7 @@ This project integrates the free Snowflake Marketplace COVID-19 Epidemiological 
 
 The implementation now covers every required in-repository functional task and the clustering bonus. Forecasting compares a 7-day mean with a recent linear trend using rolling temporal holdout. Offline Spark clustering segments ISO3 countries from five population-normalized COVID outcomes, evaluates multiple `k` values and seeds, rejects small or unstable solutions, and publishes immutable local analytical artifacts. Clustering is implemented and fixture-validated; a credentialed extended-mart run is still required before claiming authoritative real-data cluster results.
 
-The strongest engineering qualities are reproducibility, explicit data contracts, least-privilege access, source-correction fidelity, bounded warehouse queries, fail-closed cache protection, and measured optimization decisions in both Snowflake and Spark. The project does not claim Spark is generally faster at this data volume: early projection, AQE, and caching a reused frame measured slower, while three explicit broadcasts and one appropriately sized Parquet file measured faster. The Snowflake review follows the same evidence rule: it materializes the demonstrated compilation bottleneck but rejects clustering, Search Optimization, QAS, and connection pooling at the measured scale.
+The strongest engineering qualities are reproducibility, explicit data contracts, least-privilege access, source-correction fidelity, bounded warehouse queries, fail-closed cache protection, and measured optimization decisions in both Snowflake and Spark. The project does not claim Spark is generally faster at this data volume: early projection, AQE, and caching a reused frame measured slower, while three explicit broadcasts and one appropriately sized Parquet file measured faster. The Snowflake review follows the same evidence rule: it materializes the demonstrated compilation bottleneck but rejects Snowflake clustering keys, Search Optimization, QAS, and connection pooling at the measured scale.
 
 At review time, 101 application, API, dashboard, repository, ingestion, checksum, export, denominator-lifecycle, and forecasting tests passed. The rebuilt pinned Spark image passed all 22 Spark tests. Ruff, isort, Black, and Docker Compose validation passed. These are regression controls, not the basis for the architectural conclusions. The Task 7 assessment rests on tagged live Snowflake query history, operator profiles, object hashes, and warehouse state. Dated artifacts also record the WDI publication, API smoke test, migration reconciliation, and Spark/Snowflake context-equivalence gates. A final submission should commit and push the working tree and perform one clean-VM acceptance run of the complete platform.
 
@@ -26,8 +26,8 @@ At review time, 101 application, API, dashboard, repository, ingestion, checksum
 | 3. NoSQL model | Complete | MongoDB annotations with Pydantic validation, canonical analytical identity, UTC dates, and two compound indexes | No database-side JSON Schema validator; API validation is authoritative |
 | 4. Python API | Complete | FastAPI queries Snowflake, reads/writes MongoDB, performs on-the-fly metrics and forecasting, and returns typed JSON | No public authentication or rate limiting |
 | 5. Interactive visualization | Complete | Dash pages for status, overview, country exploration, comparison, forecasting, increase patterns, and annotations | Browser QA should be repeated on the final clean VM |
-| 6. Time-series forecasting | Complete | 7-day mean versus recent linear trend, rolling holdout, MAE/RMSE, 1-30-day horizon, empirical interval, API and dashboard | This is an interpretable baseline, not an epidemiological model; clustering is bonus and not implemented |
-| 7. Performance optimization | Complete with live evidence | Materialized extended serving boundary, stable public views, precomputed latest snapshot, bounded queries, tagged before/after Query Profile evidence, deterministic X-Small Gen2 warehouse policy | Detailed-query Snowflake medians fell 70.7% to 90.1%; no clustering or Search Optimization is justified at 224,265 rows |
+| 6. Time-series forecasting | Complete | 7-day mean versus recent linear trend, rolling holdout, MAE/RMSE, 1-30-day horizon, empirical interval, API and dashboard | This is an interpretable baseline, not an epidemiological model; offline clustering is implemented and fixture-validated, but its credentialed extended-data run is pending |
+| 7. Performance optimization | Complete with live evidence | Materialized extended serving boundary, stable public views, precomputed latest snapshot, bounded queries, tagged before/after Query Profile evidence, deterministic X-Small Gen2 warehouse policy | Detailed-query Snowflake medians fell 70.7% to 90.1%; no Snowflake clustering key or Search Optimization is justified at 224,265 rows |
 | 8. API caching | Complete | Redis TTLs, dataset- and snapshot-aware keys, Pydantic cache revalidation, prefix-scoped invalidation, 60-second lease, 15-second waiter, fail-closed behavior | Redis becomes an intentional availability dependency to protect trial credits |
 | 9. Pattern identification | Complete | Snowflake `MATCH_RECOGNIZE` identifies at least three consecutive daily increases | Results are reporting patterns, not causal transmission regimes |
 | 10. GitHub and configuration | Partial until final push | GitHub repository, Dockerfiles, Compose, `.env.example`, uv lockfile, CI, setup scripts, tests, and report | The final working-tree changes must be committed and pushed before submission |
@@ -342,7 +342,7 @@ The normal supervisor path requires only Docker plus a Snowflake account. `setup
 
 Before submission:
 
-1. Confirm the spelling of the student name, commit all working-tree changes, push `extended_0.8`, and replace the base commit reference with the final hash.
+1. Confirm the spelling of the student name, commit all working-tree changes, push `extended_0.8`, and replace the reviewed merge reference with the final hash.
 2. Run the documented setup on a clean virtual machine with Docker Desktop/Engine and capture healthy API, annotation round-trip, forecast, and dashboard evidence.
 3. Run the credentialed five-file Spark export and pipeline; publish version 4 only if all extended quality, benchmark, silhouette, stability, and publication gates pass.
 4. Retain the final CI link and Spark evidence artifacts with the submitted commit.

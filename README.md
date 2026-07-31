@@ -361,7 +361,7 @@ flowchart LR
     Browser[Dash] --> API
     Marts --> Export[Immutable source export]
     Extended[(COVID_ENRICHED_EXTENDED)] --> Export
-    Export --> Spark[PySpark Bronze and profiling]
+    Export --> Spark[PySpark Bronze, profiling, and offline clustering]
     Spark --> Clusters[(Ignored offline cluster artifacts)]
     Spark --> Evidence[(Quality and benchmark evidence)]
 ```
@@ -896,497 +896,6 @@ The script writes these files under the ignored `outputs/eda/` directory:
 
 The exports use the same analytical mart as the API. This rule prevents separate metric definitions in notebooks and services.
 
-## PySpark Bronze and profiling
-
-Spark does not serve API requests. Snowflake SQL is simpler for the current 61,900-row interactive workload.
-
-The Spark path demonstrates explicit schemas, immutable Bronze data, quality gates, plan inspection, and measured file-layout decisions.
-
-The pinned Spark runtime uses Python 3.12.13, PySpark 3.5.6, Java 17.0.19, and `local[2]`.
-
-### 1. Export one source batch
-
-Complete the Snowflake setup first. Configure `.env` for `COVID_PROJECT_ADMIN`.
-
-```bash
-uv run python scripts/export_spark_sources.py \
-  --source-batch-id wdi-context-v1
-```
-
-This is the only Spark step that contacts Snowflake. It writes one immutable batch under `data/source/`.
-
-The four-file contract contains ECDC daily data, the frozen 2020 population denominator, explicit country mappings, and the active versioned WDI observations. The batch manifest includes their row counts, byte counts, SHA-256 checksums, the WDI snapshot ID, and the accepted Snowflake country-context fingerprint. The exporter never overwrites an existing batch identifier.
-
-### 2. Run Bronze ingestion and profiling
-
-```bash
-docker compose --profile spark build spark
-
-docker compose --profile spark run --rm spark ingest-profile \
-  --source-batch-id wdi-context-v1 \
-  --ingestion-id bronze-v1 \
-  --benchmark-run-id benchmark-v1
-```
-
-The job checks exact headers before parsing. It applies explicit Spark schemas to all sources.
-
-The job keeps input and corrupt records in immutable Bronze Parquet. Quality failures block curated publication.
-
-| Condition | Result |
-| --- | --- |
-| Schema drift or corrupt input | Failure |
-| Missing required identity or date | Failure |
-| Invalid ISO length | Failure |
-| Duplicate mapping or population key | Failure |
-| Non-positive population | Failure |
-| Null daily measure | Warning |
-| Duplicate normalized country-date | Warning |
-| Recoverable missing ISO code | Warning |
-| Negative case or death correction | Information |
-
-Schema failures publish only quality evidence. Other failures can publish Bronze and quarantine evidence, but they block curated output.
-
-Warnings allow curated publication. The Bronze manifest records the ruleset, quality result, and quality-document checksum.
-
-### 3. Run a new benchmark
-
-```bash
-docker compose --profile spark run --rm spark benchmark \
-  --ingestion-id bronze-v1 \
-  --benchmark-run-id benchmark-v2
-```
-
-Each comparison uses one warm-up and five measured repetitions in one JVM. The benchmark alternates the variant order.
-
-Both variants must pass a correctness gate before timing. The gate checks schema, row count, and a row-multiset checksum.
-
-A failed gate stops timing and preserves the previous committed evidence. A successful suite publishes `reports/spark/evidence.json` atomically.
-
-The benchmark covers these decisions:
-
-- Early projection and filtering.
-- Broadcast joins for small lookup data.
-- Adaptive query execution.
-- Persistence for a reused data frame.
-- Output partition and file count.
-
-The measured fixture does not prove that every common optimization is faster. The report separates plan changes from elapsed-time changes.
-
-FastAPI uses only `COVID_APP_ROLE`. This role cannot create or replace project objects.
-
-### 4. Explore the Marketplace source
-
-Run [`sql/01_data_exploration.sql`](sql/01_data_exploration.sql).
-
-The queries check these conditions:
-
-- Required columns exist.
-- The date range and country coverage are known.
-- Country-date duplicates are visible.
-- Required values have measured null counts.
-- Negative values remain visible as source corrections.
-- `CASES` and `DEATHS` are daily values.
-
-Do not derive daily values from another subtraction. The source already supplies daily measures.
-
-### 5. Create the staging layer
-
-Run [`sql/02_create_country_mapping.sql`](sql/02_create_country_mapping.sql).
-
-The mapping fixes reviewed country and code exceptions. It also marks locations that do not need a population match.
-
-Run [`sql/03_create_staging_view.sql`](sql/03_create_staging_view.sql).
-
-The staging view has one row per normalized location and date. It aggregates duplicate source rows before cumulative calculations.
-
-The view preserves negative corrections. It records the source row count and mapping status for audit work.
-
-### 6. Configure the Python connection
-
-Copy `.env.example` to `.env`. Replace the Snowflake placeholders.
-
-```dotenv
-SNOWFLAKE_ACCOUNT=organization-account-from-step-1
-SNOWFLAKE_USER=your_username
-SNOWFLAKE_PASSWORD=your_password
-SNOWFLAKE_ROLE=COVID_PROJECT_ADMIN
-SNOWFLAKE_WAREHOUSE=COVID_WH
-SNOWFLAKE_DATABASE=COVID_ANALYTICS
-SNOWFLAKE_SCHEMA=RAW
-```
-
-Run the configured doctor without printing secret values:
-
-```bash
-uv run --locked python -m scripts.bootstrap doctor --configured
-```
-
-### 7. Publish the World Bank context
-
-Normal setup uses the committed WDI artifacts. It does not contact the World Bank API.
-
-```bash
-uv run python -m scripts.world_bank_indicators publish
-```
-
-The publisher validates the manifest, observations, identities, and coverage. It activates one snapshot only after all checks pass.
-
-Run the verifier:
-
-```bash
-uv run python scripts/verify_world_bank_context.py
-```
-
-The legacy population file seeds the frozen denominator only when that denominator does not exist.
-
-### 8. Create the analytical marts
-
-Run [`sql/04_create_world_bank_context.sql`](sql/04_create_world_bank_context.sql).
-
-Run [`sql/05_create_enriched_view.sql`](sql/05_create_enriched_view.sql).
-
-Run [`sql/06_create_reporting_objects.sql`](sql/06_create_reporting_objects.sql).
-
-Run [`sql/09_create_jhu_extension.sql`](sql/09_create_jhu_extension.sql).
-
-Run [`sql/07_analysis_queries.sql`](sql/07_analysis_queries.sql).
-
-The build order prevents circular dependencies. It also keeps WDI publication separate from the COVID denominator.
-
-The Snowflake object flow is:
-
-```text
-COVID19_EPIDEMIOLOGICAL_DATA.PUBLIC.ECDC_GLOBAL
-    + COVID_ANALYTICS.RAW.COUNTRY_CODE_MAPPING
-    -> COVID_ANALYTICS.STAGING.COVID_COUNTRY_DAILY
-
-World Bank API
-    -> reviewed CSV, manifest, and evidence
-    -> RAW.WORLD_BANK_COUNTRY_INDICATORS
-    -> STAGING.WORLD_BANK_COUNTRY_INDICATORS_CURRENT
-    -> MARTS.COUNTRY_BASELINE_2019
-    -> MARTS.COUNTRY_INDICATOR_ANNUAL
-
-COVID_ANALYTICS.STAGING.COVID_COUNTRY_DAILY
-    + MARTS.COUNTRY_COVID_DENOMINATOR
-    -> MARTS.COVID_ENRICHED
-    -> MARTS.COUNTRY_LATEST_METRICS
-
-MARTS.COUNTRY_BASELINE_2019
-    + MARTS.COUNTRY_INDICATOR_ANNUAL
-    + MARTS.COUNTRY_LATEST_METRICS
-    -> MARTS.COUNTRY_CONTEXT_ANALYSIS
-
-COVID_ANALYTICS.STAGING.COVID_COUNTRY_DAILY
-    -> MARTS.CASE_INCREASE_PATTERNS
-
-COVID19_EPIDEMIOLOGICAL_DATA.PUBLIC.JHU_COVID_19_TIMESERIES
-    + RAW.JHU_GEOGRAPHY_POLICY
-    + STAGING.CANONICAL_COUNTRY_CODE_MAP
-    -> STAGING.JHU_COUNTRY_CUMULATIVE
-    -> STAGING.JHU_COUNTRY_DAILY
-
-STAGING.COVID_COUNTRY_DAILY
-    + STAGING.JHU_COUNTRY_DAILY
-    -> STAGING.COVID_COUNTRY_DAILY_EXTENDED
-    -> MARTS.CASE_INCREASE_PATTERNS_EXTENDED
-    -> MARTS.COVID_ENRICHED_EXTENDED
-    -> MARTS.COUNTRY_LATEST_METRICS_EXTENDED
-```
-
-### 9. Start the local services
-
-Start Docker before this step. Then run:
-
-```bash
-docker compose config
-docker compose up -d --build
-docker compose ps
-```
-
-Create the MongoDB collection and indexes:
-
-```bash
-docker compose exec api python -m scripts.setup_mongodb
-```
-
-### 10. Check the complete application
-
-Run these requests:
-
-```bash
-curl -i http://localhost:8000/health/live
-curl -i http://localhost:8000/health/ready
-curl -i http://localhost:8000/health/snowflake
-curl -i http://localhost:8000/countries
-curl -i http://localhost:8000/dashboard/overview
-```
-
-Open <http://localhost:8050/overview>. Confirm that the Overview page contains data.
-
-### Completion checklist
-
-- [ ] Snowflake uses AWS Stockholm.
-- [ ] `COVID19_EPIDEMIOLOGICAL_DATA.PUBLIC.ECDC_GLOBAL` returns data.
-- [ ] `COVID19_EPIDEMIOLOGICAL_DATA.PUBLIC.JHU_COVID_19_TIMESERIES` returns data.
-- [ ] `COVID_WH` and `COVID_PROJECT_MONITOR` exist.
-- [ ] `STAGING.COVID_COUNTRY_DAILY` contains rows.
-- [ ] `RAW.WORLD_BANK_INDICATOR_SNAPSHOTS` has one active snapshot.
-- [ ] `MARTS.COUNTRY_COVID_DENOMINATOR` contains frozen population rows.
-- [ ] `MARTS.COUNTRY_BASELINE_2019` contains eligible countries.
-- [ ] `MARTS.COVID_ENRICHED` contains rows.
-- [ ] `MARTS.COUNTRY_LATEST_METRICS` contains rows.
-- [ ] `STAGING.COVID_COUNTRY_DAILY_EXTENDED` contains 222 locations.
-- [ ] `MARTS.COUNTRY_LATEST_METRICS_EXTENDED` contains 222 rows.
-- [ ] `MARTS.CASE_INCREASE_PATTERNS_EXTENDED` contains valid pattern rows.
-- [ ] All four local services are healthy.
-- [ ] The liveness, readiness, and Snowflake checks succeed.
-- [ ] Two equal overview requests return `MISS` and then `HIT`.
-
-## API endpoints
-
-| Method | Path | Purpose |
-| --- | --- | --- |
-| `GET` | `/health`, `/health/live` | Check process liveness without dependency calls |
-| `GET` | `/health/ready` | Check MongoDB and Redis |
-| `GET` | `/health/snowflake` | Check Snowflake and required marts |
-| `GET` | `/countries` | List canonical country identities |
-| `GET` | `/countries/{identifier}/summary` | Get the latest country metrics |
-| `GET` | `/countries/{identifier}/timeseries` | Get a filtered metric series |
-| `GET` | `/countries/{identifier}/context` | Get versioned WDI context |
-| `GET` | `/compare` | Compare one metric for two to ten countries |
-| `GET` | `/forecast` | Get an evaluated daily forecast |
-| `GET` | `/patterns/case-increases` | Explore sustained daily case-increase patterns |
-| `GET` | `/dashboard/overview` | Get the complete Overview payload |
-| `GET` | `/dashboard/countries/{identifier}` | Get the complete Country Explorer payload |
-| `GET` | `/dashboard/compare` | Get the complete Comparison payload |
-| `POST` | `/annotations` | Validate and create an annotation |
-| `GET` | `/annotations` | Get filtered annotations |
-| `GET` | `/docs` | Open Swagger UI |
-
-The `/dashboard/compare` response keeps the existing COVID series and adds an
-optional `world_bank_context` object to each country. The object contains the five
-baseline indicators and the active snapshot ID. Its companion
-`world_bank_context_status` is `available` or `context_data_unavailable`. Missing or
-stale WDI context does not remove COVID results. `countries_without_data` continues
-to mean that the requested date range has no COVID observations.
-
-### Acceptance requests
-
-```bash
-curl -i http://localhost:8000/health/live
-curl -i http://localhost:8000/health/ready
-curl -i http://localhost:8000/health/snowflake
-curl -i http://localhost:8000/dashboard/overview
-curl -i http://localhost:8000/dashboard/overview
-curl -i "http://localhost:8000/dashboard/countries/LV?metric=cases_per_100k&start_date=2020-03-01&end_date=2023-03-09"
-curl -i "http://localhost:8000/dashboard/compare?country=LV&country=EE&start_date=2020-03-01&end_date=2023-03-09"
-curl -i http://localhost:8000/countries/LV/summary
-curl -i http://localhost:8000/countries/LV/context
-curl -i "http://localhost:8000/forecast?country=LV&metric=new_cases&days=30&lookback_days=90"
-curl -i "http://localhost:8000/patterns/case-increases?start_date=2020-03-01&end_date=2023-03-09&minimum_consecutive_increases=3&limit=100"
-```
-
-The first overview response should include `X-Cache: MISS`. The second equal request should include `X-Cache: HIT`.
-
-### Cache policy
-
-Stable analytical responses, including case-increase patterns, use a 24-hour time to live. Forecasts use a six-hour time to live. Comparison cache keys use contract version 2 and include the committed WDI snapshot ID. Therefore, a new WDI publication cannot reuse a response from an older snapshot.
-
-Context cache keys include the active WDI snapshot identifier. This rule prevents cached context from crossing snapshot versions.
-
-The promoted dataset uses `CACHE_NAMESPACE=covid-api:v4`. Change the namespace when response semantics change. Clear only the project prefix after a mart refresh.
-
-```bash
-docker compose exec api python -m scripts.clear_cache
-```
-
-The script uses incremental Redis `SCAN` calls. It does not flush unrelated Redis data.
-
-Page-level dashboard stores prevent one API request per chart. Render callbacks use the stored page payload.
-
-### Annotation workflow
-
-Create or verify the MongoDB indexes:
-
-```bash
-docker compose exec api python -m scripts.setup_mongodb
-```
-
-Create an annotation:
-
-```bash
-curl -i -X POST http://localhost:8000/annotations \
-  -H "Content-Type: application/json" \
-  -d '{"country":"LV","report_date":"2020-03-15","metric":"new_cases","comment":"Reporting delay.","created_by":"Student"}'
-```
-
-Read the annotation:
-
-```bash
-curl -i "http://localhost:8000/annotations?country=LV&metric=new_cases&start_date=2020-03-01&end_date=2020-03-31"
-```
-
-The API validates the country and report date against Snowflake before insertion. MongoDB stores canonical country identity fields.
-
-## Configuration reference
-
-| Variable | Used by | Purpose |
-| --- | --- | --- |
-| `SNOWFLAKE_ACCOUNT` | Setup and Snowflake clients | Connector account identifier |
-| `SNOWFLAKE_USER` | Setup and Snowflake clients | Login name |
-| `SNOWFLAKE_PASSWORD` | Setup and Snowflake clients | Login password |
-| `SNOWFLAKE_BOOTSTRAP_ROLE` | Setup | Account-level setup role |
-| `SNOWFLAKE_ROLE` | Deployment scripts | Project deployment role |
-| `SNOWFLAKE_API_ROLE` | FastAPI | Read-only runtime role |
-| `SNOWFLAKE_WAREHOUSE` | Snowflake clients | Compute warehouse |
-| `SNOWFLAKE_DATABASE` | Snowflake clients | Project database |
-| `SNOWFLAKE_SCHEMA` | Deployment scripts | Default deployment schema |
-| `SNOWFLAKE_API_SCHEMA` | FastAPI | Analytical schema |
-| `MONGO_ROOT_USERNAME` | Compose | MongoDB root user |
-| `MONGO_ROOT_PASSWORD` | Compose | MongoDB root password |
-| `MONGO_DATABASE` | Compose and FastAPI | Application database |
-| `MONGODB_URI` | FastAPI | MongoDB connection string |
-| `REDIS_URL` | FastAPI | Redis connection string |
-| `CACHE_NAMESPACE` | FastAPI | Version prefix for cache keys |
-| `CACHE_TTL_*` | FastAPI | Endpoint time-to-live values |
-| `DASHBOARD_API_BASE_URL` | Dash | Internal API URL |
-| `DASHBOARD_PUBLIC_API_BASE_URL` | Browser links | Host-visible API URL |
-
-Compose replaces host addresses with container-network addresses. Never commit `.env`.
-
-## World Bank context lifecycle
-
-Normal setup publishes committed data. It does not contact the World Bank API.
-
-Use the network refresh only when you want to review a new source snapshot:
-
-```bash
-uv run python -m scripts.world_bank_indicators refresh
-```
-
-The refresh process requests WDI source 2 for 2019-2021. It retrieves every result page for the indicator allowlist.
-
-The process validates identities and coverage before it writes candidate files. It does not replace committed files after a failed check.
-
-Review these artifacts together:
-
-- The WDI CSV file.
-- The manifest.
-- The identity report.
-- The coverage report.
-
-Publish the reviewed snapshot:
-
-```bash
-uv run python -m scripts.world_bank_indicators publish
-```
-
-The publisher inserts observations and a registry record in one transaction. A second transaction activates the candidate and supersedes its predecessor.
-
-Exactly one registry row can be active. Application code enforces this rule because Snowflake standard-table keys do not enforce uniqueness.
-
-### Identity and grain
-
-The raw WDI grain is:
-
-```text
-SNAPSHOT_ID + CANONICAL_ISO3 + INDICATOR_CODE + OBSERVATION_YEAR
-```
-
-Country names are display values. The project never uses them as WDI join keys.
-
-The publisher accepts non-aggregate economies with a canonical ISO3 code. A reviewed mapping can also supply an approved identity.
-
-Conflicting identities stop publication. Unsupported and aggregate entities remain in evidence but do not enter canonical observations.
-
-### Coverage gates
-
-| Indicator | Minimum coverage | Maximum drop |
-| --- | ---: | ---: |
-| `SP.POP.TOTL` | 95% | 5 percentage points |
-| `EN.POP.DNST` | 90% | 5 percentage points |
-| `SP.POP.65UP.TO.ZS` | 90% | 5 percentage points |
-| `NY.GDP.PCAP.KD` | 80% | 5 percentage points |
-| `SH.XPD.CHEX.PP.CD` | 75% | 10 percentage points |
-
-Different indicators use different gates because their source coverage differs. A missing indicator-year pair always stops publication.
-
-### Checksums
-
-`app/world_bank.py` defines one cross-platform serialization protocol. It fixes row order, column order, Unicode form, line endings, nulls, and decimals.
-
-The observation checksum represents logical source data. The file checksum represents the exact committed CSV bytes.
-
-Python and Spark use the same scalar rules. Golden tests detect newline, decimal, and null-format drift.
-
-### Migration and rollback
-
-The API selects COVID marts through an internal allowlist. The normal setting is:
-
-```dotenv
-COVID_DATASET=extended
-CACHE_NAMESPACE=covid-api:v4
-```
-
-For an immediate application rollback, set `COVID_DATASET=legacy`, choose a new cache namespace, and restart the API. This changes reads only; it does not rename, replace, or delete either mart family.
-
-Run the migration reconciliation before a consumer cutover:
-
-```bash
-uv run python scripts/reconcile_world_bank_migration.py
-```
-
-The reconciliation requires equal case, death, and denominator values. It applies small documented tolerances to calculated rates.
-
-Use [`sql/08_migrate_population_compatibility.sql`](sql/08_migrate_population_compatibility.sql) only after one verified release.
-
-Snapshot rollback and denominator rollback are separate operations. Publishing WDI data cannot change the COVID rate denominator.
-
-## Forecasting
-
-`GET /forecast` supports `new_cases` and `new_deaths`. The forecast horizon is 1-30 days.
-
-The training window is 42-180 observations. The default window contains 90 observations.
-
-The service compares two candidates:
-
-- A seven-day mean represents the recent reporting level.
-- A linear trend uses at most the latest 42 observations.
-
-The service validates both candidates on the last 14 observations. Each validation prediction uses only earlier data.
-
-The candidate with the lower mean absolute error wins. An equal score selects the simpler seven-day mean.
-
-The response also reports root mean squared error. This measure makes large forecast misses visible.
-
-The error band uses the larger selected-model error measure. It expands with the square root of the forecast horizon.
-
-This band is descriptive. It is not a clinical or probabilistic confidence interval.
-
-Negative source corrections stay visible in returned history. The model uses zero for a negative incident value because incidence cannot be negative.
-
-The trend uses actual date offsets. It does not add zero observations for missing calendar days.
-
-## Exploratory data analysis
-
-Create `COVID_ANALYTICS.MARTS.COVID_ENRICHED` before you run the EDA script.
-
-Run:
-
-```bash
-uv run python scripts/run_eda.py
-```
-
-The script writes these files under the ignored `outputs/eda/` directory:
-
-- `dataset_coverage.csv`
-- `missing_population.csv`
-- `data_corrections.csv`
-- `latest_country_metrics.csv`
-
-The exports use the same analytical mart as the API. This rule prevents separate metric definitions in notebooks and services.
-
 ## PySpark Bronze, profiling, and offline clustering
 
 Spark does not serve API requests. Snowflake SQL is simpler for the current 61,900-row interactive workload.
@@ -1578,148 +1087,6 @@ GitHub Actions runs the locked environment and quality checks for each push and 
 |   `-- world-bank-context.md            # WDI architecture decision
 |-- scripts/
 |   |-- bootstrap.py                     # Guided setup
-|   |-- clear_cache.py                   # Prefix-scoped cache removal
-|   |-- export_spark_sources.py          # Snowflake source export
-|   |-- run_eda.py                       # EDA CSV export
-|   |-- run_spark_bronze.py              # Spark command-line entry point
-|   |-- setup_mongodb.py                 # MongoDB indexes
-|   |-- update_covid_denominator.py      # Denominator lifecycle
-|   `-- world_bank_indicators.py         # WDI refresh and publication
-|-- sql/
-|   |-- 00_project_setup.sql
-|   |-- 00_project_objects.sql
-|   |-- 01_data_exploration.sql
-|   |-- 02_create_country_mapping.sql
-|   |-- 03_create_staging_view.sql
-|   |-- 04_create_world_bank_context.sql
-|   |-- 05_create_enriched_view.sql
-|   |-- 06_create_reporting_objects.sql
-|   |-- 07_analysis_queries.sql
-|   |-- 08_migrate_population_compatibility.sql
-|   `-- 09_create_jhu_extension.sql
-|-- tests/                               # Application tests
-|-- spark_tests/                         # Spark tests
-|-- .env.example                         # Configuration template
-|-- compose.yaml                         # Application services
-|-- compose.setup.yaml                   # Temporary setup service
-|-- dockerfile                           # API image
-|-- dockerfile.spark                     # Spark image
-|-- pyproject.toml                       # Dependencies and tool settings
-`-- uv.lock                              # Resolved dependency lock
-```
-
-## Troubleshooting
-
-### Docker cannot connect
-
-Start Docker Desktop or the Linux Docker service. Wait until `docker info` shows a Server section.
-
-Reinstalling Python packages does not repair a stopped Docker engine.
-
-### An API route returns `503`
-
-Read `error.code` and `request_id` in the response. Use the request identifier to find the matching API log.
-
-```bash
-docker compose ps
-docker compose logs mongo redis api
-```
-
-| Comparison | Baseline median | Candidate median | Result |
-| --- | ---: | ---: | --- |
-| Early projection/filter | 183.939 ms | 216.075 ms | Candidate was not faster |
-| Three broadcast joins | 762.517 ms | 561.944 ms | Candidate was faster |
-| Adaptive duplicate aggregation | 347.056 ms | 426.586 ms | Candidate was not faster |
-| Reused-frame cache | 323.322 ms | 372.224 ms | Candidate was not faster |
-| File layout | 2,787.065 ms | 1,645.820 ms | Candidate was faster |
-
-The final published Parquet size is 421,412 bytes, below the 128 MiB target. The pipeline therefore uses one unpartitioned file instead of many small partitions.
-
-### 4. Run Spark tests
-
-```bash
-uv sync --locked --group spark
-uv run --group spark python -m unittest discover -s spark_tests -v
-```
-
-## Local development
-
-This workflow is for contributors who run Python outside Docker. Dashboard users do not need it.
-
-Install the locked environment:
-
-```bash
-uv sync --locked
-uv run python --version
-```
-
-Run the API after MongoDB and Redis are available:
-
-```bash
-uv run uvicorn app.main:app --reload
-```
-
-Compose supplies the service connection strings automatically. Use Compose when you do not need a host Python process.
-
-### Dependency changes
-
-`pyproject.toml` declares dependencies. `uv.lock` records exact resolved versions.
-
-```bash
-uv add package-name
-uv add --dev development-package
-uv lock --check
-uv sync --locked
-```
-
-Commit `pyproject.toml` and `uv.lock` after each dependency change. Do not edit `uv.lock` manually.
-
-## Code quality and CI
-
-Install the Git hook once:
-
-```bash
-uv run pre-commit install
-```
-
-Run all hooks:
-
-```bash
-uv run pre-commit run --all-files
-```
-
-Run individual checks:
-
-```bash
-uv run isort --check-only --diff .
-uv run black --check --diff .
-uv run ruff check .
-uv run python -m unittest discover -s tests -v
-```
-
-GitHub Actions runs the locked environment and quality checks for each push and pull request.
-
-## Repository structure
-
-```text
-.
-|-- app/
-|   |-- api/                             # Health, analytics, and annotation routes
-|   |-- dashboard/                       # Dash pages and charts
-|   |-- models/                          # Pydantic contracts
-|   |-- repositories/                    # Snowflake and MongoDB access
-|   |-- services/                        # Cache, analytics, forecast, and annotations
-|   |-- spark_pipeline/                  # Bronze, quality, and benchmark code
-|   |-- world_bank.py                    # WDI contracts and checksums
-|   |-- config.py                        # Typed settings
-|   `-- main.py                          # FastAPI application
-|-- data/external/
-|   |-- world_bank_indicators_2019_2021.csv
-|   `-- world_bank_population_2020.csv
-|-- docs/architecture/
-|   `-- world-bank-context.md            # WDI architecture decision
-|-- scripts/
-|   |-- bootstrap.py                     # Guided setup
 |   |-- capture_snowflake_performance.py # Tagged live Snowflake evidence
 |   |-- clear_cache.py                   # Prefix-scoped cache removal
 |   |-- export_spark_sources.py          # Snowflake source export
@@ -1728,6 +1095,7 @@ GitHub Actions runs the locked environment and quality checks for each push and 
 |   |-- setup_mongodb.py                 # MongoDB indexes
 |   |-- update_covid_denominator.py      # Denominator lifecycle
 |   `-- world_bank_indicators.py         # WDI refresh and publication
+|-- reports/snowflake/                   # Sanitized before-and-after evidence
 |-- sql/
 |   |-- 00_project_setup.sql
 |   |-- 00_project_objects.sql
@@ -1740,7 +1108,6 @@ GitHub Actions runs the locked environment and quality checks for each push and 
 |   |-- 07_analysis_queries.sql
 |   |-- 08_migrate_population_compatibility.sql
 |   `-- 09_create_jhu_extension.sql
-|-- reports/snowflake/                   # Sanitized before/after evidence
 |-- tests/                               # Application tests
 |-- spark_tests/                         # Spark tests
 |-- .env.example                         # Configuration template
@@ -1769,7 +1136,26 @@ docker compose ps
 docker compose logs mongo redis api
 ```
 
+Use the error code to select the next check:
+
 | Error code | Action |
+| --- | --- |
+| `cache_unavailable` | Check the Redis service and logs |
+| `mongodb_unavailable` | Check MongoDB logs and stored credentials |
+| `snowflake_configuration_invalid` | Compare variable names with `.env.example` |
+| `snowflake_authentication_failed` | Check the Snowflake username and password |
+| `snowflake_role_unauthorized` | Resume setup and check the API role grant |
+| `snowflake_warehouse_unavailable` | Check `COVID_WH` and role `USAGE` |
+| `snowflake_permission_denied` | Resume setup and restore project grants |
+| `analytics_objects_missing` | Complete the Snowflake mart deployment |
+| `context_data_unavailable` | Compare the committed and active WDI snapshot identifiers |
+| `snowflake_network_unavailable` | Check internet, DNS, proxy, and firewall access |
+
+For other failures, use the [troubleshooting guide](docs/troubleshooting.md). Do not grant `ACCOUNTADMIN` to the API role to bypass a permission error.
+
+## Documentation
+
+| Document | Purpose |
 | --- | --- |
 | [Project overview](docs/project-overview.md) | Review capabilities, architecture, and project structure |
 | [Data sources](docs/data-sources.md) | Review source selection and data boundaries |
@@ -1777,7 +1163,7 @@ docker compose logs mongo redis api
 | [API reference](docs/api-reference.md) | Review endpoints, caching, and annotations |
 | [Configuration](docs/configuration.md) | Review environment variables and runtime choices |
 | [Analytics](docs/analytics.md) | Review forecasting and EDA |
-| [Spark](docs/spark.md) | Run Spark ingestion, quality checks, and benchmarks |
+| [Spark](docs/spark.md) | Run Spark ingestion, quality checks, benchmarks, and clustering |
 | [Development](docs/development.md) | Run local development and code checks |
 | [Troubleshooting](docs/troubleshooting.md) | Correct setup and runtime problems |
 | [World Bank country context](docs/architecture/world-bank-context.md) | Review the WDI architecture and migration policy |

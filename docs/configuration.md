@@ -18,6 +18,11 @@ Compose supplies internal service addresses. The dashboard reads only its contai
 | `SNOWFLAKE_DATABASE` | `COVID_ANALYTICS` | Store project objects |
 | `SNOWFLAKE_SCHEMA` | `RAW` | Set the setup schema |
 | `SNOWFLAKE_API_SCHEMA` | `MARTS` | Set the API schema |
+| `SNOWFLAKE_LOGIN_TIMEOUT_SECONDS` | `10` | Bound login and authentication attempts |
+| `SNOWFLAKE_NETWORK_TIMEOUT_SECONDS` | `30` | Bound connector network operations |
+| `SNOWFLAKE_STATEMENT_TIMEOUT_SECONDS` | `30` | Bound each API statement in Snowflake |
+| `SNOWFLAKE_QUERY_TAG_PREFIX` | `covid-api` | Identify API statements in Query History |
+| `SNOWFLAKE_USE_CACHED_RESULT` | `true` | Allow Snowflake result-cache reuse for normal serving |
 
 Use `organization-account` for `SNOWFLAKE_ACCOUNT`. Do not use a URL or hostname.
 
@@ -39,7 +44,9 @@ CACHE_NAMESPACE=covid-api:v4
 
 Set `COVID_DATASET=legacy` to read the original ECDC-only marts. This setting does not replace or delete data.
 
-Change `CACHE_NAMESPACE` when response semantics change. Clear the old project cache after a mart refresh.
+Every COVID-derived cache key also includes `COVID_DATASET`. A legacy response and an extended response therefore cannot share a cache entry. Change `CACHE_NAMESPACE` when response semantics change.
+
+API query tags use `<prefix>:<dataset>:<operation>`. This format separates legacy and extended traffic and attributes each statement to one repository operation. The live profiler disables `SNOWFLAKE_USE_CACHED_RESULT`; normal API serving keeps it enabled.
 
 ## MongoDB and Redis
 
@@ -59,9 +66,13 @@ Redis is required for analytical routes. The API does not query Snowflake when R
 
 Stable analytical responses use a 24-hour lifetime. Forecast responses use a six-hour lifetime.
 
-The cache lock lasts 30 seconds. A waiting request can wait up to 10 seconds for another cache fill.
+The cache lock lasts 60 seconds. A waiting request can wait up to 15 seconds for another cache fill. The lease covers the 30-second Snowflake statement bound, while the shorter wait prevents a request from waiting for the complete lease.
 
-Context and comparison keys include the active WDI snapshot identifier. This rule prevents reuse across snapshot versions.
+Every COVID-derived key includes `COVID_DATASET`. Comparison and combined-page keys also include the committed WDI snapshot identifier. WDI-only context keys remain snapshot-based.
+
+If the WDI manifest cannot be read, an optional combined page uses the explicit revision `unavailable`. This identity permits a cached COVID-only response without sharing a key with verified WDI context. The context-only route still fails closed.
+
+After a mart refresh, first validate the new marts and rebuild `COUNTRY_LATEST_METRICS_EXTENDED`. Clear the project cache only after publication succeeds. This order preserves the last-known-good cache if publication fails.
 
 Clear only the project cache prefix:
 

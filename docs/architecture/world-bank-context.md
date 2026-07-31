@@ -96,13 +96,13 @@ This order has no circular dependency. The baseline's 2020 population is named `
 
 `GET /countries/{identifier}/context` returns values with year, unit, indicator code, status and snapshot ID. The combined Country Explorer payload carries the same context without another browser request.
 
-The application reads the committed snapshot ID at startup. A matching active Snowflake snapshot enables context. A mismatch returns `503 context_data_unavailable` from the context endpoint, while summary, time-series and forecasting remain available. Country Explorer shows COVID data plus a context warning. Context cache keys are visibly versioned as:
+The application reads the committed snapshot ID at startup. A matching active Snowflake snapshot enables context. A mismatch returns `503 context_data_unavailable` from the context endpoint, while summary, time-series and forecasting remain available. Country Explorer shows COVID data plus a context warning. WDI-only context cache keys are visibly versioned as:
 
 ```text
-covid-api:v3:<snapshot-id>:country-context:<iso3>
+covid-api:v4:<snapshot-id>:country-context:<iso3>
 ```
 
-The service must restart after a new manifest is deployed so process state and the active warehouse snapshot converge deliberately.
+The service must restart after a new manifest is deployed so process state and the active warehouse snapshot converge deliberately. Every COVID-derived key separately includes `COVID_DATASET`. If the optional manifest cannot be read, combined pages use the explicit revision `unavailable`; the context-only route still fails closed.
 
 ## Spark optimization boundary
 
