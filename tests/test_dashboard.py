@@ -1118,23 +1118,23 @@ class DashboardSmokeTests(unittest.TestCase):
             "iso3": "LVA",
             "location_key": "LVA",
             "metric": "new_cases",
-            "historical_start_date": "2020-09-16",
-            "historical_end_date": "2020-12-14",
+            "historical_start_date": "2022-12-10",
+            "historical_end_date": "2023-03-09",
             "horizon_days": 30,
             "lookback_days": 90,
             "training_observations": 90,
             "interval_level_percent": 90,
-            "history": [{"report_date": "2020-12-14", "value": 500}],
+            "history": [{"report_date": "2023-03-09", "value": 500}],
             "forecast": [
                 {
-                    "report_date": "2020-12-15",
+                    "report_date": "2023-03-10",
                     "predicted": 510,
                     "lower_bound": 450,
                     "upper_bound": 570,
                 }
             ],
             "evaluation": {
-                "holdout_start_date": "2020-12-01",
+                "holdout_start_date": "2023-02-24",
                 "holdout_observations": 14,
                 "moving_average_mae": 80,
                 "moving_average_rmse": 100,
@@ -1144,7 +1144,11 @@ class DashboardSmokeTests(unittest.TestCase):
                 "selected_mae": 70,
                 "selected_rmse": 90,
             },
-            "caveats": ["Historical demonstration only."],
+            "caveats": [
+                "The source is historical and the selected series ends on "
+                "9 March 2023; projections demonstrate the modelling workflow and "
+                "are not current public-health guidance."
+            ],
         }
 
         state = load_forecast_page("LV", "new_cases", "30", "90", 0)
@@ -1152,10 +1156,13 @@ class DashboardSmokeTests(unittest.TestCase):
         self.assertEqual(get_json.call_count, 1)
         get_json.reset_mock()
         rendered = render_forecast_content(state)
-        self.assertIn("Linear Trend", str(rendered))
-        self.assertIn("Temporal validation", str(rendered))
-        self.assertNotIn("World Bank country context", str(rendered))
-        self.assertNotIn("Pre-pandemic country context", str(rendered))
+        rendered_text = str(rendered)
+        self.assertIn("Linear Trend", rendered_text)
+        self.assertIn("Temporal validation", rendered_text)
+        self.assertIn("selected series ends on 9 March 2023", rendered_text)
+        self.assertNotIn("ends in 2020", rendered_text)
+        self.assertNotIn("World Bank country context", rendered_text)
+        self.assertNotIn("Pre-pandemic country context", rendered_text)
         get_json.assert_not_called()
 
     @patch("app.dashboard.app.ctx")

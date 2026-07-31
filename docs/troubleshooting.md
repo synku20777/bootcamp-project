@@ -132,6 +132,25 @@ git add <updated-files>
 uv run pre-commit run --all-files
 ```
 
+## The Python quality workflow stops at Black
+
+The workflow stops at the first failed quality step. A failure in **Check
+formatting** means committed Python source does not match the pinned Black
+version; it is not a Ruff or unit-test failure. The CI command uses `--check`,
+so it reports a diff and exits without changing files.
+
+Reproduce and fix the result with the locked environment:
+
+```bash
+uv sync --locked
+uv run black --check --diff .
+uv run black <paths-reported-by-Black>
+uv run pre-commit run --all-files
+```
+
+Review the formatter's changes before committing them. The final pre-commit
+command also runs checks that CI skipped after Black failed.
+
 ## The lockfile is out of date
 
 After an intentional dependency change, run:

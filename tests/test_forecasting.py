@@ -11,7 +11,11 @@ from app.services.forecasting import compute_forecast
 
 
 class ImmediateCache:
+    def __init__(self) -> None:
+        self.call = None
+
     def get_or_compute(self, *, compute, **_kwargs):
+        self.call = _kwargs
         return compute(), CacheStatus.MISS
 
 
@@ -62,7 +66,7 @@ class ForecastingTests(unittest.TestCase):
             compute_forecast(observations, horizon_days=7)
 
     def test_service_preserves_source_corrections_but_models_non_negative(self) -> None:
-        start = date(2020, 1, 1)
+        start = date(2023, 1, 27)
         rows = [
             {
                 "COUNTRY": "Latvia",
@@ -75,9 +79,10 @@ class ForecastingTests(unittest.TestCase):
             for index in range(42)
         ]
         repository = ForecastRepository(rows)
+        cache = ImmediateCache()
         service = CovidService(
             repository,
-            ImmediateCache(),
+            cache,
             Settings(_env_file=None),
         )
 
@@ -93,7 +98,62 @@ class ForecastingTests(unittest.TestCase):
         self.assertEqual(result.history[-1].value, -5)
         self.assertTrue(all(point.predicted >= 0 for point in result.forecast))
         self.assertTrue(any("corrections" in caveat for caveat in result.caveats))
-        self.assertTrue(any("2020-02-11" in caveat for caveat in result.caveats))
+        self.assertTrue(
+            any(
+                "selected series ends on 9 March 2023" in caveat
+                for caveat in result.caveats
+            )
+        )
+        self.assertFalse(any("ends in 2020" in caveat for caveat in result.caveats))
+        self.assertEqual(
+            cache.call["key_payload"],
+            {
+                "dataset": "extended",
+                "identifier": "LV",
+                "metric": "new_cases",
+                "horizon_days": 7,
+                "lookback_days": 42,
+                "version": 2,
+            },
+        )
+
+    def test_caveat_uses_actual_end_date_for_legacy_series(self) -> None:
+        start = date(2020, 11, 3)
+        rows = [
+            {
+                "COUNTRY": "Latvia",
+                "COUNTRY_ISO2": "LV",
+                "COUNTRY_ISO3": "LVA",
+                "LOCATION_KEY": "LV",
+                "REPORT_DATE": start + timedelta(days=index),
+                "METRIC_VALUE": 20,
+            }
+            for index in range(42)
+        ]
+        cache = ImmediateCache()
+        service = CovidService(
+            ForecastRepository(rows),
+            cache,
+            Settings(_env_file=None, covid_dataset="legacy"),
+        )
+
+        result, _ = service.forecast(
+            "LV",
+            ForecastMetric.NEW_CASES,
+            horizon_days=7,
+            lookback_days=42,
+        )
+
+        self.assertEqual(result.historical_end_date, date(2020, 12, 14))
+        self.assertTrue(
+            any(
+                "selected series ends on 14 December 2020" in caveat
+                for caveat in result.caveats
+            )
+        )
+        self.assertFalse(any("ends in 2020" in caveat for caveat in result.caveats))
+        self.assertEqual(cache.call["key_payload"]["dataset"], "legacy")
+        self.assertEqual(cache.call["key_payload"]["version"], 2)
 
     def test_context_values_cannot_change_forecast_output(self) -> None:
         start = date(2020, 1, 1)

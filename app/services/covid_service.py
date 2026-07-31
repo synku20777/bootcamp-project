@@ -950,13 +950,14 @@ class CovidService:
                     strict=False,
                 )
             )
+            historical_end_date = observed_rows[-1]["REPORT_DATE"]
             caveats = [
                 "The 90% interval is an empirical error band from rolling temporal "
                 "validation, not a clinical or probabilistic confidence guarantee.",
                 "The source is historical and the selected series ends on "
-                f"{observed_rows[-1]['REPORT_DATE'].isoformat()}; projections "
-                "demonstrate the modelling workflow and are not current "
-                "public-health guidance.",
+                f"{historical_end_date.day} {historical_end_date:%B %Y}; projections "
+                "demonstrate the modelling workflow and are not current public-health "
+                "guidance.",
             ]
             if any(float(row["METRIC_VALUE"]) < 0 for row in observed_rows):
                 caveats.append(
@@ -974,7 +975,7 @@ class CovidService:
                 **self._identity(first),
                 metric=metric,
                 historical_start_date=first["REPORT_DATE"],
-                historical_end_date=observed_rows[-1]["REPORT_DATE"],
+                historical_end_date=historical_end_date,
                 horizon_days=horizon_days,
                 lookback_days=lookback_days,
                 training_observations=len(observed_rows),
@@ -1011,7 +1012,7 @@ class CovidService:
                 "metric": metric.value,
                 "horizon_days": horizon_days,
                 "lookback_days": lookback_days,
-                "version": 1,
+                "version": 2,
             },
             ttl_seconds=self.settings.cache_ttl_forecast_seconds,
             model_type=CountryForecast,

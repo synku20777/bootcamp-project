@@ -159,9 +159,11 @@ def _run_workload(
 def _recursive_sum(value: Any, keys: set[str]) -> int:
     if isinstance(value, dict):
         return sum(
-            int(child or 0)
-            if key in keys and isinstance(child, (int, float))
-            else _recursive_sum(child, keys)
+            (
+                int(child or 0)
+                if key in keys and isinstance(child, (int, float))
+                else _recursive_sum(child, keys)
+            )
             for key, child in value.items()
         )
     if isinstance(value, list):
@@ -316,8 +318,7 @@ def _object_evidence(
             "row_count": row_count,
             "unordered_hash": unordered_hash,
         }
-    cursor.execute(
-        """
+    cursor.execute("""
         SELECT
             COUNT(*) AS ROW_COUNT,
             COUNT(DISTINCT COUNTRY_ISO3) AS ISO3_COUNTRIES,
@@ -329,12 +330,10 @@ def _object_evidence(
                 DISTINCT LOCATION_KEY || '|' || TO_VARCHAR(REPORT_DATE)
             ) AS DUPLICATE_LOCATION_DATE_ROWS
         FROM COVID_ANALYTICS.MARTS.COVID_ENRICHED_EXTENDED
-        """
-    )
+        """)
     columns = [column[0].lower() for column in cursor.description]
     results["extended_contract"] = dict(zip(columns, cursor.fetchone(), strict=True))
-    cursor.execute(
-        """
+    cursor.execute("""
         SELECT
             COUNT(*) AS PATTERN_COUNT,
             COUNT(DISTINCT LOCATION_KEY) AS LOCATION_COUNT,
@@ -342,8 +341,7 @@ def _object_evidence(
                 AS INVALID_DURATION_ROWS,
             COUNT_IF(CONSECUTIVE_INCREASES < 3) AS INVALID_INCREASE_ROWS
         FROM COVID_ANALYTICS.MARTS.CASE_INCREASE_PATTERNS_EXTENDED
-        """
-    )
+        """)
     columns = [column[0].lower() for column in cursor.description]
     results["pattern_contract"] = dict(zip(columns, cursor.fetchone(), strict=True))
     return results
@@ -360,15 +358,13 @@ def _warehouse_evidence(
     monitor_columns = [column[0] for column in cursor.description]
     monitor_row = cursor.fetchone()
     monitor = dict(zip(monitor_columns, monitor_row, strict=True))
-    cursor.execute(
-        """
+    cursor.execute("""
         SELECT
             COALESCE(SUM(CREDITS_USED), 0) AS QAS_CREDITS
         FROM SNOWFLAKE.ACCOUNT_USAGE.QUERY_ACCELERATION_HISTORY
         WHERE START_TIME >= DATEADD('DAY', -7, CURRENT_TIMESTAMP())
           AND WAREHOUSE_NAME = CURRENT_WAREHOUSE()
-        """
-    )
+        """)
     qas_credits = cursor.fetchone()[0]
     return {
         "warehouse": {
