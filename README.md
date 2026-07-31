@@ -135,6 +135,10 @@ Do not commit `.env`. Do not paste its contents into an issue or log.
 | `SNOWFLAKE_DATABASE` | `COVID_ANALYTICS` |
 | `SNOWFLAKE_SCHEMA` | `RAW` |
 | `SNOWFLAKE_API_SCHEMA` | `MARTS` |
+| `SNOWFLAKE_LOGIN_TIMEOUT_SECONDS` | `10` by default |
+| `SNOWFLAKE_NETWORK_TIMEOUT_SECONDS` | `30` by default |
+| `SNOWFLAKE_STATEMENT_TIMEOUT_SECONDS` | `30` by default for API statements |
+| `SNOWFLAKE_QUERY_TAG_PREFIX` | `covid-api` by default |
 | `COVID_DATASET` | `extended` for the promoted ECDC/JHU series; `legacy` for rollback |
 
 Keep the three roles separate. Do not use `ACCOUNTADMIN` as the API role.
@@ -456,7 +460,7 @@ Open [`sql/00_project_setup.sql`](sql/00_project_setup.sql) in Snowsight. Run it
 The file creates these objects:
 
 - `COVID_PROJECT_MONITOR`, with a five-credit monthly quota.
-- `COVID_WH`, with an `XSMALL` size and automatic suspension.
+- `COVID_WH`, as X-Small Gen2 with 60-second automatic suspension and Query Acceleration disabled.
 - `COVID_ANALYTICS`, which owns project data.
 - `COVID_PROJECT_ADMIN`, which deploys project objects.
 - `COVID_APP_ROLE`, which reads API marts.
@@ -593,8 +597,10 @@ COVID19_EPIDEMIOLOGICAL_DATA.PUBLIC.JHU_COVID_19_TIMESERIES
 STAGING.COVID_COUNTRY_DAILY
     + STAGING.JHU_COUNTRY_DAILY
     -> STAGING.COVID_COUNTRY_DAILY_EXTENDED
-    -> MARTS.CASE_INCREASE_PATTERNS_EXTENDED
-    -> MARTS.COVID_ENRICHED_EXTENDED
+    -> MARTS.CASE_INCREASE_PATTERNS_EXTENDED_DATA (transient refresh table)
+    -> MARTS.CASE_INCREASE_PATTERNS_EXTENDED (stable public view)
+    -> MARTS.COVID_ENRICHED_EXTENDED_DATA (transient refresh table)
+    -> MARTS.COVID_ENRICHED_EXTENDED (stable public view)
     -> MARTS.COUNTRY_LATEST_METRICS_EXTENDED
 ```
 
@@ -695,9 +701,11 @@ The first overview response should include `X-Cache: MISS`. The second equal req
 
 ### Cache policy
 
-Stable analytical responses, including case-increase patterns, use a 24-hour time to live. Forecasts use a six-hour time to live. Comparison cache keys use contract version 2 and include the committed WDI snapshot ID. Therefore, a new WDI publication cannot reuse a response from an older snapshot.
+Stable analytical responses, including case-increase patterns, use a 24-hour time to live. Forecasts use a six-hour time to live. Every COVID-derived cache key includes `COVID_DATASET`, so legacy and extended responses cannot collide. Comparison and combined-page keys also include the committed WDI snapshot ID. WDI-only context keys remain snapshot-based.
 
-Context cache keys include the active WDI snapshot identifier. This rule prevents cached context from crossing snapshot versions.
+If the WDI manifest cannot be read, an optional combined page uses the explicit context revision `unavailable`. This allows the COVID-only response to be cached without sharing identity with a valid WDI snapshot. The context-only route still fails closed because it cannot satisfy its contract without a verified snapshot.
+
+The stampede lock has a 60-second lease and waiters stop after 15 seconds. These bounds cover the 30-second Snowflake statement timeout without permitting an abandoned lock to stall requests for a full cache TTL.
 
 The promoted dataset uses `CACHE_NAMESPACE=covid-api:v4`. Change the namespace when response semantics change. Clear only the project prefix after a mart refresh.
 
@@ -705,9 +713,27 @@ The promoted dataset uses `CACHE_NAMESPACE=covid-api:v4`. Change the namespace w
 docker compose exec api python -m scripts.clear_cache
 ```
 
-The script uses incremental Redis `SCAN` calls. It does not flush unrelated Redis data.
+The script uses incremental Redis `SCAN` calls. It does not flush unrelated Redis data. Refresh in this order: rebuild and validate the Snowflake marts, rebuild `COUNTRY_LATEST_METRICS_EXTENDED`, and only then clear the project cache prefix. A failed publication therefore leaves the last-known-good cache intact.
 
 Page-level dashboard stores prevent one API request per chart. Render callbacks use the stored page payload.
+
+### Snowflake performance validation
+
+The extended serving path materializes the expensive source splice, denominator enrichment, WDI joins, cumulative windows, and `MATCH_RECOGNIZE` work during controlled publication. `COVID_ENRICHED_EXTENDED` and `CASE_INCREASE_PATTERNS_EXTENDED` remain stable public views over transient `_DATA` tables, so API routes and response contracts do not change. Rerunning `sql/09_create_jhu_extension.sql` owns the complete refresh lifecycle.
+
+The live 31 July 2026 comparison used one warmup and five measured repetitions with Snowflake result-cache reuse disabled. Median Snowflake elapsed time fell from 1,471–2,350 ms to 149–470 ms across every detailed operation; compilation fell by 70.7–90.1%. Results, coverage, key uniqueness, and unordered hashes remained equal. All 30 measured post-change statements recorded zero queue time, spill, and Query Acceleration activity; the excluded first warmup recorded 82 ms of provisioning queue while the warehouse resumed. The full method, limits, query-tag runs, and results are in [`reports/snowflake/optimization_evidence_2026-07-31.md`](reports/snowflake/optimization_evidence_2026-07-31.md); sanitized per-query data is in [`reports/snowflake/performance_evidence.json`](reports/snowflake/performance_evidence.json).
+
+The warehouse contract is reasserted on every setup: X-Small Gen2, 60-second auto-suspend, attached resource monitor, and Query Acceleration disabled. QAS was not used by the measured workload and is separately billed serverless compute outside resource-monitor control. The checked-in monitor quota remains five credits for normal bootcamp use; the live account used a temporary 25-credit audit allowance.
+
+No clustering key, automatic clustering, or Search Optimization is configured. The materialized enriched table is only 224,265 rows and 8.43 MB across eight micro-partitions, while detailed Snowflake medians are already below 0.5 seconds. Their maintenance or serverless cost is not justified at this scale.
+
+To repeat the comparison, run the capture script with phase `pre_materialization`, deploy with the normal bootstrap path, then run it with phase `post_materialization`, using the same environment file and output path. The script disables result-cache reuse, applies run-specific query tags, and stores query IDs, connection and Snowflake timings, bytes, pruning, queue, QAS, and spill evidence. The command is:
+
+```bash
+uv run python scripts/capture_snowflake_performance.py --phase post_materialization --env-file .env --output reports/snowflake/performance_evidence.json --warmups 1 --repetitions 5
+```
+
+Use `pre_materialization` for the first phase. Account Usage `QUERY_HISTORY` can lag by up to 45 minutes, so the script uses Information Schema history for immediate measurements. Warehouse credits are aggregate and cannot be attributed solely to API traffic; the query tags identify the statements in scope.
 
 ### Annotation workflow
 
@@ -747,6 +773,12 @@ The API validates the country and report date against Snowflake before insertion
 | `SNOWFLAKE_DATABASE` | Snowflake clients | Project database |
 | `SNOWFLAKE_SCHEMA` | Deployment scripts | Default deployment schema |
 | `SNOWFLAKE_API_SCHEMA` | FastAPI | Analytical schema |
+| `SNOWFLAKE_LOGIN_TIMEOUT_SECONDS` | FastAPI | Connector login retry bound; default 10 seconds |
+| `SNOWFLAKE_NETWORK_TIMEOUT_SECONDS` | FastAPI | Connector network retry bound; default 30 seconds |
+| `SNOWFLAKE_STATEMENT_TIMEOUT_SECONDS` | FastAPI | Snowflake statement bound; default 30 seconds |
+| `SNOWFLAKE_QUERY_TAG_PREFIX` | FastAPI | Query attribution prefix; default `covid-api` |
+| `SNOWFLAKE_USE_CACHED_RESULT` | FastAPI and profiler | Snowflake result-cache policy; enabled for serving and disabled by the profiler |
+| `COVID_DATASET` | FastAPI | Select `extended` or the `legacy` rollback marts |
 | `MONGO_ROOT_USERNAME` | Compose | MongoDB root user |
 | `MONGO_ROOT_PASSWORD` | Compose | MongoDB root password |
 | `MONGO_DATABASE` | Compose and FastAPI | Application database |
@@ -754,6 +786,8 @@ The API validates the country and report date against Snowflake before insertion
 | `REDIS_URL` | FastAPI | Redis connection string |
 | `CACHE_NAMESPACE` | FastAPI | Version prefix for cache keys |
 | `CACHE_TTL_*` | FastAPI | Endpoint time-to-live values |
+| `CACHE_LOCK_SECONDS` | FastAPI | Per-key lock lease; default 60 seconds |
+| `CACHE_LOCK_WAIT_SECONDS` | FastAPI | Cache-fill waiter bound; default 15 seconds |
 | `DASHBOARD_API_BASE_URL` | Dash | Internal API URL |
 | `DASHBOARD_PUBLIC_API_BASE_URL` | Browser links | Host-visible API URL |
 
@@ -1064,6 +1098,7 @@ GitHub Actions runs the locked environment and quality checks for each push and 
 |   `-- world-bank-context.md            # WDI architecture decision
 |-- scripts/
 |   |-- bootstrap.py                     # Guided setup
+|   |-- capture_snowflake_performance.py # Tagged live Snowflake evidence
 |   |-- clear_cache.py                   # Prefix-scoped cache removal
 |   |-- export_spark_sources.py          # Snowflake source export
 |   |-- run_eda.py                       # EDA CSV export
@@ -1083,6 +1118,7 @@ GitHub Actions runs the locked environment and quality checks for each push and 
 |   |-- 07_analysis_queries.sql
 |   |-- 08_migrate_population_compatibility.sql
 |   `-- 09_create_jhu_extension.sql
+|-- reports/snowflake/                   # Sanitized before/after evidence
 |-- tests/                               # Application tests
 |-- spark_tests/                         # Spark tests
 |-- .env.example                         # Configuration template

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import logging
+import time
 from collections.abc import Sequence
 from dataclasses import dataclass
 from typing import Any
@@ -197,8 +198,12 @@ class SnowflakeRepository:
             message="Snowflake is temporarily unavailable.",
         )
 
-    def _connect(self) -> SnowflakeConnection:
+    def _connect(self, operation: str) -> SnowflakeConnection:
         configuration = self._configuration()
+        query_tag = (
+            f"{self.settings.snowflake_query_tag_prefix}:"
+            f"{self.settings.covid_dataset}:{operation}"
+        )
 
         try:
             return snowflake.connector.connect(
@@ -210,6 +215,15 @@ class SnowflakeRepository:
                 database=configuration["SNOWFLAKE_DATABASE"],
                 schema=configuration["SNOWFLAKE_API_SCHEMA"],
                 application="COVID_ANALYTICS_API",
+                login_timeout=self.settings.snowflake_login_timeout_seconds,
+                network_timeout=self.settings.snowflake_network_timeout_seconds,
+                session_parameters={
+                    "QUERY_TAG": query_tag,
+                    "STATEMENT_TIMEOUT_IN_SECONDS": (
+                        self.settings.snowflake_statement_timeout_seconds
+                    ),
+                    "USE_CACHED_RESULT": self.settings.snowflake_use_cached_result,
+                },
             )
         except snowflake.connector.Error as exc:
             logger.exception(
@@ -229,18 +243,53 @@ class SnowflakeRepository:
         cursor = None
 
         try:
-            connection = self._connect()
+            connection_started = time.perf_counter()
+            connection = self._connect(operation)
+            connection_ms = round(
+                (time.perf_counter() - connection_started) * 1000,
+                1,
+            )
             cursor = connection.cursor()
+            query_started = time.perf_counter()
             cursor.execute(sql, tuple(parameters))
 
             if not cursor.description:
+                logger.info(
+                    "snowflake_query_succeeded",
+                    extra={
+                        "operation": operation,
+                        "query_id": str(getattr(cursor, "sfqid", "") or ""),
+                        "connection_ms": connection_ms,
+                        "query_and_fetch_ms": round(
+                            (time.perf_counter() - query_started) * 1000,
+                            1,
+                        ),
+                        "returned_row_count": 0,
+                        "covid_dataset": self.settings.covid_dataset,
+                    },
+                )
                 return []
 
             columns = [
                 getattr(column, "name", column[0]).upper()
                 for column in cursor.description
             ]
-            return [dict(zip(columns, row, strict=True)) for row in cursor.fetchall()]
+            rows = [dict(zip(columns, row, strict=True)) for row in cursor.fetchall()]
+            logger.info(
+                "snowflake_query_succeeded",
+                extra={
+                    "operation": operation,
+                    "query_id": str(getattr(cursor, "sfqid", "") or ""),
+                    "connection_ms": connection_ms,
+                    "query_and_fetch_ms": round(
+                        (time.perf_counter() - query_started) * 1000,
+                        1,
+                    ),
+                    "returned_row_count": len(rows),
+                    "covid_dataset": self.settings.covid_dataset,
+                },
+            )
+            return rows
         except DataSourceUnavailableError:
             raise
         except snowflake.connector.Error as exc:

@@ -56,6 +56,8 @@ class CountryList(RootModel[list[CountryIdentity]]):
 
 
 class CovidService:
+    _CONTEXT_UNAVAILABLE_REVISION = "unavailable"
+
     def __init__(
         self,
         repository: SnowflakeRepository,
@@ -77,6 +79,12 @@ class CovidService:
     def _validate_dates(start_date: date, end_date: date) -> None:
         if start_date > end_date:
             raise DomainValidationError("start_date must not be after end_date.")
+
+    def _optional_context_snapshot_id(self) -> str:
+        try:
+            return committed_snapshot_id(self.settings.world_bank_manifest_path)
+        except DataSourceUnavailableError:
+            return self._CONTEXT_UNAVAILABLE_REVISION
 
     @staticmethod
     def _identity(row: dict[str, Any]) -> dict[str, Any]:
@@ -555,7 +563,10 @@ class CovidService:
 
         result, status = self.cache.get_or_compute(
             endpoint="countries",
-            key_payload={"version": 1},
+            key_payload={
+                "dataset": self.settings.covid_dataset,
+                "version": 1,
+            },
             ttl_seconds=self.settings.cache_ttl_countries_seconds,
             model_type=CountryList,
             compute=compute,
@@ -638,7 +649,11 @@ class CovidService:
 
         return self.cache.get_or_compute(
             endpoint="summary",
-            key_payload={"identifier": normalized, "version": 1},
+            key_payload={
+                "dataset": self.settings.covid_dataset,
+                "identifier": normalized,
+                "version": 1,
+            },
             ttl_seconds=self.settings.cache_ttl_summary_seconds,
             model_type=CountrySummary,
             compute=compute,
@@ -683,6 +698,7 @@ class CovidService:
         return self.cache.get_or_compute(
             endpoint="timeseries",
             key_payload={
+                "dataset": self.settings.covid_dataset,
                 "identifier": normalized,
                 "metric": metric.value,
                 "start_date": start_date.isoformat(),
@@ -715,6 +731,7 @@ class CovidService:
         return self.cache.get_or_compute(
             endpoint="compare",
             key_payload={
+                "dataset": self.settings.covid_dataset,
                 "identifiers": normalized,
                 "metric": metric.value,
                 "start_date": start_date.isoformat(),
@@ -735,6 +752,7 @@ class CovidService:
     ) -> tuple[CountryDashboard, CacheStatus]:
         normalized = self._identifier(identifier)
         self._validate_dates(start_date, end_date)
+        context_snapshot_id = self._optional_context_snapshot_id()
 
         def compute() -> CountryDashboard:
             rows = self.repository.fetch_country_dashboard(
@@ -761,10 +779,13 @@ class CovidService:
                 mortality_rate_percent=first["LATEST_MORTALITY_RATE_PERCENT"],
             )
             try:
-                context = self._country_context(
-                    first,
-                    committed_snapshot_id(self.settings.world_bank_manifest_path),
-                )
+                if context_snapshot_id == self._CONTEXT_UNAVAILABLE_REVISION:
+                    raise DataSourceUnavailableError(
+                        "World Bank context",
+                        code="context_data_unavailable",
+                        message="Country context data is temporarily unavailable.",
+                    )
+                context = self._country_context(first, context_snapshot_id)
                 context_status = "available"
             except DataSourceUnavailableError:
                 # Context is an optional analytical layer. A manifest mismatch
@@ -799,14 +820,13 @@ class CovidService:
         return self.cache.get_or_compute(
             endpoint="country-page",
             key_payload={
+                "dataset": self.settings.covid_dataset,
                 "identifier": normalized,
                 "metric": metric.value,
                 "start_date": start_date.isoformat(),
                 "end_date": end_date.isoformat(),
                 "version": 2,
-                "context_snapshot_id": committed_snapshot_id(
-                    self.settings.world_bank_manifest_path
-                ),
+                "context_snapshot_id": context_snapshot_id,
             },
             ttl_seconds=self.settings.cache_ttl_country_page_seconds,
             model_type=CountryDashboard,
@@ -821,7 +841,7 @@ class CovidService:
     ) -> tuple[DashboardComparison, CacheStatus]:
         self._validate_dates(start_date, end_date)
         normalized = self._normalize_comparison_identifiers(identifiers)
-        snapshot_id = committed_snapshot_id(self.settings.world_bank_manifest_path)
+        snapshot_id = self._optional_context_snapshot_id()
         compute = partial(
             self._load_dashboard_comparison,
             identifiers,
@@ -834,6 +854,7 @@ class CovidService:
         return self.cache.get_or_compute(
             endpoint="comparison-page",
             key_payload={
+                "dataset": self.settings.covid_dataset,
                 "identifiers": normalized,
                 "start_date": start_date.isoformat(),
                 "end_date": end_date.isoformat(),
@@ -932,8 +953,10 @@ class CovidService:
             caveats = [
                 "The 90% interval is an empirical error band from rolling temporal "
                 "validation, not a clinical or probabilistic confidence guarantee.",
-                "The source is historical and ends in 2020; projections demonstrate "
-                "the modelling workflow and are not current public-health guidance.",
+                "The source is historical and the selected series ends on "
+                f"{observed_rows[-1]['REPORT_DATE'].isoformat()}; projections "
+                "demonstrate the modelling workflow and are not current "
+                "public-health guidance.",
             ]
             if any(float(row["METRIC_VALUE"]) < 0 for row in observed_rows):
                 caveats.append(
@@ -983,6 +1006,7 @@ class CovidService:
         return self.cache.get_or_compute(
             endpoint="forecast",
             key_payload={
+                "dataset": self.settings.covid_dataset,
                 "identifier": normalized,
                 "metric": metric.value,
                 "horizon_days": horizon_days,

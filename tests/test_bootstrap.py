@@ -283,6 +283,9 @@ class BootstrapTests(unittest.TestCase):
         self.assertIn(
             "CREATE ROLE IF NOT EXISTS COVID_PROJECT_ADMIN", account_statements
         )
+        self.assertGreaterEqual(account_statements.count("GENERATION = '2'"), 2)
+        self.assertIn("ENABLE_QUERY_ACCELERATION = FALSE", account_statements)
+        self.assertIn("AUTO_SUSPEND = 60", account_statements)
         self.assertNotIn("USE ROLE COVID_PROJECT_ADMIN", account_statements)
         self.assertIn(
             "GRANT IMPORTED PRIVILEGES\nON DATABASE COVID19_EPIDEMIOLOGICAL_DATA\nTO ROLE COVID_PROJECT_ADMIN",
@@ -645,8 +648,20 @@ class BootstrapTests(unittest.TestCase):
         self.assertIn("THEN JHU.FIRST_JHU_DATE", normalized)
         self.assertIn("COVID_COUNTRY_DAILY_EXTENDED", normalized)
         self.assertIn("COVID_ENRICHED_EXTENDED", normalized)
+        self.assertIn("COVID_ENRICHED_EXTENDED_DATA", normalized)
         self.assertIn("COUNTRY_LATEST_METRICS_EXTENDED", normalized)
         self.assertIn("CASE_INCREASE_PATTERNS_EXTENDED", normalized)
+        self.assertIn("CASE_INCREASE_PATTERNS_EXTENDED_DATA", normalized)
+        self.assertIn(
+            "CREATE OR REPLACE TRANSIENT TABLE "
+            "COVID_ANALYTICS.MARTS.COVID_ENRICHED_EXTENDED_DATA",
+            normalized,
+        )
+        self.assertIn(
+            "CREATE OR REPLACE TRANSIENT TABLE "
+            "COVID_ANALYTICS.MARTS.CASE_INCREASE_PATTERNS_EXTENDED_DATA",
+            normalized,
+        )
         self.assertIn(
             "PARTITION BY LOCATION_KEY, COUNTRY, COUNTRY_ISO2, COUNTRY_ISO3, "
             "SERIES_SEGMENT",
