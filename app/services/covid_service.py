@@ -535,7 +535,10 @@ class CovidService:
 
         return self.cache.get_or_compute(
             endpoint="overview",
-            key_payload={"version": 1},
+            key_payload={
+                "dataset": self.settings.covid_dataset,
+                "version": 2,
+            },
             ttl_seconds=self.settings.cache_ttl_overview_seconds,
             model_type=DashboardOverview,
             compute=compute,

@@ -19,6 +19,7 @@ from app.dashboard.app import (
     render_comparison_content,
     render_country_content,
     render_forecast_content,
+    render_overview_content,
     render_patterns_content,
     render_snowflake_status,
     retrieve_snowflake_status,
@@ -27,7 +28,11 @@ from app.dashboard.app import (
     update_app_shell_navbar,
     update_world_bank_comparison_chart,
 )
-from app.dashboard.charts import case_increase_patterns_figure
+from app.dashboard.charts import (
+    case_increase_patterns_figure,
+    overview_bar,
+    overview_map,
+)
 from app.dashboard.layouts import (
     annotation_page,
     comparison_page,
@@ -292,6 +297,51 @@ def patterns_payload() -> dict[str, object]:
     }
 
 
+def overview_payload() -> dict[str, object]:
+    locations = [
+        {
+            "country": "Latvia",
+            "iso2": "LV",
+            "iso3": "LVA",
+            "location_key": "LV",
+            "report_date": "2023-03-09",
+            "covid_rate_population_2020": 1_900_000,
+            "denominator_publication_status": "ACTIVE",
+            "cases_cumulative": 976_255,
+            "deaths_cumulative": 6_269,
+            "cases_per_100k": 51_381.8,
+            "deaths_per_100k": 329.9,
+            "mortality_rate_percent": 0.6422,
+            "denominator_join_status": "MATCHED",
+        },
+        {
+            "country": "Micronesia",
+            "iso2": "FM",
+            "iso3": "FSM",
+            "location_key": "FSM",
+            "report_date": "2023-03-09",
+            "covid_rate_population_2020": 112_106,
+            "denominator_publication_status": "CANDIDATE",
+            "cases_cumulative": 23_948,
+            "deaths_cumulative": 61,
+            "cases_per_100k": 21_362.0,
+            "deaths_per_100k": 54.4,
+            "mortality_rate_percent": 0.2547,
+            "denominator_join_status": "MATCHED",
+        },
+    ]
+    return {
+        "totals": {
+            "report_date": "2023-03-09",
+            "countries": 222,
+            "total_cases": 676_609_955,
+            "total_deaths": 6_881_955,
+            "mortality_rate_percent": 1.017,
+        },
+        "locations": locations,
+    }
+
+
 class DashboardSmokeTests(unittest.TestCase):
     @staticmethod
     def _catalog_state() -> dict[str, object]:
@@ -393,6 +443,25 @@ class DashboardSmokeTests(unittest.TestCase):
             component_by_id(patterns_page(catalog), "patterns-end-date").value,
             date(2023, 3, 9),
         )
+
+    def test_overview_renders_extended_totals_rankings_and_map(self) -> None:
+        payload = overview_payload()
+        rendered = render_overview_content({"state": "success", "payload": payload})
+
+        rendered_text = str(rendered)
+        self.assertIn("2023-03-09", rendered_text)
+        self.assertIn("222", rendered_text)
+        self.assertIn("676,609,955", rendered_text)
+
+        cases = overview_bar(
+            payload["locations"],
+            "cases_cumulative",
+            "Top 10 countries by cases",
+            "#315fd4",
+        )
+        world_map = overview_map(payload["locations"])
+        self.assertEqual(set(cases.data[0].y), {"Latvia", "Micronesia"})
+        self.assertEqual(set(world_map.data[0].locations), {"LVA", "FSM"})
 
     @patch("app.dashboard.app.get_json")
     def test_patterns_page_uses_one_request_and_reconciles_chart_and_table(
