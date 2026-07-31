@@ -62,6 +62,43 @@ class SnowflakeRepositoryTests(unittest.TestCase):
         self.assertIn("'ACTIVE' AS DENOMINATOR_PUBLICATION_STATUS", legacy_sql)
 
     @patch("app.repositories.snowflake_repository.snowflake.connector.connect")
+    def test_overview_uses_selected_extended_and_legacy_latest_marts(
+        self,
+        connect,
+    ) -> None:
+        cursor = MagicMock()
+        cursor.description = []
+        cursor.fetchall.return_value = []
+        connection = MagicMock()
+        connection.cursor.return_value = cursor
+        connect.return_value = connection
+
+        SnowflakeRepository(
+            Settings(
+                _env_file=None,
+                snowflake_account="account",
+                snowflake_user="user",
+                snowflake_password="password",
+            )
+        ).fetch_overview()
+        extended_sql = " ".join(cursor.execute.call_args.args[0].split())
+        self.assertIn("MARTS.COUNTRY_LATEST_METRICS_EXTENDED", extended_sql)
+
+        cursor.reset_mock()
+        SnowflakeRepository(
+            Settings(
+                _env_file=None,
+                snowflake_account="account",
+                snowflake_user="user",
+                snowflake_password="password",
+                covid_dataset="legacy",
+            )
+        ).fetch_overview()
+        legacy_sql = " ".join(cursor.execute.call_args.args[0].split())
+        self.assertIn("MARTS.COUNTRY_LATEST_METRICS ", legacy_sql)
+        self.assertNotIn("COUNTRY_LATEST_METRICS_EXTENDED", legacy_sql)
+
+    @patch("app.repositories.snowflake_repository.snowflake.connector.connect")
     def test_context_uses_selected_latest_date_and_optional_wdi_join(
         self,
         connect,

@@ -28,6 +28,7 @@ Thumbs.db
 
 # Runtime and generated data
 outputs/
+outputs/setup/
 *.log
 *.tmp
 data/source/
