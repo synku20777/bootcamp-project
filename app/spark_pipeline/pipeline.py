@@ -27,12 +27,29 @@ from app.spark_pipeline.benchmark import (
     plan_evidence,
     summarize_benchmarks,
 )
+from app.spark_pipeline.clustering import (
+    ClusteringResult,
+    country_key_skew,
+    publish_clustering_artifacts,
+    run_country_clustering,
+)
 from app.spark_pipeline.quality import (
     QUALITY_RULESET_VERSION,
     evaluate_quality,
     inspect_header,
     profile_dataset,
     read_bronze_source,
+)
+from app.spark_pipeline.runtime_policy import (
+    DEFAULT_ADVISORY_PARTITION_BYTES,
+    DEFAULT_BROADCAST_MAX_BYTES,
+    DEFAULT_CLUSTER_K_MAX,
+    DEFAULT_CLUSTER_K_MIN,
+    DEFAULT_CLUSTER_MIN_OBSERVATIONS,
+    DEFAULT_SKEW_RATIO_WARN,
+    DEFAULT_SKEW_SHARE_WARN,
+    DEFAULT_TARGET_FILE_BYTES,
+    SparkRuntimePolicy,
 )
 from app.spark_pipeline.schemas import CORRUPT_RECORD_COLUMN, DATASETS
 from app.spark_pipeline.transformations import (
@@ -66,6 +83,8 @@ class BenchmarkSuiteResult:
     layout: dict[str, Any]
     plans: dict[str, Any]
     context_equivalence: dict[str, Any]
+    broadcast_decisions: dict[str, bool]
+    skew: dict[str, Any]
 
 
 def _write_json(path: Path, payload: dict[str, Any]) -> None:
@@ -154,7 +173,8 @@ def _inspect_source_manifest(
 
     manifest = candidate if isinstance(candidate, dict) else {}
     valid = (
-        manifest.get("manifest_version") == 2
+        manifest.get("manifest_version") == 3
+        and manifest.get("source_kind") in {"snowflake_export", "fixture"}
         and manifest.get("source_batch_id") == source_directory.name
         and isinstance(manifest.get("files"), dict)
         and isinstance(manifest.get("batch_sha256"), str)
@@ -166,7 +186,7 @@ def _inspect_source_manifest(
             "source_manifest_valid",
             passed=valid,
             message=(
-                "The source manifest must use version 2 and include batch, file, "
+                "The source manifest must use version 3 and include batch, file, "
                 "and World Bank context metadata."
             ),
             dataset="manifest",
@@ -269,6 +289,7 @@ def create_spark_session(
     *,
     application_name: str,
     event_log_directory: Path,
+    policy: SparkRuntimePolicy,
 ) -> SparkSession:
     event_log_directory.mkdir(parents=True, exist_ok=True)
     spark = (
@@ -277,8 +298,11 @@ def create_spark_session(
         .config("spark.ui.enabled", "false")
         .config("spark.sql.adaptive.enabled", "true")
         .config("spark.sql.adaptive.coalescePartitions.enabled", "true")
-        .config("spark.sql.adaptive.advisoryPartitionSizeInBytes", 1024 * 1024)
-        .config("spark.sql.shuffle.partitions", 32)
+        .config(
+            "spark.sql.adaptive.advisoryPartitionSizeInBytes",
+            policy.advisory_partition_bytes,
+        )
+        .config("spark.sql.shuffle.partitions", policy.shuffle_partitions)
         .config("spark.sql.session.timeZone", "UTC")
         .config("spark.sql.autoBroadcastJoinThreshold", -1)
         .config("spark.eventLog.enabled", "true")
@@ -452,24 +476,39 @@ def _publish_bronze(
     quality_summary: dict[str, str],
     world_bank_snapshot_id: str | None,
     snowflake_context_fingerprint: dict[str, Any] | None,
+    source_kind: str,
+    runtime_policy: SparkRuntimePolicy,
 ) -> Path:
     target = bronze_root / f"ingestion_id={ingestion_id}"
     if target.exists():
         raise FileExistsError(f"Bronze ingestion already exists: {ingestion_id}")
     staging = bronze_root / f".staging-{ingestion_id}-{uuid4().hex}"
     staging.mkdir(parents=True)
+    publication_layout: dict[str, Any] = {}
     try:
         for name, frame in frames.items():
-            frame.coalesce(1).write.mode("error").parquet(
-                str(staging / name / "records")
-            )
-            frame.where(F.col(CORRUPT_RECORD_COLUMN).isNotNull()).coalesce(
-                1
-            ).write.mode("error").parquet(str(staging / name / "corrupt_records"))
+            input_bytes = int(source_files.get(name, {}).get("byte_count", 0))
+            target_files = runtime_policy.target_file_count(input_bytes)
+            records = _resize_for_output(frame, target_files)
+            records_target = staging / name / "records"
+            corrupt_target = staging / name / "corrupt_records"
+            records.write.mode("error").parquet(str(records_target))
+            _resize_for_output(
+                frame.where(F.col(CORRUPT_RECORD_COLUMN).isNotNull()),
+                target_files,
+            ).write.mode("error").parquet(str(corrupt_target))
+            publication_layout[name] = {
+                "input_bytes": input_bytes,
+                "input_partitions": frame.rdd.getNumPartitions(),
+                "target_file_count": target_files,
+                "records": directory_metrics(records_target),
+                "corrupt_records": directory_metrics(corrupt_target),
+            }
         _write_json(
             staging / "manifest.json",
             {
-                "manifest_version": 2,
+                "manifest_version": 3,
+                "source_kind": source_kind,
                 "source_batch_id": source_batch_id,
                 "source_batch_sha256": source_batch_sha256,
                 "source_files": source_files,
@@ -479,6 +518,8 @@ def _publish_bronze(
                 "quality_summary": quality_summary,
                 "world_bank_snapshot_id": world_bank_snapshot_id,
                 "snowflake_context_fingerprint": snowflake_context_fingerprint,
+                "runtime_policy": runtime_policy.as_dict(),
+                "bronze_publication_layout": publication_layout,
             },
         )
         staging.replace(target)
@@ -486,6 +527,15 @@ def _publish_bronze(
         shutil.rmtree(staging, ignore_errors=True)
         raise
     return target
+
+
+def _resize_for_output(dataframe: DataFrame, target_partitions: int) -> DataFrame:
+    current = dataframe.rdd.getNumPartitions()
+    if current > target_partitions:
+        return dataframe.coalesce(target_partitions)
+    if current < target_partitions:
+        return dataframe.repartition(target_partitions)
+    return dataframe
 
 
 def _read_bronze(
@@ -735,30 +785,41 @@ def _write_correctness(
     )
 
 
-def _calibrate_layout(dataframe: DataFrame, root: Path) -> dict[str, Any]:
+def _calibrate_layout(
+    dataframe: DataFrame,
+    root: Path,
+    *,
+    target_file_bytes: int,
+) -> dict[str, Any]:
     target = root / "calibration"
-    dataframe.repartition(8).write.mode("error").parquet(str(target))
-    metrics = directory_metrics(target)
-    total_rows = dataframe.count()
-    month_rows = [
-        row["count"]
-        for row in dataframe.groupBy(
-            F.year("report_date").alias("year"),
-            F.month("report_date").alias("month"),
+    total_target = target / "unpartitioned"
+    monthly_target = target / "monthly"
+    try:
+        dataframe.repartition(8).write.mode("error").parquet(str(total_target))
+        with_month = dataframe.withColumn(
+            "report_year", F.year("report_date")
+        ).withColumn("report_month", F.month("report_date"))
+        (
+            with_month.repartition("report_year", "report_month")
+            .write.mode("error")
+            .partitionBy("report_year", "report_month")
+            .parquet(str(monthly_target))
         )
-        .count()
-        .collect()
-    ]
-    monthly_bytes = [
-        round(metrics["output_bytes"] * count / total_rows) if total_rows else 0
-        for count in month_rows
-    ]
-    decision = layout_decision(
-        measured_parquet_bytes=metrics["output_bytes"],
-        monthly_parquet_bytes=monthly_bytes,
-    )
-    shutil.rmtree(target)
-    return decision
+        monthly_bytes = [
+            directory_metrics(month_directory)["output_bytes"]
+            for year_directory in monthly_target.glob("report_year=*")
+            for month_directory in year_directory.glob("report_month=*")
+        ]
+        metrics = directory_metrics(total_target)
+        decision = layout_decision(
+            measured_parquet_bytes=metrics["output_bytes"],
+            monthly_parquet_bytes=monthly_bytes,
+            target_file_bytes=target_file_bytes,
+        )
+        decision["monthly_measurement"] = "actual_partition_directories"
+        return decision
+    finally:
+        shutil.rmtree(target, ignore_errors=True)
 
 
 def _benchmark_suite(
@@ -768,6 +829,8 @@ def _benchmark_suite(
     benchmark_run_id: str,
     run_output: Path,
     snowflake_context_fingerprint: dict[str, Any] | None,
+    policy: SparkRuntimePolicy,
+    broadcast_decisions: dict[str, bool],
 ) -> BenchmarkSuiteResult:
     scratch_root = run_output / "benchmark_scratch"
     runner = BenchmarkRunner(
@@ -782,7 +845,11 @@ def _benchmark_suite(
     projected_ecdc = _projected_input(ecdc)
 
     baseline_daily = normalized_daily(ecdc, mapping, broadcast_mapping=False)
-    optimized_daily = normalized_daily(ecdc, mapping, broadcast_mapping=True)
+    optimized_daily = normalized_daily(
+        ecdc,
+        mapping,
+        broadcast_mapping=broadcast_decisions["mapping"],
+    )
     baseline_population_enriched = enrich_with_population(
         baseline_daily,
         population,
@@ -791,7 +858,7 @@ def _benchmark_suite(
     optimized_population_enriched = enrich_with_population(
         optimized_daily,
         population,
-        broadcast_population=True,
+        broadcast_population=broadcast_decisions["population"],
     )
     baseline_enriched = enrich_with_country_context(
         baseline_population_enriched,
@@ -801,12 +868,12 @@ def _benchmark_suite(
     optimized_enriched = enrich_with_country_context(
         optimized_population_enriched,
         baseline,
-        broadcast_baseline=True,
+        broadcast_baseline=broadcast_decisions["indicators"],
     )
     context_baseline = context_eligible_country_baseline(
         optimized_population_enriched,
         baseline,
-        broadcast_baseline=True,
+        broadcast_baseline=broadcast_decisions["indicators"],
     )
 
     benchmarks = [
@@ -865,19 +932,26 @@ def _benchmark_suite(
     )
     if not optimized_plan["adaptive_final"]:
         raise SparkPipelineError("Optimized plan did not reach its final AQE state.")
-    if optimized_plan["broadcast_hash_join_count"] < 3:
+    expected_broadcasts = sum(broadcast_decisions.values())
+    if optimized_plan["broadcast_hash_join_count"] != expected_broadcasts:
         raise SparkPipelineError(
-            "Optimized plan did not use all three broadcast joins."
+            "Optimized plan does not match the size-gated broadcast decisions."
         )
-    if optimized_plan["build_right_count"] < 3:
-        raise SparkPipelineError("Optimized joins did not build all right dimensions.")
+    if optimized_plan["build_right_count"] != expected_broadcasts:
+        raise SparkPipelineError(
+            "Optimized joins did not build the selected dimensions."
+        )
     if not optimized_plan["null_safe_mapping_key_present"]:
         raise SparkPipelineError("Mapping plan does not show null-safe key matching.")
     if not optimized_plan["typed_population_key_present"]:
         raise SparkPipelineError("Population plan does not show the typed lookup key.")
 
     scratch_root.mkdir(parents=True, exist_ok=True)
-    layout = _calibrate_layout(optimized_enriched, scratch_root)
+    layout = _calibrate_layout(
+        optimized_enriched,
+        scratch_root,
+        target_file_bytes=policy.target_file_bytes,
+    )
     benchmarks.append(
         runner.compare(
             name="file_layout",
@@ -918,6 +992,12 @@ def _benchmark_suite(
             "optimized": optimized_plan,
         },
         context_equivalence=context_equivalence,
+        broadcast_decisions=broadcast_decisions,
+        skew=country_key_skew(
+            frames["covid_extended"],
+            ratio_warn=policy.skew_ratio_warn,
+            share_warn=policy.skew_share_warn,
+        ),
     )
 
 
@@ -932,23 +1012,19 @@ def _write_curated(
     if target.exists():
         raise FileExistsError(f"Curated ingestion already exists: {ingestion_id}")
     staging = curated_root / f".staging-{ingestion_id}-{uuid4().hex}"
-    output = dataframe
-    writer = output.coalesce(layout["target_file_count"]).write.mode("error")
+    output = _resize_for_output(dataframe, layout["target_file_count"])
     try:
         if layout["partition_columns"]:
-            output = output.withColumn("report_year", F.year("report_date")).withColumn(
-                "report_month", F.month("report_date")
+            output = (
+                dataframe.withColumn("report_year", F.year("report_date"))
+                .withColumn("report_month", F.month("report_date"))
+                .repartition(layout["target_file_count"], "report_year", "report_month")
             )
-            writer = (
-                output.repartition(
-                    layout["target_file_count"],
-                    "report_year",
-                    "report_month",
-                )
-                .write.mode("error")
-                .partitionBy("report_year", "report_month")
-            )
-        writer.parquet(str(staging))
+            output.write.mode("error").partitionBy(
+                "report_year", "report_month"
+            ).parquet(str(staging))
+        else:
+            output.write.mode("error").parquet(str(staging))
         metrics = directory_metrics(staging)
         staging.replace(target)
         return metrics
@@ -957,7 +1033,10 @@ def _write_curated(
         raise
 
 
-def _environment(spark: SparkSession) -> dict[str, Any]:
+def _environment(
+    spark: SparkSession,
+    policy: SparkRuntimePolicy,
+) -> dict[str, Any]:
     return {
         "python": platform.python_version(),
         "python_image": "python:3.12.13-slim-bookworm",
@@ -969,6 +1048,10 @@ def _environment(spark: SparkSession) -> dict[str, Any]:
         "spark_application_id": spark.sparkContext.applicationId,
         "adaptive_enabled": spark.conf.get("spark.sql.adaptive.enabled"),
         "shuffle_partitions": spark.conf.get("spark.sql.shuffle.partitions"),
+        "advisory_partition_bytes": spark.conf.get(
+            "spark.sql.adaptive.advisoryPartitionSizeInBytes"
+        ),
+        "runtime_policy": policy.as_dict(),
     }
 
 
@@ -997,13 +1080,18 @@ def _sanitized_evidence(
     quality: dict[str, Any],
     cold_end_to_end_ms: float,
     context_equivalence: dict[str, Any],
+    runtime_policy: SparkRuntimePolicy,
+    broadcast_decisions: dict[str, bool],
+    skew: dict[str, Any],
+    clustering: dict[str, Any],
+    pipeline_task_metrics: dict[str, int],
 ) -> dict[str, Any]:
     compact_plans = {
         name: {key: value for key, value in plan.items() if key != "normalized_plan"}
         for name, plan in plans.items()
     }
     return {
-        "evidence_version": 3,
+        "evidence_version": 4,
         "generated_at_utc": datetime.now(UTC).isoformat(),
         "fingerprint_protocol": FINGERPRINT_PROTOCOL,
         "environment": environment,
@@ -1029,8 +1117,13 @@ def _sanitized_evidence(
             "quality_document_sha256": quality["quality_document_sha256"],
         },
         "layout": layout,
+        "runtime_policy": runtime_policy.as_dict(),
+        "broadcast_decisions": broadcast_decisions,
+        "country_key_skew": skew,
+        "pipeline_task_metrics": pipeline_task_metrics,
         "plans": compact_plans,
         "country_context_equivalence": context_equivalence,
+        "clustering": clustering,
         "benchmarks": benchmarks,
         "conclusions": _conclusions(benchmarks),
         "limitations": [
@@ -1038,14 +1131,15 @@ def _sanitized_evidence(
             "Measurements are local-mode results and do not represent a cluster.",
             "Warm runs reduce startup and JIT noise but cannot remove filesystem-cache effects.",
             "Snowflake SQL remains the production semantic layer.",
+            "Clustering segments historical reporting outcomes and is not causal.",
         ],
     }
 
 
 def _quality_from_bronze_manifest(manifest: dict[str, Any]) -> dict[str, str]:
-    if manifest.get("manifest_version") != 2:
+    if manifest.get("manifest_version") != 3:
         raise SparkPipelineError(
-            "Benchmark-only mode requires Bronze manifest version 2."
+            "Benchmark-only mode requires Bronze manifest version 3."
         )
     quality = manifest.get("quality_summary")
     if not isinstance(quality, dict):
@@ -1056,6 +1150,122 @@ def _quality_from_bronze_manifest(manifest: dict[str, Any]) -> dict[str, str]:
     if quality["status"] not in {"PASS", "WARN"}:
         raise SparkPipelineError("Bronze quality status does not permit benchmarking.")
     return {name: str(quality[name]) for name in sorted(required)}
+
+
+def _policy_from_manifest(
+    manifest: dict[str, Any],
+    *,
+    shuffle_partitions: int | None,
+    advisory_partition_bytes: int,
+    broadcast_max_bytes: int,
+    target_file_bytes: int,
+    skew_ratio_warn: float,
+    skew_share_warn: float,
+    cluster_min_observations: int,
+    cluster_k_min: int,
+    cluster_k_max: int,
+) -> SparkRuntimePolicy:
+    return SparkRuntimePolicy.from_manifest(
+        manifest,
+        shuffle_partitions=shuffle_partitions,
+        advisory_partition_bytes=advisory_partition_bytes,
+        broadcast_max_bytes=broadcast_max_bytes,
+        target_file_bytes=target_file_bytes,
+        skew_ratio_warn=skew_ratio_warn,
+        skew_share_warn=skew_share_warn,
+        cluster_min_observations=cluster_min_observations,
+        cluster_k_min=cluster_k_min,
+        cluster_k_max=cluster_k_max,
+    )
+
+
+def _clustering_stage(
+    spark: SparkSession,
+    frames: dict[str, DataFrame],
+    *,
+    policy: SparkRuntimePolicy,
+    broadcast_decisions: dict[str, bool],
+    model_id: str,
+    run_output: Path,
+    source_manifest: dict[str, Any],
+    skew: dict[str, Any],
+) -> dict[str, Any]:
+    result: ClusteringResult | None = None
+    try:
+        source_files = source_manifest.get("files") or source_manifest.get(
+            "source_files", {}
+        )
+        extended_source = source_files.get("covid_extended", {})
+        result = run_country_clustering(
+            spark,
+            frames["covid_extended"],
+            country_baseline(frames["indicators"]),
+            policy=policy,
+            model_id=model_id,
+            broadcast_baseline=broadcast_decisions["indicators"],
+        )
+        result.diagnostics.update(
+            {
+                "source_lineage": {
+                    "source_batch_id": source_manifest["source_batch_id"],
+                    "source_batch_sha256": source_manifest.get(
+                        "batch_sha256", source_manifest.get("source_batch_sha256")
+                    ),
+                    "source_kind": source_manifest.get("source_kind"),
+                    "world_bank_snapshot_id": source_manifest.get(
+                        "world_bank_snapshot_id"
+                    ),
+                    "extended_source": {
+                        "snowflake_object": (
+                            "COVID_ANALYTICS.MARTS.COVID_ENRICHED_EXTENDED"
+                        ),
+                        "row_count": extended_source.get("row_count"),
+                        "minimum_report_date": extended_source.get(
+                            "minimum_report_date"
+                        ),
+                        "maximum_report_date": extended_source.get(
+                            "maximum_report_date"
+                        ),
+                        "country_count": extended_source.get("country_count"),
+                        "byte_count": extended_source.get("byte_count"),
+                        "sha256": extended_source.get("sha256"),
+                    },
+                },
+                "runtime_policy": policy.as_dict(),
+                "broadcast_decisions": broadcast_decisions,
+                "country_key_skew": skew,
+            }
+        )
+        output_metrics = publish_clustering_artifacts(
+            result,
+            target=run_output / "clustering" / f"model_id={model_id}",
+        )
+        result.diagnostics["local_publication"] = {
+            "published": True,
+            **output_metrics,
+        }
+        return result.diagnostics
+    finally:
+        if result is not None:
+            result.cleanup()
+
+
+def _publish_evidence_documents(
+    *,
+    source_kind: str | None,
+    run_output: Path,
+    evidence_path: Path,
+    clustering_diagnostics_path: Path,
+    evidence: dict[str, Any],
+    clustering: dict[str, Any],
+) -> None:
+    authoritative = source_kind == "snowflake_export"
+    if authoritative:
+        _write_json_atomic(clustering_diagnostics_path, clustering)
+        _write_json_atomic(evidence_path, evidence)
+        return
+    _write_json_atomic(run_output / "clustering_diagnostics.preview.json", clustering)
+    _write_json_atomic(run_output / "evidence.preview.json", evidence)
 
 
 def run_ingest_profile(
@@ -1069,6 +1279,18 @@ def run_ingest_profile(
     output_root: Path,
     evidence_path: Path,
     exact_distinct_max_rows: int,
+    clustering_diagnostics_path: Path = Path(
+        "reports/spark/clustering_diagnostics.json"
+    ),
+    shuffle_partitions: int | None = None,
+    advisory_partition_bytes: int = DEFAULT_ADVISORY_PARTITION_BYTES,
+    broadcast_max_bytes: int = DEFAULT_BROADCAST_MAX_BYTES,
+    target_file_bytes: int = DEFAULT_TARGET_FILE_BYTES,
+    skew_ratio_warn: float = DEFAULT_SKEW_RATIO_WARN,
+    skew_share_warn: float = DEFAULT_SKEW_SHARE_WARN,
+    cluster_min_observations: int = DEFAULT_CLUSTER_MIN_OBSERVATIONS,
+    cluster_k_min: int = DEFAULT_CLUSTER_K_MIN,
+    cluster_k_max: int = DEFAULT_CLUSTER_K_MAX,
 ) -> None:
     started = time.perf_counter()
     source_directory = source_root / source_batch_id
@@ -1099,6 +1321,20 @@ def run_ingest_profile(
             raise SourceValidationError("Source validation blocked Bronze publication.")
         raise QualityFailure("Schema drift blocked Bronze publication.")
 
+    policy = _policy_from_manifest(
+        source_manifest,
+        shuffle_partitions=shuffle_partitions,
+        advisory_partition_bytes=advisory_partition_bytes,
+        broadcast_max_bytes=broadcast_max_bytes,
+        target_file_bytes=target_file_bytes,
+        skew_ratio_warn=skew_ratio_warn,
+        skew_share_warn=skew_share_warn,
+        cluster_min_observations=cluster_min_observations,
+        cluster_k_min=cluster_k_min,
+        cluster_k_max=cluster_k_max,
+    )
+    broadcast_decisions = policy.broadcast_decisions(source_manifest)
+
     bronze_target = bronze_root / f"ingestion_id={ingestion_id}"
     curated_target = curated_root / f"ingestion_id={ingestion_id}"
     if bronze_target.exists() or curated_target.exists():
@@ -1108,10 +1344,12 @@ def run_ingest_profile(
     spark = create_spark_session(
         application_name=f"covid-bronze-{ingestion_id}",
         event_log_directory=event_log_directory,
+        policy=policy,
     )
     frames: dict[str, DataFrame] = {}
+    clustering: dict[str, Any]
     try:
-        environment = _environment(spark)
+        environment = _environment(spark, policy)
         ingested_at = datetime.now(UTC)
         frames = _read_sources(
             spark,
@@ -1126,7 +1364,9 @@ def run_ingest_profile(
             exact_distinct_max_rows=exact_distinct_max_rows,
         )
         daily = normalized_daily(
-            frames["ecdc"], frames["mapping"], broadcast_mapping=True
+            frames["ecdc"],
+            frames["mapping"],
+            broadcast_mapping=broadcast_decisions["mapping"],
         )
         normalized_duplicates = duplicate_count(daily)
         assessment = evaluate_quality(
@@ -1134,6 +1374,7 @@ def run_ingest_profile(
             headers,
             frames,
             normalized_duplicate_count=normalized_duplicates,
+            cluster_min_observations=policy.cluster_min_observations,
         )
         assessment["checks"] = [*source_checks, *assessment["checks"]]
         quality = _quality_document(
@@ -1162,6 +1403,8 @@ def run_ingest_profile(
             snowflake_context_fingerprint=source_manifest.get(
                 "snowflake_context_fingerprint"
             ),
+            source_kind=source_manifest["source_kind"],
+            runtime_policy=policy,
         )
         _write_json(quality_path, quality)
         if assessment["status"] == "FAIL":
@@ -1172,9 +1415,13 @@ def run_ingest_profile(
             frames,
             benchmark_run_id=benchmark_run_id,
             run_output=run_output,
-            snowflake_context_fingerprint=source_manifest.get(
-                "snowflake_context_fingerprint"
+            snowflake_context_fingerprint=(
+                source_manifest.get("snowflake_context_fingerprint")
+                if source_manifest.get("source_kind") == "snowflake_export"
+                else None
             ),
+            policy=policy,
+            broadcast_decisions=broadcast_decisions,
         )
         curated_metrics = _write_curated(
             suite.curated,
@@ -1183,6 +1430,16 @@ def run_ingest_profile(
             layout=suite.layout,
         )
         suite.layout["published_output"] = curated_metrics
+        clustering = _clustering_stage(
+            spark,
+            frames,
+            policy=policy,
+            broadcast_decisions=broadcast_decisions,
+            model_id=benchmark_run_id,
+            run_output=run_output,
+            source_manifest=source_manifest,
+            skew=suite.skew,
+        )
         for name, evidence in suite.plans.items():
             (run_output / "plans").mkdir(parents=True, exist_ok=True)
             (run_output / "plans" / f"{name}.txt").write_text(
@@ -1194,6 +1451,8 @@ def run_ingest_profile(
 
     event_metrics = parse_event_logs(event_log_directory)
     benchmarks = summarize_benchmarks(suite.benchmarks, event_metrics)
+    clustering["pipeline_task_metrics"] = event_metrics.get("__all__", {})
+    clustering["document_sha256"] = _document_sha256(clustering)
     cold_end_to_end_ms = round((time.perf_counter() - started) * 1000, 3)
     optimization = {
         "benchmark_run_id": benchmark_run_id,
@@ -1202,6 +1461,10 @@ def run_ingest_profile(
         "layout": suite.layout,
         "plans": suite.plans,
         "benchmarks": benchmarks,
+        "runtime_policy": policy.as_dict(),
+        "broadcast_decisions": broadcast_decisions,
+        "country_key_skew": suite.skew,
+        "clustering": clustering,
     }
     _write_json(run_output / "optimization_metrics.json", optimization)
     evidence = _sanitized_evidence(
@@ -1215,8 +1478,20 @@ def run_ingest_profile(
         quality=quality_summary,
         cold_end_to_end_ms=cold_end_to_end_ms,
         context_equivalence=suite.context_equivalence,
+        runtime_policy=policy,
+        broadcast_decisions=broadcast_decisions,
+        skew=suite.skew,
+        clustering=clustering,
+        pipeline_task_metrics=event_metrics.get("__all__", {}),
     )
-    _write_json_atomic(evidence_path, evidence)
+    _publish_evidence_documents(
+        source_kind=source_manifest.get("source_kind"),
+        run_output=run_output,
+        evidence_path=evidence_path,
+        clustering_diagnostics_path=clustering_diagnostics_path,
+        evidence=evidence,
+        clustering=clustering,
+    )
     logger.info(
         "spark_ingest_profile_completed",
         extra={
@@ -1235,6 +1510,18 @@ def run_benchmark(
     bronze_root: Path,
     output_root: Path,
     evidence_path: Path,
+    clustering_diagnostics_path: Path = Path(
+        "reports/spark/clustering_diagnostics.json"
+    ),
+    shuffle_partitions: int | None = None,
+    advisory_partition_bytes: int = DEFAULT_ADVISORY_PARTITION_BYTES,
+    broadcast_max_bytes: int = DEFAULT_BROADCAST_MAX_BYTES,
+    target_file_bytes: int = DEFAULT_TARGET_FILE_BYTES,
+    skew_ratio_warn: float = DEFAULT_SKEW_RATIO_WARN,
+    skew_share_warn: float = DEFAULT_SKEW_SHARE_WARN,
+    cluster_min_observations: int = DEFAULT_CLUSTER_MIN_OBSERVATIONS,
+    cluster_k_min: int = DEFAULT_CLUSTER_K_MIN,
+    cluster_k_max: int = DEFAULT_CLUSTER_K_MAX,
 ) -> None:
     started = time.perf_counter()
     ingestion_directory = bronze_root / f"ingestion_id={ingestion_id}"
@@ -1242,6 +1529,19 @@ def run_benchmark(
         (ingestion_directory / "manifest.json").read_text(encoding="utf-8")
     )
     quality = _quality_from_bronze_manifest(bronze_manifest)
+    policy = _policy_from_manifest(
+        bronze_manifest,
+        shuffle_partitions=shuffle_partitions,
+        advisory_partition_bytes=advisory_partition_bytes,
+        broadcast_max_bytes=broadcast_max_bytes,
+        target_file_bytes=target_file_bytes,
+        skew_ratio_warn=skew_ratio_warn,
+        skew_share_warn=skew_share_warn,
+        cluster_min_observations=cluster_min_observations,
+        cluster_k_min=cluster_k_min,
+        cluster_k_max=cluster_k_max,
+    )
+    broadcast_decisions = policy.broadcast_decisions(bronze_manifest)
     run_output = output_root / benchmark_run_id
     if run_output.exists():
         raise FileExistsError(f"Benchmark run already exists: {benchmark_run_id}")
@@ -1249,31 +1549,55 @@ def run_benchmark(
     spark = create_spark_session(
         application_name=f"covid-benchmark-{benchmark_run_id}",
         event_log_directory=event_log_directory,
+        policy=policy,
     )
     frames: dict[str, DataFrame] = {}
+    clustering: dict[str, Any]
     try:
-        environment = _environment(spark)
+        environment = _environment(spark, policy)
         frames = _read_bronze(spark, ingestion_directory)
         suite = _benchmark_suite(
             spark,
             frames,
             benchmark_run_id=benchmark_run_id,
             run_output=run_output,
-            snowflake_context_fingerprint=bronze_manifest.get(
-                "snowflake_context_fingerprint"
+            snowflake_context_fingerprint=(
+                bronze_manifest.get("snowflake_context_fingerprint")
+                if bronze_manifest.get("source_kind") == "snowflake_export"
+                else None
             ),
+            policy=policy,
+            broadcast_decisions=broadcast_decisions,
+        )
+        source_manifest = {
+            "source_batch_id": bronze_manifest["source_batch_id"],
+            "source_batch_sha256": bronze_manifest["source_batch_sha256"],
+            "source_files": bronze_manifest["source_files"],
+            "source_kind": bronze_manifest.get("source_kind"),
+            "world_bank_snapshot_id": bronze_manifest.get("world_bank_snapshot_id"),
+        }
+        clustering = _clustering_stage(
+            spark,
+            frames,
+            policy=policy,
+            broadcast_decisions=broadcast_decisions,
+            model_id=benchmark_run_id,
+            run_output=run_output,
+            source_manifest=source_manifest,
+            skew=suite.skew,
         )
     finally:
         _release_spark_resources(spark, frames)
-    benchmarks = summarize_benchmarks(
-        suite.benchmarks,
-        parse_event_logs(event_log_directory),
-    )
+    event_metrics = parse_event_logs(event_log_directory)
+    benchmarks = summarize_benchmarks(suite.benchmarks, event_metrics)
+    clustering["pipeline_task_metrics"] = event_metrics.get("__all__", {})
+    clustering["document_sha256"] = _document_sha256(clustering)
     source_manifest = {
         "source_batch_id": bronze_manifest["source_batch_id"],
         "batch_sha256": bronze_manifest["source_batch_sha256"],
         "files": bronze_manifest["source_files"],
         "world_bank_snapshot_id": bronze_manifest.get("world_bank_snapshot_id"),
+        "source_kind": bronze_manifest.get("source_kind"),
     }
     cold_end_to_end_ms = round((time.perf_counter() - started) * 1000, 3)
     evidence = _sanitized_evidence(
@@ -1287,6 +1611,18 @@ def run_benchmark(
         quality=quality,
         cold_end_to_end_ms=cold_end_to_end_ms,
         context_equivalence=suite.context_equivalence,
+        runtime_policy=policy,
+        broadcast_decisions=broadcast_decisions,
+        skew=suite.skew,
+        clustering=clustering,
+        pipeline_task_metrics=event_metrics.get("__all__", {}),
     )
     _write_json(run_output / "optimization_metrics.json", evidence)
-    _write_json_atomic(evidence_path, evidence)
+    _publish_evidence_documents(
+        source_kind=bronze_manifest.get("source_kind"),
+        run_output=run_output,
+        evidence_path=evidence_path,
+        clustering_diagnostics_path=clustering_diagnostics_path,
+        evidence=evidence,
+        clustering=clustering,
+    )

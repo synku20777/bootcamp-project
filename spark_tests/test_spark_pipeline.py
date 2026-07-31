@@ -18,6 +18,7 @@ from app.spark_pipeline.pipeline import (
     _quality_summary,
 )
 from app.spark_pipeline.quality import inspect_header, read_bronze_source
+from app.spark_pipeline.runtime_policy import SparkRuntimePolicy
 from app.spark_pipeline.schemas import ECDC
 from app.spark_pipeline.transformations import (
     context_eligible_country_baseline,
@@ -354,6 +355,29 @@ class SparkPipelineTests(unittest.TestCase):
             evidence["join_operators"],
         )
 
+    def test_size_gated_dimensions_can_use_non_broadcast_plans(self) -> None:
+        daily = normalized_daily(
+            self._ecdc(),
+            self._mapping(),
+            broadcast_mapping=False,
+        )
+        population_enriched = enrich_with_population(
+            daily,
+            self._population(),
+            broadcast_population=False,
+        )
+        enriched = enrich_with_country_context(
+            population_enriched,
+            country_baseline(self._indicators()),
+            broadcast_baseline=False,
+        )
+        enriched.collect()
+        evidence = plan_evidence(enriched)
+
+        self.assertEqual(evidence["broadcast_hash_join_count"], 0)
+        self.assertTrue(evidence["null_safe_mapping_key_present"])
+        self.assertTrue(evidence["typed_population_key_present"])
+
     def test_current_scale_layout_is_one_unpartitioned_file(self) -> None:
         decision = layout_decision(
             measured_parquet_bytes=2_000_000,
@@ -396,9 +420,9 @@ class SparkPipelineTests(unittest.TestCase):
             )
             self.assertFalse(inspect_header(source, ECDC.headers)["matches"])
 
-    def test_bronze_manifest_v2_contains_quality_provenance(self) -> None:
+    def test_bronze_manifest_v3_contains_quality_and_runtime_provenance(self) -> None:
         quality = {
-            "ruleset_version": "bronze-quality-v1",
+            "ruleset_version": "bronze-quality-v2",
             "status": "WARN",
             "checks": [],
         }
@@ -415,6 +439,7 @@ class SparkPipelineTests(unittest.TestCase):
                     "indicators": dataframe,
                     "population": dataframe,
                     "mapping": dataframe,
+                    "covid_extended": dataframe,
                 },
                 bronze_root=root,
                 source_batch_id="source-v1",
@@ -425,17 +450,20 @@ class SparkPipelineTests(unittest.TestCase):
                 quality_summary=quality_summary,
                 world_bank_snapshot_id="snapshot",
                 snowflake_context_fingerprint=None,
+                source_kind="fixture",
+                runtime_policy=SparkRuntimePolicy.from_manifest({"files": {}}),
             )
             manifest = json.loads(
                 (target / "manifest.json").read_text(encoding="utf-8")
             )
 
-            self.assertEqual(manifest["manifest_version"], 2)
+            self.assertEqual(manifest["manifest_version"], 3)
+            self.assertEqual(manifest["source_kind"], "fixture")
             self.assertEqual(manifest["quality_summary"], quality_summary)
             self.assertEqual(manifest["world_bank_snapshot_id"], "snapshot")
             self.assertEqual(
                 set(manifest["datasets"]),
-                {"ecdc", "indicators", "mapping", "population"},
+                {"covid_extended", "ecdc", "indicators", "mapping", "population"},
             )
 
 

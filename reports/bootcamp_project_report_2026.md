@@ -3,19 +3,19 @@
 Implementation report
 
 **Student:** Nestor Kulik  
-**Date:** 30 July 2026<br>
+**Date:** 31 July 2026<br>
 **Repository:** https://github.com/synku20777/bootcamp-project  
-**Reviewed branch and commit:** `extended_0.8`, base commit `de76bb5e9e48d193769014a587b736085a23918b` plus this implementation working tree
+**Reviewed branch and commit:** `extended_0.8`, base commit `9dc71b70b0cf9e506c601804124fa81783e30139` plus this implementation working tree
 
 ## 1. Executive summary
 
 This project integrates the free Snowflake Marketplace COVID-19 Epidemiological Data share with a versioned, checksum-verified World Development Indicators history for 2019–2021. A source-faithful active WDI snapshot supplies country context, while a separately frozen 2020 population denominator preserves existing epidemiological rates. Snowflake owns the analytical truth, PySpark demonstrates an immutable Bronze and profiling path, FastAPI exposes typed analytical and forecasting contracts, Redis protects the Snowflake trial budget, MongoDB stores user annotations, and Dash provides six interactive pages.
 
-The implementation now covers every required in-repository functional task. Forecasting was the final missing requirement and is implemented as a transparent comparison between a 7-day mean and a recent linear trend. The selected model is chosen by rolling temporal holdout MAE, reports both MAE and RMSE, and returns a descriptive 90% empirical error band. Clustering remains unimplemented because it is explicitly a bonus item. Final submission publication and clean-environment acceptance evidence remain release steps rather than code gaps.
+The implementation now covers every required in-repository functional task and the clustering bonus. Forecasting compares a 7-day mean with a recent linear trend using rolling temporal holdout. Offline Spark clustering segments ISO3 countries from five population-normalized COVID outcomes, evaluates multiple `k` values and seeds, rejects small or unstable solutions, and publishes immutable local analytical artifacts. Clustering is implemented and fixture-validated; a credentialed extended-mart run is still required before claiming authoritative real-data cluster results.
 
 The strongest engineering qualities are reproducibility, explicit data contracts, least-privilege access, source-correction fidelity, bounded warehouse queries, fail-closed cache protection, and unusually careful Spark evidence. The project does not claim Spark is generally faster at this data volume: early projection, AQE, and caching a reused frame measured slower, while three explicit broadcasts and one appropriately sized Parquet file measured faster.
 
-At review time, 101 application, API, dashboard, repository, ingestion, checksum, export, denominator-lifecycle, and forecasting tests passed. The rebuilt pinned Spark image passed all 22 Spark tests. Ruff, isort, Black, and Docker Compose validation passed. Committed dated artifacts record the Snowflake publication, mart verification, API smoke test, and 61,836-row migration reconciliation; no new Snowflake query or credit use was required for this Spark run. Evidence version 3 passed the four-source, quality, correctness, three-broadcast plan, curated-publication, and Snowflake/Spark context-equivalence gates. A final submission should commit and push the working tree and perform one clean-VM acceptance run of the complete platform.
+The exact Python 3.12.13, PySpark 3.5.6, and Java 17.0.19 runtime passed all 31 Spark tests, including the new feature, exclusion, stability, deterministic-labelling, local-publication, runtime-policy, broadcast-fallback, skew, metric-evidence, and complete fixture-pipeline contracts. Static checks and 14 focused export/publication tests also passed. Committed dated artifacts still record the accepted Snowflake publication, mart verification, API smoke test, migration reconciliation, and Spark evidence version 3. No credentials or extended immutable source batch were available, so fixture diagnostics did not replace that real-data evidence. A final submission should perform the credentialed five-file Spark run and a clean-VM acceptance run.
 
 ## 2. Requirement compliance
 
@@ -26,7 +26,7 @@ At review time, 101 application, API, dashboard, repository, ingestion, checksum
 | 3. NoSQL model | Complete | MongoDB annotations with Pydantic validation, canonical analytical identity, UTC dates, and two compound indexes | No database-side JSON Schema validator; API validation is authoritative |
 | 4. Python API | Complete | FastAPI queries Snowflake, reads/writes MongoDB, performs on-the-fly metrics and forecasting, and returns typed JSON | No public authentication or rate limiting |
 | 5. Interactive visualization | Complete | Dash pages for status, overview, country exploration, comparison, forecasting, and annotations | Browser QA should be repeated on the final clean VM |
-| 6. Time-series forecasting | Complete | 7-day mean versus recent linear trend, rolling holdout, MAE/RMSE, 1-30-day horizon, empirical interval, API and dashboard | This is an interpretable baseline, not an epidemiological model; clustering is bonus and not implemented |
+| 6. Analytical features | Complete plus fixture-validated bonus | Forecasting uses rolling holdout MAE/RMSE and a 1-30-day empirical interval; offline Spark clustering uses COVID-only normalized features, multi-seed silhouette/stability gates, deterministic labels, and local model artifacts | Neither model is epidemiological or causal; authoritative clustering evidence awaits a credentialed extended-mart run |
 | 7. Performance optimization | Complete with evidence limitation | Snowflake monitor/auto-suspend, precomputed latest snapshot, projection, bounded date/country filters, one-statement repository budget, consolidated page payloads | No newly captured Snowflake Query Profile comparison in this review |
 | 8. API caching | Complete | Redis TTLs, versioned keys, Pydantic cache revalidation, prefix-scoped invalidation, stampede lock, fail-closed behavior | Redis becomes an intentional availability dependency to protect trial credits |
 | 9. Pattern identification | Complete | Snowflake `MATCH_RECOGNIZE` identifies at least three consecutive daily increases | Results are reporting patterns, not causal transmission regimes |
@@ -45,7 +45,7 @@ At review time, 101 application, API, dashboard, repository, ingestion, checksum
 7. FastAPI separates routes, services, typed models, and repositories. Every public Snowflake repository method executes one bounded statement.
 8. Redis serves validated analytical responses and blocks cache stampedes. MongoDB owns user-authored annotations.
 9. Dash requests combined page payloads and fans them out from browser-side stores, preventing one warehouse request per chart.
-10. A separate PySpark path exports one immutable source batch, publishes Bronze and curated Parquet only through deterministic quality gates, and records benchmark evidence.
+10. A separate PySpark path exports one immutable five-file source batch, publishes Bronze and curated Parquet through deterministic quality gates, records benchmark evidence, and creates offline clustering artifacts from the governed extended mart.
 
 ### 3.2 Architectural decisions and tradeoffs
 
@@ -79,7 +79,7 @@ At review time, 101 application, API, dashboard, repository, ingestion, checksum
 
 #### Spark isolated from the serving path
 
-**Why:** Spark is mandatory in the engineering brief but unnecessary for a 61,900-row interactive workload. Isolating it demonstrates big-data engineering without adding Java startup latency to the API. **Tradeoff:** there are two transformation implementations whose semantic equivalence must be protected by tests and checksums.
+**Why:** Spark is mandatory in the engineering brief but unnecessary for a 61,900-row interactive workload. Isolating it demonstrates big-data engineering and supports an offline modelling bonus without adding Java startup or model latency to the API. **Tradeoff:** the ECDC benchmark transformations still require semantic-equivalence controls; clustering avoids a third splice implementation by consuming Snowflake's governed extended mart directly.
 
 #### Transparent forecast candidates
 
@@ -202,7 +202,19 @@ For Latvia's latest 90 daily case observations, verified live on 29 July 2026, t
 
 The interval uses the larger of the selected model's holdout RMSE and nearest-rank 90th-percentile absolute error, widened by the square root of forecast horizon. It is descriptive, not a calibrated probabilistic confidence interval. The data ends in 2020, so no forecast in this project is current public-health guidance.
 
-Clustering was not implemented. It is a bonus task and would be valuable only after defining stable country-level features, scaling them, selecting cluster count, checking stability, and explaining segments without causal overreach.
+### 9.1 Offline clustering bonus
+
+Snowflake remains responsible for the governed ECDC-to-JHU cutover. Spark consumes `COVID_ANALYTICS.MARTS.COVID_ENRICHED_EXTENDED` as a fifth immutable input only for clustering; the original ECDC input remains the transformation and benchmark fact. This prevents the same splice boundary from being reimplemented in a second engine.
+
+ISO3 is the analytical unit. A country is eligible only with a positive governed population denominator, complete normalized measures, and at least 180 distinct daily observations. Exclusions are retained by reason. Negative corrections are preserved in source and Bronze data, while incident rates are floored at zero only in the modelling copy. Complete calendar-based 14-day windows then produce five COVID-only features: latest cumulative cases and deaths per 100,000, peak 14-day mean cases and deaths per 100,000, and volatility of the 14-day mean case rate.
+
+The five non-negative features receive `log1p` and standardization before Spark ML KMeans. WDI variables do not enter the feature vector; they are joined after fitting only to create descriptive local profiles. This supports interpretation without implying that density, age, GDP, or health expenditure caused cluster membership.
+
+Model selection evaluates `k=2..6` across seeds 13, 29, 47, 71, and 97. A seed run is rejected when any cluster is smaller than `max(3, 2% of eligible countries)`. Publication requires at least four valid seeds, positive median silhouette, and median pairwise Adjusted Rand Index of at least 0.75. Highest median silhouette wins; candidates within 0.01 use the smaller `k`. The authoritative seed is closest to the candidate median, lower seed breaks ties, and arbitrary predictions are relabelled by ascending standardized centroid burden.
+
+Immutable ignored output contains assignments, raw/log/standardized features, centroid distance, exclusions, WDI profiles, fitted scaler, and selected KMeans model. Publishable diagnostics contain aggregate eligibility, candidate, stability, cluster-size, assignment-checksum, runtime, skew, spill, and lineage evidence only. Country assignments, daily rows, and WDI cluster profiles are not committed.
+
+The implementation passed fixture validation in the pinned runtime. No credentials or checksum-verified extended source batch were available in this worktree, so no country-level result is interpreted here and no version 4 evidence is claimed. The model segments historical reporting outcomes; it does not discover causal, policy, or epidemiological regimes.
 
 ## 10. Pattern recognition
 
@@ -224,27 +236,35 @@ No clustering key, materialized view, or Search Optimization Service is configur
 
 Evidence version 3 was generated on 30 July 2026 in the rebuilt pinned image with Python 3.12.13, PySpark 3.5.6, Java 17.0.19, `local[2]`, adaptive execution enabled, and 32 shuffle partitions. It uses immutable source batch `wdi-context-qa-v1`: 61,900 ECDC rows, 217 frozen population rows, 14 explicit mapping rows, and 3,255 WDI observations from snapshot `wdi2-2019-2021-372906f371e0391f`. All four file checksums and the combined batch checksum passed before Spark initialization.
 
+That committed evidence predates the extended fifth input, runtime hardening, and clustering stage. It remains the accepted real-data record and was deliberately not rewritten by synthetic fixtures. Version 4 requires a new credentialed export whose extended entry records selected Snowflake object, row count, date range, country count, byte count, and checksum.
+
 Spark derives the same context-eligible country universe as Snowflake before left joining the WDI baseline. This distinction retains countries that have a valid ISO3 identity but no WDI observation instead of silently shrinking the comparison to matched rows. The resulting projection matched the accepted Snowflake artifact exactly: 213 rows, 20,199 canonical bytes, and SHA-256 `6fa8fc8208d748a8dfbd2b4d606eb09cf2faae59869dfa52c62f3b3913872d83`. The optimized physical plan recorded three build-right broadcast hash joins for country mapping, frozen population, and the narrow one-row-per-country WDI baseline.
 
 | Comparison | Baseline median | Candidate median | Result | Engineering conclusion |
 | --- | ---: | ---: | --- | --- |
 | Early projection/filter | 183.939 ms | 216.075 ms | Candidate was not faster | Keep projection for contract discipline and reduced downstream width, not as a local-speed claim |
-| Three broadcast joins | 762.517 ms | 561.944 ms | Candidate was faster | Broadcasting all three narrow dimensions avoided shuffle work on this fixture; revalidate when a dimension approaches the broadcast threshold |
+| Three broadcast joins | 762.517 ms | 561.944 ms | Candidate was faster | The historical run supports the three broadcasts at captured sizes; the new runtime gates each hint from manifest bytes and validates the resulting plan |
 | Adaptive duplicate aggregation | 347.056 ms | 426.586 ms | Candidate was not faster | AQE remains a scale-safety setting; do not claim a speedup for this fixture |
 | Reused-frame cache | 323.322 ms | 372.224 ms | Candidate was not faster | Cache only when reuse, recomputation cost, and memory pressure justify materialization; this run does not justify it |
 | File layout | 2,787.065 ms | 1,645.820 ms | Candidate was faster | One output file avoids small-file overhead at this measured size |
 
 Every comparison passed schema, row-count, and row-multiset checksum gates before timing and used one warm-up plus five measured repetitions per variant. Broadcast joins and file layout were the only faster candidates in this run. Early projection, AQE, and caching were slower and are not presented as elapsed-time optimizations.
 
-The calibrated output measured 1,891,286 bytes. Thirteen hypothetical monthly partitions had a median of only 191,542 bytes, far below the 128 MiB target. The pipeline therefore published one unpartitioned 421,412-byte Parquet file. Partitioning by country or date would create tiny files and scheduler overhead. The decision is recalculated from measured bytes rather than hard-coded as a universal rule.
+The version 3 calibration measured 1,891,286 bytes. Thirteen proportionally estimated monthly partitions had a median of only 191,542 bytes, far below the 128 MiB target, so the pipeline published one unpartitioned 421,412-byte Parquet file. The hardened implementation now writes temporary month-partitioned Parquet and measures each actual compressed directory before deciding. No real-data result is claimed for that replacement until version 4 is published.
+
+Runtime policy is now isolated from the large orchestration module. It derives bounded shuffle partitions from source bytes and advisory partition size while recording any override. Mapping, population, and WDI broadcasts are enabled only below a configurable manifest-size limit; automatic benchmark broadcast remains disabled so physical-plan assertions are deterministic. Bronze and curated target file counts use byte thresholds, coalescing only when reducing partitions and repartitioning only when increasing them.
+
+Country-key skew evidence records median, p95, maximum rows per key, maximum share, and maximum-to-median ratio. A ratio above 5 or one key above 10% is a warning; the current design does not introduce salting without measured task imbalance. Event-log summaries now add memory spill, disk spill, peak execution memory, executor runtime, and JVM garbage-collection time to the existing input and shuffle measures.
 
 The evidence path now consolidates joined-row and unmatched-location metrics into one post-benchmark aggregate and reuses the bounded 213-row fingerprint input to derive snapshot IDs. This removes redundant Spark actions without changing timed variants. It deliberately does not cache the enriched frame: pre-materialization would warm the file-layout input, undermine comparison isolation, and contradict the measured cache tradeoff for this workload.
 
-Explicit schemas and header inspection fail before Bronze publication on drift. The WDI schema uses fixed decimal precision and the canonical `\N` null token. Corrupt rows, duplicate WDI keys, out-of-scope indicators/years and quality failures are retained as run-local evidence. Immutable source, snapshot, ingestion and benchmark IDs prevent silent overwrite. The Bronze manifest records the WDI snapshot ID, Snowflake context fingerprint, source checksums, ruleset, quality status and quality-document checksum. Benchmark evidence version 3 adds baseline rows, canonical broadcast-projection bytes, joined COVID rows, unmatched identities and the Snowflake/Spark fingerprint comparison; it is published atomically only if correctness gates pass.
+Explicit schemas and header inspection fail before Bronze publication on drift. The WDI schema uses fixed decimal precision and the canonical `\N` null token. The extended contract additionally gates duplicate country-dates, missing canonical identity, invalid denominator, null modelling measures, insufficient history, and inconsistent source/segment pairs. Corrupt rows and quality failures remain run-local evidence. Immutable source, snapshot, ingestion, benchmark, and model IDs prevent silent overwrite.
+
+Fixture runs publish ignored preview evidence only. A real `snowflake_export` run may atomically publish version 4 evidence and clustering diagnostics after quality, correctness, physical-plan, eligibility, minimum-cluster-size, silhouette, and stability gates all pass. Publishable clustering diagnostics contain no country assignments or WDI profiles. A failed model-selection or publication gate preserves the accepted version 3 evidence.
 
 The quality status was `WARN`, not `FAIL`: 339 ECDC rows lacked a source ISO value, and 18 negative case corrections plus 8 negative death corrections were retained. These are expected policy classifications; every fail-severity gate passed and curated publication succeeded. Atomic publication replaced the authoritative evidence only after these checks, the cross-engine fingerprint, all five correctness gates, and physical-plan validation passed.
 
-The key lesson is that Spark optimization is workload-specific. This run supports broadcast joins and consolidated file layout at the captured scale, but not projection, AQE, or caching as speed claims. The evidence remains a local-mode engineering comparison, not a cluster-throughput result, and Snowflake SQL remains the production path for the current volume.
+The key lesson is that Spark optimization is workload-specific. Version 3 supports broadcast joins and consolidated file layout at the captured scale, but not projection, AQE, or caching as speed claims. The new controls and offline model are fixture-validated implementation evidence, not measured real-data or distributed-scale claims. Snowflake SQL remains the production semantic and serving path.
 
 ## 12. COVID-19 insights
 
@@ -266,11 +286,12 @@ The codebase separates API routes, Pydantic contracts, services, repositories, d
 
 Dependencies are declared in `pyproject.toml` and resolved in `uv.lock`. Python 3.12 patch compatibility is declared in package metadata, while `.python-version` and Docker pin 3.12.13. Java and PySpark live only in the optional Spark image/group. GitHub Actions runs lock verification, isort, Black, Ruff, the application suite, and the Spark fixture suite.
 
-Verification on 30 July 2026:
+Verification through 31 July 2026:
 
 | Check | Result |
 | --- | --- |
-| Application/unit/contract tests | 101 passed |
+| Previously accepted application/unit/contract suite | 101 passed; unchanged historical review evidence |
+| Changed-path export, event-metric, schema, and publication tests | 14 passed in this worktree |
 | Ruff | Passed |
 | isort and Black | Passed |
 | Compose configuration | Parsed successfully |
@@ -278,9 +299,10 @@ Verification on 30 July 2026:
 | Dated legacy/new COVID reconciliation | Passed; 61,836 exact canonical rows and zero tolerance failures |
 | Dated context/API smoke | Passed with `COVID_APP_ROLE`; combined page context available |
 | Snowflake context export fingerprint | Passed; immutable batch records 213 baseline rows |
-| Pinned Docker Spark image | Built successfully |
-| Containerized Spark suite | 22 passed in the rebuilt pinned image |
+| Pinned Docker Spark image | Previously built successfully; current dependencies unchanged |
+| Exact pinned Spark runtime suite | 31 passed with Python 3.12.13, PySpark 3.5.6, and Java 17.0.19 |
 | Committed Spark evidence | Version 3; four source checksums, five correctness gates, three broadcasts, 213-row cross-engine match, and curated publication passed |
+| Extended clustering evidence | Implementation and fixtures passed; credentialed five-file version 4 run pending |
 
 The normal supervisor path requires only Docker plus a Snowflake account. `setup.ps1` or `setup.sh` invokes the containerized bootstrap, validates prerequisites and postconditions, publishes the committed WDI snapshot without a network request, preserves or seeds the frozen denominator, deploys marts, starts dependencies, creates MongoDB indexes, and performs smoke checks. Manual recovery instructions are also documented.
 
@@ -290,7 +312,8 @@ Before submission:
 
 1. Confirm the spelling of the student name, commit all working-tree changes, push `extended_0.8`, and replace the base commit reference with the final hash.
 2. Run the documented setup on a clean virtual machine with Docker Desktop/Engine and capture healthy API, annotation round-trip, forecast, and dashboard evidence.
-3. Retain the final CI link and Spark evidence artifact with the submitted commit.
+3. Run the credentialed five-file Spark export and pipeline; publish version 4 only if all extended quality, benchmark, silhouette, stability, and publication gates pass.
+4. Retain the final CI link and Spark evidence artifacts with the submitted commit.
 
 Engineering follow-ups:
 
@@ -298,13 +321,13 @@ Engineering follow-ups:
 2. Add a MongoDB JSON Schema validator and integration tests with disposable Redis/MongoDB containers.
 3. Add Snowflake query tags, statement timeouts, Query Profile captures, and refresh orchestration with cache invalidation.
 4. Add chart-level source notes, correction markers, downloads, and synchronized-date options.
-5. Consider clustering only after defining stable features and validation; do not add it solely to satisfy a bonus label.
+5. Reassess clustering features and thresholds only from real extended-data diagnostics; do not interpret fixture segments or treat descriptive WDI profiles causally.
 
 ## 15. Conclusion
 
 The project is a defensible end-to-end data engineering submission. It combines a managed warehouse, external data integration, schema and quality controls, a cost-aware API, operational NoSQL data, interactive visualization, required forecasting, pattern recognition, and measured Spark engineering. Its most senior characteristic is not the number of technologies; it is that tradeoffs and negative benchmark results are documented instead of being hidden.
 
-The remaining submission risk is operational evidence, not missing core functionality: the final working tree must be pushed, and a clean-VM run should prove the complete stack under the same commit that appears in the report.
+The remaining submission risk is operational evidence, not missing core functionality: the final working tree must be pushed, a clean-VM run should prove the complete stack, and a credentialed immutable extended batch must produce version 4 before the clustering bonus is presented as demonstrated on real data.
 
 ## Appendix A. Key commands
 
@@ -353,5 +376,5 @@ curl -i "http://localhost:8000/forecast?country=LV&metric=new_cases&days=30&look
 | Forecasting | `app/services/forecasting.py`, `app/services/covid_service.py`, `tests/test_forecasting.py` |
 | MongoDB annotations | `app/repositories/annotation_repository.py`, `app/services/annotation_service.py`, `tests/test_annotations.py` |
 | Dashboard | `app/dashboard`, `tests/test_dashboard.py` |
-| Spark Bronze, profiling, cross-engine fingerprint, and optimization | `app/spark_pipeline`, `scripts/export_spark_sources.py`, `spark_tests`, `reports/spark/evidence.json` |
+| Spark Bronze, profiling, cross-engine fingerprint, optimization, and offline clustering | `app/spark_pipeline`, `scripts/export_spark_sources.py`, `spark_tests`, `reports/spark/evidence.json`, `reports/spark/README.md` |
 | Reproducible deployment | `README.md`, `.env.example`, `compose.yaml`, Dockerfiles, `setup.ps1`, `setup.sh` |

@@ -67,18 +67,27 @@ class SchemaDriftFailureTests(unittest.TestCase):
         cases = (
             {
                 "name": "declared",
+                "dataset": "indicators",
                 "missing_files": frozenset({"indicators"}),
                 "undeclared_files": frozenset(),
                 "failed_rules": [("required_source_file_present", "indicators")],
             },
             {
                 "name": "undeclared",
+                "dataset": "indicators",
                 "missing_files": frozenset(),
                 "undeclared_files": frozenset({"indicators"}),
                 "failed_rules": [
                     ("required_source_declared", "indicators"),
                     ("required_source_file_present", "indicators"),
                 ],
+            },
+            {
+                "name": "extended",
+                "dataset": "covid_extended",
+                "missing_files": frozenset({"covid_extended"}),
+                "undeclared_files": frozenset(),
+                "failed_rules": [("required_source_file_present", "covid_extended")],
             },
         )
 
@@ -99,7 +108,7 @@ class SchemaDriftFailureTests(unittest.TestCase):
                     expected_error=SourceValidationError,
                     expected_message="Source validation blocked Bronze publication",
                 )
-                self.assertFalse(quality["headers"]["indicators"]["present"])
+                self.assertFalse(quality["headers"][case["dataset"]]["present"])
                 self.assertEqual(self._failed_rules(quality), case["failed_rules"])
 
     def test_checksum_mismatch_publishes_quality_without_spark(self) -> None:
@@ -190,7 +199,7 @@ class SchemaDriftFailureTests(unittest.TestCase):
             ["quality.json"],
         )
         quality = json.loads((run_output / "quality.json").read_text("utf-8"))
-        self.assertEqual(quality["ruleset_version"], "bronze-quality-v1")
+        self.assertEqual(quality["ruleset_version"], "bronze-quality-v2")
         self.assertEqual(quality["status"], "FAIL")
         self.assertEqual(quality["source_batch_id"], source_batch_id)
         self.assertEqual(quality["source_batch_sha256"], manifest["batch_sha256"])

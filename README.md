@@ -316,16 +316,16 @@ For individual recovery steps, use [Advanced: manual setup and recovery](#advanc
 - Cache analytical responses with Redis.
 - Store indexed annotations in MongoDB.
 - Compare two simple forecast models with temporal validation.
-- Build immutable PySpark Bronze data and benchmark evidence.
+- Build immutable PySpark Bronze data, benchmark evidence, and offline country clusters.
 - Run Ruff, isort, Black, unit tests, and GitHub Actions.
 
-Clustering is not included because it is a bonus task. Authentication and user preferences also remain outside this project scope.
+Clustering is an offline Spark bonus and is not exposed through FastAPI or Dash. Authentication and user preferences remain outside this project scope.
 
 ## Data sources and table selection
 
 ### Epidemiological source
 
-The production API reads the promoted parallel marts built from `COVID19_EPIDEMIOLOGICAL_DATA.PUBLIC.ECDC_GLOBAL` and `COVID19_EPIDEMIOLOGICAL_DATA.PUBLIC.JHU_COVID_19_TIMESERIES`. The Spark pipeline remains ECDC-only.
+The production API reads the promoted parallel marts built from `COVID19_EPIDEMIOLOGICAL_DATA.PUBLIC.ECDC_GLOBAL` and `COVID19_EPIDEMIOLOGICAL_DATA.PUBLIC.JHU_COVID_19_TIMESERIES`. Spark keeps the original ECDC export for transformation benchmarks and reads the governed ECDC-to-JHU extended mart only for offline clustering. Spark does not reimplement the splice boundary.
 
 `ECDC_GLOBAL` has a country-date grain and daily case and death measures. This grain supports global comparisons, forecasts, and daily pattern detection.
 
@@ -387,7 +387,9 @@ flowchart LR
     API --> Mongo[(MongoDB)]
     Browser[Dash] --> API
     Marts --> Export[Immutable source export]
+    Extended[(COVID_ENRICHED_EXTENDED)] --> Export
     Export --> Spark[PySpark Bronze and profiling]
+    Spark --> Clusters[(Ignored offline cluster artifacts)]
     Spark --> Evidence[(Quality and benchmark evidence)]
 ```
 
@@ -891,11 +893,11 @@ The script writes these files under the ignored `outputs/eda/` directory:
 
 The exports use the same analytical mart as the API. This rule prevents separate metric definitions in notebooks and services.
 
-## PySpark Bronze and profiling
+## PySpark Bronze, profiling, and offline clustering
 
 Spark does not serve API requests. Snowflake SQL is simpler for the current 61,900-row interactive workload.
 
-The Spark path demonstrates explicit schemas, immutable Bronze data, quality gates, plan inspection, and measured file-layout decisions.
+The Spark path demonstrates explicit schemas, immutable Bronze data, quality gates, plan inspection, measured file-layout decisions, and deterministic country clustering. It remains outside the serving path.
 
 The pinned Spark runtime uses Python 3.12.13, PySpark 3.5.6, Java 17.0.19, and `local[2]`.
 
@@ -910,7 +912,7 @@ uv run python scripts/export_spark_sources.py \
 
 This is the only Spark step that contacts Snowflake. It writes one immutable batch under `data/source/`.
 
-The four-file contract contains ECDC daily data, the frozen 2020 population denominator, explicit country mappings, and the active versioned WDI observations. The batch manifest includes their row counts, byte counts, SHA-256 checksums, the WDI snapshot ID, and the accepted Snowflake country-context fingerprint. The exporter never overwrites an existing batch identifier.
+The version 3 source contract contains five files: ECDC daily data, the governed `COVID_ANALYTICS.MARTS.COVID_ENRICHED_EXTENDED` series, the frozen 2020 population denominator, explicit country mappings, and active versioned WDI observations. The extended entry records its selected Snowflake object, row count, date range, country count, byte count, and SHA-256 checksum. The manifest also records the WDI snapshot ID and accepted Snowflake country-context fingerprint. The exporter never overwrites an existing batch identifier.
 
 ### 2. Run Bronze ingestion and profiling
 
@@ -933,7 +935,9 @@ The job keeps input and corrupt records in immutable Bronze Parquet. Quality fai
 | Missing required identity or date | Failure |
 | Invalid ISO length | Failure |
 | Duplicate mapping or population key | Failure |
-| Non-positive population | Failure |
+| Duplicate extended country-date or inconsistent source segment | Failure |
+| Missing or non-positive clustering denominator | Warning and country exclusion |
+| Null clustering measure or fewer than 180 observations | Warning and country exclusion |
 | Null daily measure | Warning |
 | Duplicate normalized country-date | Warning |
 | Recoverable missing ISO code | Warning |
@@ -941,9 +945,23 @@ The job keeps input and corrupt records in immutable Bronze Parquet. Quality fai
 
 Schema failures publish only quality evidence. Other failures can publish Bronze and quarantine evidence, but they block curated output.
 
-Warnings allow curated publication. The Bronze manifest records the ruleset, quality result, and quality-document checksum.
+Warnings allow curated publication. The Bronze manifest records the ruleset, quality result, quality-document checksum, source kind, runtime policy, and calculated versus actual file counts.
 
-### 3. Run a new benchmark
+The runtime policy derives bounded shuffle partitions from total input bytes and a configurable advisory partition size. Broadcast hints are applied only when each dimension's manifest byte count is below the configured limit. The optimized physical plan must match those decisions. Country-key skew is recorded from median, p95, maximum, maximum share, and maximum-to-median ratio. Event-log evidence includes shuffle and input bytes plus memory spill, disk spill, peak execution memory, executor runtime, and JVM garbage-collection time.
+
+Bronze and curated publication target approximately 128 MiB files. Coalescing is used only to reduce an existing partition count; repartitioning is used only when the target count must increase. Curated month-layout calibration measures the actual compressed month directories before choosing a partitioned or compact layout.
+
+### 3. Offline clustering methodology and outputs
+
+ISO3 is the analytical unit. Eligible countries need a valid population denominator, complete normalized measures, and at least 180 distinct daily observations. Negative source corrections remain unchanged in Bronze; only the clustering working copy floors incident rates at zero before complete 14-day rolling means are calculated.
+
+Five COVID-only features are fitted: latest cumulative cases and deaths per 100,000, peak 14-day mean cases and deaths per 100,000, and volatility of the 14-day mean case rate. Each feature receives `log1p` and standardization before Spark ML KMeans. WDI variables join only after fitting for descriptive local profiles and cannot affect membership.
+
+The selector evaluates `k=2..6` over seeds 13, 29, 47, 71, and 97. Runs with a cluster smaller than `max(3, 2% of eligible countries)` are rejected. Publication requires at least four valid seeds, positive median silhouette, and median pairwise Adjusted Rand Index of at least 0.75. The highest median silhouette wins; candidates within 0.01 use the smaller `k`. The authoritative seed is closest to the median silhouette, with lower seed as the tie-break. Cluster IDs are relabelled by ascending standardized centroid burden.
+
+Complete assignments, raw/log/standardized features, centroid distance, exclusions, post-fit WDI profiles, scaler, and KMeans model are written atomically under ignored `outputs/spark/<run>/clustering/model_id=<run>/`. Only diagnostics may be committed; they contain feature and selection contracts, aggregate counts, checksums, runtime/skew/task metrics, and lineage—not country assignments or WDI profiles.
+
+### 4. Run a new benchmark
 
 ```bash
 docker compose --profile spark run --rm spark benchmark \
@@ -955,7 +973,7 @@ Each comparison uses one warm-up and five measured repetitions in one JVM. The b
 
 Both variants must pass a correctness gate before timing. The gate checks schema, row count, and a row-multiset checksum.
 
-A failed gate stops timing and preserves the previous committed evidence. A successful suite publishes `reports/spark/evidence.json` atomically.
+A failed gate stops timing and preserves the previous committed evidence. Fixture batches write ignored preview diagnostics only. A checksum-verified `snowflake_export` batch can atomically publish version 4 diagnostics and `reports/spark/evidence.json` after every quality, benchmark, and clustering gate passes.
 
 The benchmark covers these decisions:
 
@@ -965,9 +983,9 @@ The benchmark covers these decisions:
 - Persistence for a reused data frame.
 - Output partition and file count.
 
-The measured fixture does not prove that every common optimization is faster. The report separates plan changes from elapsed-time changes.
+The measured workload does not prove that every common optimization is faster. The report separates plan changes from elapsed-time changes.
 
-Current evidence version 3 uses source batch `wdi-context-qa-v1` and WDI snapshot `wdi2-2019-2021-372906f371e0391f`. Spark reproduced the Snowflake context baseline exactly: 213 rows, 20,199 canonical bytes, and SHA-256 `6fa8fc8208d748a8dfbd2b4d606eb09cf2faae59869dfa52c62f3b3913872d83`. The optimized plan contains three build-right broadcast hash joins for country mapping, frozen population, and the narrow WDI baseline.
+Current authoritative evidence remains version 3 from source batch `wdi-context-qa-v1` and WDI snapshot `wdi2-2019-2021-372906f371e0391f`. It predates the fifth input and clustering. Spark reproduced the Snowflake context baseline exactly: 213 rows, 20,199 canonical bytes, and SHA-256 `6fa8fc8208d748a8dfbd2b4d606eb09cf2faae59869dfa52c62f3b3913872d83`. Its optimized plan contains three build-right broadcast hash joins for country mapping, frozen population, and the narrow WDI baseline.
 
 | Comparison | Baseline median | Candidate median | Result |
 | --- | ---: | ---: | --- |
@@ -977,9 +995,11 @@ Current evidence version 3 uses source batch `wdi-context-qa-v1` and WDI snapsho
 | Reused-frame cache | 323.322 ms | 372.224 ms | Candidate was not faster |
 | File layout | 2,787.065 ms | 1,645.820 ms | Candidate was faster |
 
-The final published Parquet size is 421,412 bytes, below the 128 MiB target. The pipeline therefore uses one unpartitioned file instead of many small partitions.
+The version 3 final published Parquet size is 421,412 bytes, below the 128 MiB target. The new implementation replaces its proportional month estimate with actual compressed month output, but no real-data version 4 measurement is claimed yet. Clustering is implemented and fixture-validated; authoritative extended-data evidence remains pending a credentialed export.
 
-### 4. Run Spark tests
+### 5. Runtime controls and Spark tests
+
+The CLI accepts optional `--shuffle-partitions`, `--advisory-partition-bytes`, `--broadcast-max-bytes`, `--target-file-bytes`, `--skew-ratio-warn`, `--skew-share-warn`, `--cluster-min-observations`, `--cluster-k-min`, and `--cluster-k-max` controls. Global controls appear before the `ingest-profile` or `benchmark` subcommand.
 
 ```bash
 uv sync --locked --group spark
@@ -1053,7 +1073,7 @@ GitHub Actions runs the locked environment and quality checks for each push and 
 |   |-- models/                          # Pydantic contracts
 |   |-- repositories/                    # Snowflake and MongoDB access
 |   |-- services/                        # Cache, analytics, forecast, and annotations
-|   |-- spark_pipeline/                  # Bronze, quality, and benchmark code
+|   |-- spark_pipeline/                  # Bronze, quality, benchmark, and clustering code
 |   |-- world_bank.py                    # WDI contracts and checksums
 |   |-- config.py                        # Typed settings
 |   `-- main.py                          # FastAPI application
