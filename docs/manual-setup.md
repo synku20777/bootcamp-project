@@ -154,7 +154,7 @@ Run these files in the given order:
 
 This order keeps WDI publication separate from the COVID denominator. It also creates the ECDC-only marts before the extended marts.
 
-The extension script rebuilds `COVID_ENRICHED_EXTENDED_DATA` and `CASE_INCREASE_PATTERNS_EXTENDED_DATA` as transient publication tables. Their stable public view names remain unchanged. The script then rebuilds `COUNTRY_LATEST_METRICS_EXTENDED`. Clear the Redis project prefix only after these objects pass validation.
+Bootstrap clones `COVID_ANALYTICS.MARTS` to `MARTS_BUILD`, rebuilds the extended denominator, enriched, latest, pattern, and publication-state objects in the clone, and validates the complete build. It then atomically swaps the schemas and validates the new active generation. A failed active check swaps back immediately. The prior generation remains as `MARTS_BUILD` for rollback until the next successful build. Stable public object names and API contracts do not change. Clear the Redis project prefix only after active-schema validation passes.
 
 ## 9. Start the local services
 

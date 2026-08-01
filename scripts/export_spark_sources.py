@@ -102,6 +102,11 @@ COUNTRY_CONTEXT_QUERY = """
     ORDER BY ISO3
 """
 
+PUBLICATION_GENERATION_QUERY = """
+    SELECT GENERATION_ID
+    FROM COVID_ANALYTICS.MARTS.EXTENDED_PUBLICATION_STATE
+"""
+
 
 def file_sha256(path: Path) -> str:
     digest = hashlib.sha256()
@@ -133,6 +138,14 @@ def fetch_context_fingerprint(cursor: Any) -> dict[str, Any]:
     while batch := cursor.fetchmany(10_000):
         rows.extend(dict(zip(headers, row, strict=True)) for row in batch)
     return country_context_fingerprint(rows)
+
+
+def fetch_publication_generation_id(cursor: Any) -> str:
+    cursor.execute(PUBLICATION_GENERATION_QUERY)
+    row = cursor.fetchone()
+    if row is None or not str(row[0]).strip():
+        raise RuntimeError("The active extended publication has no generation ID.")
+    return str(row[0])
 
 
 def _required_environment() -> dict[str, str]:
@@ -229,6 +242,7 @@ def export_source_batch(
     try:
         cursor = active_connection.cursor()
         try:
+            publication_generation_id = fetch_publication_generation_id(cursor)
             ecdc_path = staging / "ecdc_global.csv"
             covid_extended_path = staging / "covid_enriched_extended.csv"
             mapping_path = staging / "country_mapping.csv"
@@ -242,6 +256,11 @@ def export_source_batch(
                 covid_extended_path,
             )
             snowflake_context_fingerprint = fetch_context_fingerprint(cursor)
+            confirmed_generation_id = fetch_publication_generation_id(cursor)
+            if confirmed_generation_id != publication_generation_id:
+                raise RuntimeError(
+                    "The active extended publication changed during source export."
+                )
             shutil.copy2(population_path, population_copy)
             shutil.copy2(indicators_path, indicators_copy)
         finally:
@@ -278,6 +297,7 @@ def export_source_batch(
             "world_bank_snapshot_id": json.loads(
                 indicators_manifest_path.read_text(encoding="utf-8")
             )["snapshot_id"],
+            "snowflake_publication_generation_id": publication_generation_id,
             "snowflake_context_fingerprint": snowflake_context_fingerprint,
             "files": files,
             "batch_sha256": hashlib.sha256(

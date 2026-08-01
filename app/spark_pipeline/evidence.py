@@ -103,6 +103,9 @@ def _sanitized_evidence(
         "source_batch": {
             "source_batch_id": source_manifest["source_batch_id"],
             "batch_sha256": source_manifest["batch_sha256"],
+            "snowflake_publication_generation_id": source_manifest.get(
+                "snowflake_publication_generation_id"
+            ),
             "files": {
                 name: {
                     "row_count": details["row_count"],

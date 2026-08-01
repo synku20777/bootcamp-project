@@ -76,7 +76,7 @@ If the application cannot read the WDI manifest, an optional combined page uses 
 
 The response does not share a key with verified WDI context. The context-only route still fails closed.
 
-After a mart refresh, first validate the new marts and rebuild `COUNTRY_LATEST_METRICS_EXTENDED`. Clear the project cache only after publication succeeds. This order preserves the last-known-good cache if publication fails.
+After a mart refresh, bootstrap validates the complete `MARTS_BUILD` generation, swaps it with active `MARTS`, and revalidates active objects. Clear the project cache only after this publication succeeds. This order preserves the last-known-good cache and leaves the prior schema generation available for rollback.
 
 Clear only the project cache prefix:
 

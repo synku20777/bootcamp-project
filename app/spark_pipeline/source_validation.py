@@ -117,6 +117,26 @@ def _inspect_source_manifest(
             expected_path=manifest_path.name,
         )
     )
+    source_kind = manifest.get("source_kind")
+    publication_generation_id = manifest.get("snowflake_publication_generation_id")
+    checks.append(
+        _validation_check(
+            "snowflake_publication_generation_present",
+            passed=(
+                source_kind != "snowflake_export"
+                or (
+                    isinstance(publication_generation_id, str)
+                    and bool(publication_generation_id.strip())
+                )
+            ),
+            message=(
+                "Authoritative Snowflake exports must identify the atomically "
+                "published MARTS generation."
+            ),
+            dataset="manifest",
+            expected_path=manifest_path.name,
+        )
+    )
     return manifest, checks
 
 

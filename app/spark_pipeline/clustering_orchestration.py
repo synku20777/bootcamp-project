@@ -62,6 +62,9 @@ def _clustering_stage(
                         "batch_sha256", source_manifest.get("source_batch_sha256")
                     ),
                     "source_kind": source_manifest.get("source_kind"),
+                    "snowflake_publication_generation_id": source_manifest.get(
+                        "snowflake_publication_generation_id"
+                    ),
                     "world_bank_snapshot_id": source_manifest.get(
                         "world_bank_snapshot_id"
                     ),

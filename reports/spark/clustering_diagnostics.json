@@ -1,0 +1,522 @@
+{
+  "assignment_fingerprint": {
+    "content_sha256": "c64ecd70db6fa2b572b8cf4dd0a112fd69a150e053eb196851102ad7f3f29b9e",
+    "distinct_row_hash_count": 211,
+    "row_count": 211,
+    "schema": [
+      {
+        "metadata": {},
+        "name": "country_iso3",
+        "nullable": true,
+        "type": "string"
+      },
+      {
+        "metadata": {},
+        "name": "cluster_id",
+        "nullable": false,
+        "type": "integer"
+      }
+    ],
+    "schema_sha256": "7201c8d8643a44afcaa069e8ed7d51ae54b21758e6e0a0a221747f71595642a7"
+  },
+  "broadcast_decisions": {
+    "indicators": true,
+    "mapping": true,
+    "population": true
+  },
+  "caveats": [
+    "Clusters describe historical reported outcomes, not causal regimes.",
+    "World Bank fields profile clusters after fitting and do not affect membership.",
+    "Cluster identifiers are ordered by standardized centroid burden for stability."
+  ],
+  "country_key_skew": {
+    "key_count": 222,
+    "maximum_row_share": 0.005195,
+    "maximum_rows_per_key": 1165,
+    "maximum_to_median_ratio": 1.067828,
+    "median_rows_per_key": 1091.0,
+    "p95_rows_per_key": 1165,
+    "status": "PASS",
+    "thresholds": {
+      "ratio_warn": 5.0,
+      "share_warn": 0.1
+    },
+    "total_rows": 224265
+  },
+  "diagnostics_version": 1,
+  "document_sha256": "7a6ecb47d92d47a71e2bb23be4eb53c42627a5867484be9893c46ca32325f40e",
+  "eligibility": {
+    "eligible_countries": 211,
+    "excluded_by_reason": {
+      "missing_iso3": 1,
+      "missing_or_invalid_population": 10
+    },
+    "excluded_countries": 11,
+    "minimum_observations": 180,
+    "total_countries": 222
+  },
+  "feature_policy": "covid_only_with_post_fit_wdi_profiles",
+  "feature_version": "covid-country-features-v1",
+  "features": [
+    {
+      "name": "latest_cases_per_100k",
+      "transform": "log1p_then_standardize"
+    },
+    {
+      "name": "latest_deaths_per_100k",
+      "transform": "log1p_then_standardize"
+    },
+    {
+      "name": "peak_14d_cases_per_100k",
+      "transform": "log1p_then_standardize"
+    },
+    {
+      "name": "peak_14d_deaths_per_100k",
+      "transform": "log1p_then_standardize"
+    },
+    {
+      "name": "volatility_14d_cases_per_100k",
+      "transform": "log1p_then_standardize"
+    }
+  ],
+  "local_publication": {
+    "output_bytes": 83597,
+    "output_file_count": 13,
+    "published": true
+  },
+  "method": "spark_ml_kmeans_squared_euclidean",
+  "model_id": "benchmark-wdi-v5",
+  "negative_correction_policy": "source values preserved; incident rates floored at zero only for rolling clustering features",
+  "pipeline_task_metrics": {
+    "disk_bytes_spilled": 0,
+    "executor_run_time_ms": 188088,
+    "input_bytes": 824621043,
+    "jvm_gc_time_ms": 3559,
+    "memory_bytes_spilled": 0,
+    "peak_execution_memory_bytes": 109969232,
+    "shuffle_read_bytes": 235969180,
+    "shuffle_write_bytes": 220065446
+  },
+  "runtime_policy": {
+    "advisory_partition_bytes": 67108864,
+    "broadcast_max_bytes": 8388608,
+    "cluster_k_max": 6,
+    "cluster_k_min": 2,
+    "cluster_min_observations": 180,
+    "max_shuffle_partitions": 200,
+    "min_shuffle_partitions": 4,
+    "shuffle_partition_derivation": "source_bytes_divided_by_advisory_bytes_with_bounds",
+    "shuffle_partitions": 4,
+    "shuffle_partitions_overridden": false,
+    "skew_ratio_warn": 5.0,
+    "skew_share_warn": 0.1,
+    "source_input_bytes": 27910999,
+    "target_file_bytes": 134217728
+  },
+  "selection": {
+    "candidate_k_max": 6,
+    "candidate_k_min": 2,
+    "candidates": [
+      {
+        "k": 2,
+        "median_pairwise_adjusted_rand_index": 0.8356107111065171,
+        "median_silhouette": 0.7350874333726615,
+        "rejected_runs": [],
+        "requested_seeds": [
+          13,
+          29,
+          47,
+          71,
+          97
+        ],
+        "runs": [
+          {
+            "cluster_sizes": {
+              "0": 87,
+              "1": 124
+            },
+            "minimum_cluster_size": 87,
+            "seed": 13,
+            "silhouette": 0.735087
+          },
+          {
+            "cluster_sizes": {
+              "0": 133,
+              "1": 78
+            },
+            "minimum_cluster_size": 78,
+            "seed": 29,
+            "silhouette": 0.734727
+          },
+          {
+            "cluster_sizes": {
+              "0": 133,
+              "1": 78
+            },
+            "minimum_cluster_size": 78,
+            "seed": 47,
+            "silhouette": 0.734727
+          },
+          {
+            "cluster_sizes": {
+              "0": 124,
+              "1": 87
+            },
+            "minimum_cluster_size": 87,
+            "seed": 71,
+            "silhouette": 0.735087
+          },
+          {
+            "cluster_sizes": {
+              "0": 124,
+              "1": 87
+            },
+            "minimum_cluster_size": 87,
+            "seed": 97,
+            "silhouette": 0.735087
+          }
+        ],
+        "valid": true,
+        "valid_seed_runs": 5
+      },
+      {
+        "k": 3,
+        "median_pairwise_adjusted_rand_index": 1.0,
+        "median_silhouette": 0.6257083363786095,
+        "rejected_runs": [],
+        "requested_seeds": [
+          13,
+          29,
+          47,
+          71,
+          97
+        ],
+        "runs": [
+          {
+            "cluster_sizes": {
+              "0": 65,
+              "1": 90,
+              "2": 56
+            },
+            "minimum_cluster_size": 56,
+            "seed": 13,
+            "silhouette": 0.625708
+          },
+          {
+            "cluster_sizes": {
+              "0": 65,
+              "1": 90,
+              "2": 56
+            },
+            "minimum_cluster_size": 56,
+            "seed": 29,
+            "silhouette": 0.625708
+          },
+          {
+            "cluster_sizes": {
+              "0": 90,
+              "1": 56,
+              "2": 65
+            },
+            "minimum_cluster_size": 56,
+            "seed": 47,
+            "silhouette": 0.625708
+          },
+          {
+            "cluster_sizes": {
+              "0": 65,
+              "1": 56,
+              "2": 90
+            },
+            "minimum_cluster_size": 56,
+            "seed": 71,
+            "silhouette": 0.625708
+          },
+          {
+            "cluster_sizes": {
+              "0": 90,
+              "1": 56,
+              "2": 65
+            },
+            "minimum_cluster_size": 56,
+            "seed": 97,
+            "silhouette": 0.625708
+          }
+        ],
+        "valid": true,
+        "valid_seed_runs": 5
+      },
+      {
+        "k": 4,
+        "median_pairwise_adjusted_rand_index": 0.8432684171656399,
+        "median_silhouette": 0.5519632695134286,
+        "rejected_runs": [],
+        "requested_seeds": [
+          13,
+          29,
+          47,
+          71,
+          97
+        ],
+        "runs": [
+          {
+            "cluster_sizes": {
+              "0": 62,
+              "1": 56,
+              "2": 57,
+              "3": 36
+            },
+            "minimum_cluster_size": 36,
+            "seed": 13,
+            "silhouette": 0.562836
+          },
+          {
+            "cluster_sizes": {
+              "0": 55,
+              "1": 71,
+              "2": 49,
+              "3": 36
+            },
+            "minimum_cluster_size": 36,
+            "seed": 29,
+            "silhouette": 0.566217
+          },
+          {
+            "cluster_sizes": {
+              "0": 52,
+              "1": 56,
+              "2": 57,
+              "3": 46
+            },
+            "minimum_cluster_size": 46,
+            "seed": 47,
+            "silhouette": 0.550633
+          },
+          {
+            "cluster_sizes": {
+              "0": 56,
+              "1": 54,
+              "2": 44,
+              "3": 57
+            },
+            "minimum_cluster_size": 44,
+            "seed": 71,
+            "silhouette": 0.551963
+          },
+          {
+            "cluster_sizes": {
+              "0": 51,
+              "1": 55,
+              "2": 64,
+              "3": 41
+            },
+            "minimum_cluster_size": 41,
+            "seed": 97,
+            "silhouette": 0.548683
+          }
+        ],
+        "valid": true,
+        "valid_seed_runs": 5
+      },
+      {
+        "k": 5,
+        "median_pairwise_adjusted_rand_index": 0.6628962114660903,
+        "median_silhouette": 0.5201688817992665,
+        "rejected_runs": [],
+        "requested_seeds": [
+          13,
+          29,
+          47,
+          71,
+          97
+        ],
+        "runs": [
+          {
+            "cluster_sizes": {
+              "0": 39,
+              "1": 54,
+              "2": 57,
+              "3": 35,
+              "4": 26
+            },
+            "minimum_cluster_size": 26,
+            "seed": 13,
+            "silhouette": 0.50832
+          },
+          {
+            "cluster_sizes": {
+              "0": 53,
+              "1": 27,
+              "2": 38,
+              "3": 37,
+              "4": 56
+            },
+            "minimum_cluster_size": 27,
+            "seed": 29,
+            "silhouette": 0.507931
+          },
+          {
+            "cluster_sizes": {
+              "0": 47,
+              "1": 55,
+              "2": 44,
+              "3": 35,
+              "4": 30
+            },
+            "minimum_cluster_size": 30,
+            "seed": 47,
+            "silhouette": 0.520169
+          },
+          {
+            "cluster_sizes": {
+              "0": 42,
+              "1": 43,
+              "2": 27,
+              "3": 45,
+              "4": 54
+            },
+            "minimum_cluster_size": 27,
+            "seed": 71,
+            "silhouette": 0.526478
+          },
+          {
+            "cluster_sizes": {
+              "0": 48,
+              "1": 54,
+              "2": 28,
+              "3": 42,
+              "4": 39
+            },
+            "minimum_cluster_size": 28,
+            "seed": 97,
+            "silhouette": 0.533702
+          }
+        ],
+        "valid": false,
+        "valid_seed_runs": 5
+      },
+      {
+        "k": 6,
+        "median_pairwise_adjusted_rand_index": 0.5849969294787438,
+        "median_silhouette": 0.5006369708031352,
+        "rejected_runs": [
+          {
+            "cluster_sizes": {
+              "0": 44,
+              "1": 2,
+              "2": 34,
+              "3": 25,
+              "4": 53,
+              "5": 53
+            },
+            "reason": "minimum_cluster_size",
+            "seed": 71
+          }
+        ],
+        "requested_seeds": [
+          13,
+          29,
+          47,
+          71,
+          97
+        ],
+        "runs": [
+          {
+            "cluster_sizes": {
+              "0": 36,
+              "1": 55,
+              "2": 45,
+              "3": 17,
+              "4": 27,
+              "5": 31
+            },
+            "minimum_cluster_size": 17,
+            "seed": 13,
+            "silhouette": 0.50828
+          },
+          {
+            "cluster_sizes": {
+              "0": 52,
+              "1": 21,
+              "2": 38,
+              "3": 32,
+              "4": 41,
+              "5": 27
+            },
+            "minimum_cluster_size": 21,
+            "seed": 29,
+            "silhouette": 0.512393
+          },
+          {
+            "cluster_sizes": {
+              "0": 34,
+              "1": 28,
+              "2": 36,
+              "3": 47,
+              "4": 28,
+              "5": 38
+            },
+            "minimum_cluster_size": 28,
+            "seed": 47,
+            "silhouette": 0.439633
+          },
+          {
+            "cluster_sizes": {
+              "0": 43,
+              "1": 43,
+              "2": 45,
+              "3": 27,
+              "4": 13,
+              "5": 40
+            },
+            "minimum_cluster_size": 13,
+            "seed": 97,
+            "silhouette": 0.492994
+          }
+        ],
+        "valid": false,
+        "valid_seed_runs": 4
+      }
+    ],
+    "cluster_burden_scores": {
+      "1": -4.81055,
+      "2": 3.375144
+    },
+    "cluster_label_policy": "ascending sum of standardized centroid coordinates",
+    "cluster_sizes": {
+      "1": 87,
+      "2": 124
+    },
+    "minimum_cluster_size": 5,
+    "minimum_stability_adjusted_rand_index": 0.75,
+    "seeds": [
+      13,
+      29,
+      47,
+      71,
+      97
+    ],
+    "selected_k": 2,
+    "selected_median_adjusted_rand_index": 0.8356107111065171,
+    "selected_median_silhouette": 0.7350874333726615,
+    "selected_seed": 13,
+    "selected_silhouette": 0.735087,
+    "silhouette_tie_tolerance": 0.01
+  },
+  "source_lineage": {
+    "extended_source": {
+      "byte_count": 24882304,
+      "country_count": 221,
+      "maximum_report_date": "2023-03-09",
+      "minimum_report_date": "2019-12-31",
+      "row_count": 224265,
+      "sha256": "b8f7127e8f07015bfb3663e5ba16b51ce2c5333c0fbef675d95d29346c5a22ac",
+      "snowflake_object": "COVID_ANALYTICS.MARTS.COVID_ENRICHED_EXTENDED"
+    },
+    "snowflake_publication_generation_id": "548e6113-ef7a-4243-8f4b-e79aab0e6e5b",
+    "source_batch_id": "extended-context-20260731-v1",
+    "source_batch_sha256": "64b3fa095be168b8d8d9c255813c58864e32352e00322e2083cfbe43205bdf7a",
+    "source_kind": "snowflake_export",
+    "world_bank_snapshot_id": "wdi2-2019-2021-372906f371e0391f"
+  }
+}

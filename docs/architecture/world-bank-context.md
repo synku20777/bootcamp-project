@@ -148,7 +148,7 @@ Spark does not join context by display name. Source export fingerprints the live
 
 Spark calculates the same fingerprint after parsing and joining. A row-count or checksum mismatch blocks publication.
 
-Evidence version 3 records the snapshot ID, baseline rows, projection bytes, joined COVID rows, unmatched locations, and both fingerprints.
+Evidence version 4 records the Snowflake publication generation, snapshot ID, baseline rows, projection bytes, joined COVID rows, unmatched locations, and both fingerprints. Matching generation lineage in the export manifest, Spark evidence, and clustering diagnostics binds the cross-engine comparison to one active mart generation.
 
 ## Migration and rollback
 

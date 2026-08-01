@@ -654,14 +654,26 @@ class BootstrapTests(unittest.TestCase):
         self.assertIn("CASE_INCREASE_PATTERNS_EXTENDED_DATA", normalized)
         self.assertIn(
             "CREATE OR REPLACE TRANSIENT TABLE "
-            "COVID_ANALYTICS.MARTS.COVID_ENRICHED_EXTENDED_DATA",
+            "COVID_ANALYTICS.MARTS_BUILD.COVID_ENRICHED_EXTENDED_DATA",
             normalized,
         )
         self.assertIn(
             "CREATE OR REPLACE TRANSIENT TABLE "
-            "COVID_ANALYTICS.MARTS.CASE_INCREASE_PATTERNS_EXTENDED_DATA",
+            "COVID_ANALYTICS.MARTS_BUILD.CASE_INCREASE_PATTERNS_EXTENDED_DATA",
             normalized,
         )
+        self.assertIn(
+            "CREATE OR REPLACE SCHEMA COVID_ANALYTICS.MARTS_BUILD CLONE "
+            "COVID_ANALYTICS.MARTS",
+            normalized,
+        )
+        self.assertIn("EXTENDED_PUBLICATION_STATE", normalized)
+        self.assertNotIn(
+            "CREATE OR REPLACE TRANSIENT TABLE "
+            "COVID_ANALYTICS.MARTS.COVID_ENRICHED_EXTENDED_DATA",
+            normalized,
+        )
+        self.assertNotIn("ALTER SCHEMA COVID_ANALYTICS.MARTS SWAP", normalized)
         self.assertIn(
             "PARTITION BY LOCATION_KEY, COUNTRY, COUNTRY_ISO2, COUNTRY_ISO3, "
             "SERIES_SEGMENT",
@@ -679,6 +691,63 @@ class BootstrapTests(unittest.TestCase):
             "CREATE OR REPLACE VIEW COVID_ANALYTICS.MARTS.COVID_ENRICHED AS",
             normalized,
         )
+
+    def test_jhu_publication_validates_before_and_after_atomic_swap(self) -> None:
+        connection = MagicMock()
+        events: list[str] = []
+
+        with (
+            patch(
+                "scripts.bootstrap.execute_sql_file",
+                side_effect=lambda *_: events.append("build"),
+            ),
+            patch(
+                "scripts.bootstrap._jhu_extension_ready",
+                side_effect=lambda _, schema: events.append(f"validate:{schema}")
+                or True,
+            ),
+            patch(
+                "scripts.bootstrap._execute",
+                side_effect=lambda *_: events.append("swap"),
+            ),
+        ):
+            bootstrap.publish_jhu_extension(connection)
+
+        self.assertEqual(
+            events,
+            ["build", "validate:MARTS_BUILD", "swap", "validate:MARTS"],
+        )
+
+    def test_jhu_publication_does_not_swap_invalid_build(self) -> None:
+        connection = MagicMock()
+        with (
+            patch("scripts.bootstrap.execute_sql_file"),
+            patch("scripts.bootstrap._jhu_extension_ready", return_value=False),
+            patch("scripts.bootstrap._execute") as execute,
+        ):
+            with self.assertRaisesRegex(bootstrap.BootstrapError, "build failed"):
+                bootstrap.publish_jhu_extension(connection)
+
+        execute.assert_not_called()
+
+    def test_jhu_publication_restores_previous_generation(self) -> None:
+        connection = MagicMock()
+        with (
+            patch("scripts.bootstrap.execute_sql_file"),
+            patch(
+                "scripts.bootstrap._jhu_extension_ready",
+                side_effect=[True, False],
+            ),
+            patch("scripts.bootstrap._execute") as execute,
+        ):
+            with self.assertRaisesRegex(
+                bootstrap.BootstrapError,
+                "failed active validation",
+            ):
+                bootstrap.publish_jhu_extension(connection)
+
+        self.assertEqual(execute.call_count, 2)
+        self.assertEqual(execute.call_args_list[0], execute.call_args_list[1])
 
     def test_analysis_and_eda_use_dataset_selected_extended_objects(self) -> None:
         analysis_sql = (

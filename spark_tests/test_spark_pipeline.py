@@ -450,6 +450,7 @@ class SparkPipelineTests(unittest.TestCase):
                 quality_summary=quality_summary,
                 world_bank_snapshot_id="snapshot",
                 snowflake_context_fingerprint=None,
+                snowflake_publication_generation_id=None,
                 source_kind="fixture",
                 runtime_policy=SparkRuntimePolicy.from_manifest({"files": {}}),
             )
@@ -461,6 +462,7 @@ class SparkPipelineTests(unittest.TestCase):
             self.assertEqual(manifest["source_kind"], "fixture")
             self.assertEqual(manifest["quality_summary"], quality_summary)
             self.assertEqual(manifest["world_bank_snapshot_id"], "snapshot")
+            self.assertIsNone(manifest["snowflake_publication_generation_id"])
             self.assertEqual(
                 set(manifest["datasets"]),
                 {"covid_extended", "ecdc", "indicators", "mapping", "population"},

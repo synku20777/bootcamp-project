@@ -159,6 +159,30 @@ class SchemaDriftFailureTests(unittest.TestCase):
                 [("source_batch_checksum_matches", "manifest")],
             )
 
+    def test_snowflake_export_requires_publication_generation(self) -> None:
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            source_batch_id = "missing-generation"
+            source_directory = root / "source" / source_batch_id
+            manifest = write_source_batch(source_directory)
+            manifest["source_kind"] = "snowflake_export"
+            (source_directory / "manifest.json").write_text(
+                json.dumps(manifest, indent=2, sort_keys=True),
+                encoding="utf-8",
+            )
+
+            quality = self._run_pre_spark_failure(
+                root,
+                source_batch_id=source_batch_id,
+                manifest=manifest,
+                expected_error=SourceValidationError,
+                expected_message="Source validation blocked Bronze publication",
+            )
+            self.assertEqual(
+                self._failed_rules(quality),
+                [("snowflake_publication_generation_present", "manifest")],
+            )
+
     def _run_pre_spark_failure(
         self,
         root: Path,

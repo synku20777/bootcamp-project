@@ -120,6 +120,8 @@ JHU_EXTENSION_OWNERSHIP_OBJECTS = (
     ("TABLE", "STAGING", "JHU_COUNTRY_DAILY"),
     ("TABLE", "APP", "ECDC_JHU_OVERLAP_AUDIT"),
 )
+JHU_ACTIVE_MARTS_SCHEMA = "MARTS"
+JHU_BUILD_MARTS_SCHEMA = "MARTS_BUILD"
 logger = logging.getLogger(__name__)
 
 
@@ -1116,11 +1118,16 @@ def _snowflake_objects_ready(connection: Any) -> bool:
     return all(_query_one(connection, query) is not None for query in checks)
 
 
-def _jhu_extension_ready(connection: Any) -> bool:
+def _jhu_extension_ready(
+    connection: Any,
+    marts_schema: str = JHU_ACTIVE_MARTS_SCHEMA,
+) -> bool:
+    if marts_schema not in {JHU_ACTIVE_MARTS_SCHEMA, JHU_BUILD_MARTS_SCHEMA}:
+        return False
     try:
         row = _query_one(
             connection,
-            """
+            f"""
             WITH JHU_PROFILE AS (
                 SELECT
                     COUNT(*) AS ROW_COUNT,
@@ -1183,6 +1190,38 @@ def _jhu_extension_ready(connection: Any) -> bool:
                         AS BOTH_COUNTRIES
                 FROM COVID_ANALYTICS.APP.ECDC_JHU_OVERLAP_AUDIT
             ),
+            ENRICHED_PROFILE AS (
+                SELECT
+                    COUNT(*) AS ROW_COUNT,
+                    COUNT(DISTINCT COUNTRY_ISO3) AS ISO3_COUNTRY_COUNT,
+                    MIN(REPORT_DATE) AS FIRST_DATE,
+                    MAX(REPORT_DATE) AS LAST_DATE,
+                    COUNT_IF(COVID_RATE_POPULATION_2020 IS NULL)
+                        AS NULL_DENOMINATOR_ROWS
+                FROM COVID_ANALYTICS.{marts_schema}.COVID_ENRICHED_EXTENDED
+            ),
+            ENRICHED_DUPLICATES AS (
+                SELECT COUNT(*) AS DUPLICATE_KEYS
+                FROM (
+                    SELECT LOCATION_KEY, REPORT_DATE
+                    FROM COVID_ANALYTICS.{marts_schema}.COVID_ENRICHED_EXTENDED
+                    GROUP BY LOCATION_KEY, REPORT_DATE
+                    HAVING COUNT(*) > 1
+                )
+            ),
+            LATEST_PROFILE AS (
+                SELECT
+                    COUNT(*) AS ROW_COUNT,
+                    COUNT(DISTINCT LOCATION_KEY) AS LOCATION_COUNT
+                FROM COVID_ANALYTICS.{marts_schema}.COUNTRY_LATEST_METRICS_EXTENDED
+            ),
+            PUBLICATION_STATE AS (
+                SELECT
+                    COUNT(*) AS ROW_COUNT,
+                    COUNT_IF(GENERATION_ID IS NOT NULL AND BUILT_AT IS NOT NULL)
+                        AS VALID_ROWS
+                FROM COVID_ANALYTICS.{marts_schema}.EXTENDED_PUBLICATION_STATE
+            ),
             PATTERN_PROFILE AS (
                 SELECT
                     COUNT(*) AS PATTERN_COUNT,
@@ -1196,7 +1235,7 @@ def _jhu_extension_ready(connection: Any) -> bool:
                         'JHU_ONLY'
                     )) AS INVALID_SEGMENT_ROWS,
                     MAX(END_DATE) AS LAST_PATTERN_DATE
-                FROM COVID_ANALYTICS.MARTS.CASE_INCREASE_PATTERNS_EXTENDED
+                FROM COVID_ANALYTICS.{marts_schema}.CASE_INCREASE_PATTERNS_EXTENDED
             )
             SELECT
                 jhu.ROW_COUNT = 224028
@@ -1218,7 +1257,17 @@ def _jhu_extension_ready(connection: Any) -> bool:
                 AND jhu_only.LAST_DATE = DATE '2023-03-09'
                 AND overlap.BOTH_ROWS = 53954
                 AND overlap.BOTH_COUNTRIES = 188
-                AND patterns.PATTERN_COUNT > 0
+                AND enriched.ROW_COUNT = 224265
+                AND enriched.ISO3_COUNTRY_COUNT = 221
+                AND enriched.FIRST_DATE = DATE '2019-12-31'
+                AND enriched.LAST_DATE = DATE '2023-03-09'
+                AND enriched.NULL_DENOMINATOR_ROWS = 4194
+                AND enriched_duplicates.DUPLICATE_KEYS = 0
+                AND latest.ROW_COUNT = 222
+                AND latest.LOCATION_COUNT = 222
+                AND publication.ROW_COUNT = 1
+                AND publication.VALID_ROWS = 1
+                AND patterns.PATTERN_COUNT = 5135
                 AND patterns.INVALID_DURATION_ROWS = 0
                 AND patterns.INVALID_INCREASE_ROWS = 0
                 AND patterns.INVALID_SEGMENT_ROWS = 0
@@ -1230,12 +1279,92 @@ def _jhu_extension_ready(connection: Any) -> bool:
             CROSS JOIN BOUNDARY_PROFILE AS boundaries
             CROSS JOIN JHU_ONLY_PROFILE AS jhu_only
             CROSS JOIN OVERLAP_PROFILE AS overlap
+            CROSS JOIN ENRICHED_PROFILE AS enriched
+            CROSS JOIN ENRICHED_DUPLICATES AS enriched_duplicates
+            CROSS JOIN LATEST_PROFILE AS latest
+            CROSS JOIN PUBLICATION_STATE AS publication
             CROSS JOIN PATTERN_PROFILE AS patterns
             """,
         )
         return row is not None and bool(row[0])
     except Exception:
         return False
+
+
+def publish_jhu_extension(connection: Any) -> None:
+    """Build, validate, and atomically publish one complete MARTS generation."""
+
+    execute_sql_file(connection, SQL_FILES["jhu_extension"])
+    if not _jhu_extension_ready(connection, JHU_BUILD_MARTS_SCHEMA):
+        raise BootstrapError(
+            "The extended MARTS build failed its publication checks.",
+            likely_cause=(
+                "The Marketplace release, source policy, or generated analytical "
+                "objects no longer match the accepted contract."
+            ),
+            fixes=(
+                "Inspect MARTS_BUILD and the JHU overlap audit before changing an accepted threshold.",
+                "Rerun setup with --resume after correcting the source or policy.",
+            ),
+            retry="The active MARTS generation was not changed.",
+        )
+
+    swap_sql = (
+        "ALTER SCHEMA COVID_ANALYTICS.MARTS " "SWAP WITH COVID_ANALYTICS.MARTS_BUILD"
+    )
+    try:
+        _execute(connection, swap_sql)
+    except snowflake.connector.Error as exc:
+        logger.exception(
+            "jhu_extension_schema_swap_failed",
+            extra={"error_type": type(exc).__name__},
+            exc_info=sanitized_exception_info(exc),
+        )
+        raise BootstrapError(
+            "Snowflake could not activate the validated extended MARTS generation.",
+            likely_cause=(
+                "The project role does not own both schemas, or Snowflake rejected "
+                "the atomic schema swap."
+            ),
+            fixes=(
+                "Confirm COVID_PROJECT_ADMIN owns MARTS and MARTS_BUILD.",
+                "Rerun setup with --resume after correcting schema ownership.",
+            ),
+            retry="The active MARTS generation was not changed.",
+        ) from exc
+
+    if _jhu_extension_ready(connection, JHU_ACTIVE_MARTS_SCHEMA):
+        return
+
+    try:
+        _execute(connection, swap_sql)
+    except snowflake.connector.Error as exc:
+        logger.exception(
+            "jhu_extension_schema_rollback_failed",
+            extra={"error_type": type(exc).__name__},
+            exc_info=sanitized_exception_info(exc),
+        )
+        raise BootstrapError(
+            "The new MARTS generation failed validation and rollback also failed.",
+            likely_cause="Snowflake could not swap the previous generation back into service.",
+            fixes=(
+                "Use ACCOUNTADMIN to inspect MARTS and MARTS_BUILD immediately.",
+                "Restore the previously healthy schema with ALTER SCHEMA MARTS SWAP WITH MARTS_BUILD.",
+            ),
+        ) from exc
+
+    raise BootstrapError(
+        "The new MARTS generation failed active validation.",
+        likely_cause=(
+            "An object or grant did not retain the expected behavior after the "
+            "schema swap."
+        ),
+        fixes=(
+            "Inspect MARTS_BUILD, which retains the rejected generation.",
+            "Rerun setup with --resume after correcting the build contract.",
+        ),
+        retry="The previous MARTS generation was restored.",
+    )
 
 
 def _wdi_snapshot_matches(connection: Any) -> bool:
@@ -1809,10 +1938,7 @@ def setup(
             context=context,
             name="jhu_parallel_extension",
             checksum=_jhu_extension_checksum(analytical_marts_checksum),
-            action=lambda: execute_sql_file(
-                admin_connection,
-                SQL_FILES["jhu_extension"],
-            ),
+            action=lambda: publish_jhu_extension(admin_connection),
             postcondition=lambda: _jhu_extension_ready(admin_connection),
             resume=resume,
         )

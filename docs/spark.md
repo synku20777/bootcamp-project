@@ -27,7 +27,7 @@ The source contract contains five files:
 - Explicit country mappings.
 - Active WDI observations.
 
-The manifest records row counts, byte counts, checksums, and the WDI snapshot identifier. The extended entry also records the selected Snowflake object, date range, country count, and SHA-256 checksum.
+The manifest records row counts, byte counts, checksums, the WDI snapshot identifier, and the active Snowflake publication generation. The exporter reads the generation before and after all five queries. It rejects the batch and removes its staging directory if the generation is absent or changes. The extended entry also records the selected Snowflake object, date range, country count, and SHA-256 checksum.
 
 The exporter does not replace an existing batch identifier.
 
@@ -122,11 +122,11 @@ The measured fixture does not prove that every common optimization is faster. Th
 
 ## Current evidence
 
-Evidence version 3 uses source batch `wdi-context-qa-v1` and snapshot `wdi2-2019-2021-372906f371e0391f`.
+Evidence version 4 uses source batch `extended-context-20260731-v1`, ingestion `bronze-wdi-v5`, and benchmark/model `benchmark-wdi-v5`. The source manifest, evidence, and clustering diagnostics all record Snowflake generation `548e6113-ef7a-4243-8f4b-e79aab0e6e5b`.
 
-This accepted evidence predates the fifth input and clustering stage. It remains the authoritative real-data record.
+All five file checksums passed. Spark reproduced the 213-row Snowflake context projection with SHA-256 `6fa8fc8208d748a8dfbd2b4d606eb09cf2faae59869dfa52c62f3b3913872d83`, and the optimized plan recorded three build-right broadcast hash joins.
 
-Run a credentialed version 4 export before the project claims real extended-data cluster results.
+Five-repetition medians support broadcast joins and one unpartitioned output file on this local workload. Early projection/filtering, AQE duplicate aggregation, and reused-frame caching were slower. Skew passed without salting. The selected `k=2` cluster result includes 211 countries, has median silhouette 0.7350874333726615, and has median pairwise Adjusted Rand Index 0.8356107111065171.
 
 See the [Spark evidence report](../reports/spark/README.md) for fingerprints, benchmark medians, and file-layout results.
 

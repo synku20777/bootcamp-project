@@ -274,6 +274,8 @@ See [Troubleshooting](docs/troubleshooting.md) for complete recovery instruction
 
 See [Project overview](docs/project-overview.md) and [Data sources](docs/data-sources.md).
 
+Extended Snowflake marts are built and validated in a zero-copy `MARTS_BUILD` clone, then published with one native schema swap. The prior generation remains available for rollback. Spark evidence version 4 traces its five-file export to the exact active Snowflake generation.
+
 ## Advanced: manual setup and recovery
 
 See [Manual setup](docs/manual-setup.md), including the `sql/09_create_jhu_extension.sql` step.

@@ -13,14 +13,18 @@ from scripts.export_spark_sources import export_source_batch
 
 
 class FakeCursor:
-    def __init__(self) -> None:
+    def __init__(self, generation_ids: tuple[str, str]) -> None:
         self.executions = 0
+        self.generation_ids = list(generation_ids)
         self.description = []
         self._pending: list[list[tuple[object, ...]]] = []
 
-    def execute(self, _query: str) -> None:
+    def execute(self, query: str) -> None:
         self.executions += 1
-        if self.executions == 1:
+        if "EXTENDED_PUBLICATION_STATE" in query:
+            self.description = [("GENERATION_ID",)]
+            self._pending = [[(self.generation_ids.pop(0),)]]
+        elif "ECDC_GLOBAL" in query:
             self.description = [
                 ("COUNTRY_REGION",),
                 ("ISO3166_1",),
@@ -32,7 +36,7 @@ class FakeCursor:
                 [("Latvia", "LV", "2020-03-01", 1, 0)],
                 [],
             ]
-        elif self.executions == 2:
+        elif "COUNTRY_CODE_MAPPING" in query:
             self.description = [
                 ("SOURCE_COUNTRY_NAME",),
                 ("SOURCE_COUNTRY_CODE",),
@@ -45,7 +49,7 @@ class FakeCursor:
                 [("Namibia", None, "Namibia", "NA", "NAM", True)],
                 [],
             ]
-        elif self.executions == 3:
+        elif "COVID_ENRICHED_EXTENDED" in query:
             self.description = [
                 ("COUNTRY",),
                 ("COUNTRY_ISO2",),
@@ -91,7 +95,7 @@ class FakeCursor:
                 ],
                 [],
             ]
-        else:
+        elif "COUNTRY_BASELINE_2019" in query:
             self.description = [
                 ("ISO3",),
                 ("POPULATION_2020_CONTEXT",),
@@ -115,17 +119,26 @@ class FakeCursor:
                 ],
                 [],
             ]
+        else:
+            raise AssertionError(f"Unexpected query: {query}")
 
     def fetchmany(self, _size: int):
         return self._pending.pop(0)
+
+    def fetchone(self):
+        rows = self._pending.pop(0)
+        return rows[0] if rows else None
 
     def close(self) -> None:
         return None
 
 
 class FakeConnection:
-    def __init__(self) -> None:
-        self.cursor_instance = FakeCursor()
+    def __init__(
+        self,
+        generation_ids: tuple[str, str] = ("generation-v1", "generation-v1"),
+    ) -> None:
+        self.cursor_instance = FakeCursor(generation_ids)
 
     def cursor(self) -> FakeCursor:
         return self.cursor_instance
@@ -178,9 +191,13 @@ class SparkSourceExportTests(unittest.TestCase):
                 (target / "manifest.json").read_text(encoding="utf-8")
             )
 
-            self.assertEqual(connection.cursor_instance.executions, 4)
+            self.assertEqual(connection.cursor_instance.executions, 6)
             self.assertEqual(manifest["manifest_version"], 3)
             self.assertEqual(manifest["source_kind"], "snowflake_export")
+            self.assertEqual(
+                manifest["snowflake_publication_generation_id"],
+                "generation-v1",
+            )
             self.assertEqual(manifest["files"]["ecdc"]["row_count"], 1)
             self.assertEqual(manifest["files"]["mapping"]["row_count"], 1)
             self.assertEqual(manifest["files"]["covid_extended"]["country_count"], 1)
@@ -207,6 +224,19 @@ class SparkSourceExportTests(unittest.TestCase):
                     population_path=population,
                     connection=connection,
                 )
+
+            with self.assertRaisesRegex(RuntimeError, "changed during source export"):
+                export_source_batch(
+                    source_batch_id="fixture-v2",
+                    output_root=root / "source",
+                    population_path=population,
+                    connection=FakeConnection(("generation-v1", "generation-v2")),
+                )
+            self.assertFalse((root / "source" / "fixture-v2").exists())
+            self.assertEqual(
+                list((root / "source").glob(".fixture-v2.staging-*")),
+                [],
+            )
         finally:
             shutil.rmtree(root)
 

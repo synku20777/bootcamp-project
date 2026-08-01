@@ -1,5 +1,5 @@
 {
-  "benchmark_run_id": "benchmark-wdi-v4",
+  "benchmark_run_id": "benchmark-wdi-v5",
   "benchmarks": [
     {
       "correctness": {
@@ -76,10 +76,15 @@
         "after": [
           {
             "column_count": 5,
-            "duration_ms": 222.3,
+            "disk_bytes_spilled": 0,
+            "duration_ms": 342.26,
+            "executor_run_time_ms": 211,
             "input_bytes": 2134232,
-            "job_group": "benchmark-wdi-v4:early_projection_filter:after:0",
+            "job_group": "benchmark-wdi-v5:early_projection_filter:after:0",
+            "jvm_gc_time_ms": 0,
+            "memory_bytes_spilled": 0,
             "partitions": 1,
+            "peak_execution_memory_bytes": 0,
             "repetition": 0,
             "row_count": 61900,
             "shuffle_read_bytes": 72,
@@ -87,10 +92,15 @@
           },
           {
             "column_count": 5,
-            "duration_ms": 216.075,
+            "disk_bytes_spilled": 0,
+            "duration_ms": 347.414,
+            "executor_run_time_ms": 213,
             "input_bytes": 2134232,
-            "job_group": "benchmark-wdi-v4:early_projection_filter:after:1",
+            "job_group": "benchmark-wdi-v5:early_projection_filter:after:1",
+            "jvm_gc_time_ms": 6,
+            "memory_bytes_spilled": 0,
             "partitions": 1,
+            "peak_execution_memory_bytes": 0,
             "repetition": 1,
             "row_count": 61900,
             "shuffle_read_bytes": 72,
@@ -98,10 +108,15 @@
           },
           {
             "column_count": 5,
-            "duration_ms": 211.503,
+            "disk_bytes_spilled": 0,
+            "duration_ms": 313.642,
+            "executor_run_time_ms": 193,
             "input_bytes": 2134232,
-            "job_group": "benchmark-wdi-v4:early_projection_filter:after:2",
+            "job_group": "benchmark-wdi-v5:early_projection_filter:after:2",
+            "jvm_gc_time_ms": 6,
+            "memory_bytes_spilled": 0,
             "partitions": 1,
+            "peak_execution_memory_bytes": 0,
             "repetition": 2,
             "row_count": 61900,
             "shuffle_read_bytes": 72,
@@ -109,10 +124,15 @@
           },
           {
             "column_count": 5,
-            "duration_ms": 219.479,
+            "disk_bytes_spilled": 0,
+            "duration_ms": 325.457,
+            "executor_run_time_ms": 196,
             "input_bytes": 2134232,
-            "job_group": "benchmark-wdi-v4:early_projection_filter:after:3",
+            "job_group": "benchmark-wdi-v5:early_projection_filter:after:3",
+            "jvm_gc_time_ms": 0,
+            "memory_bytes_spilled": 0,
             "partitions": 1,
+            "peak_execution_memory_bytes": 0,
             "repetition": 3,
             "row_count": 61900,
             "shuffle_read_bytes": 72,
@@ -120,10 +140,15 @@
           },
           {
             "column_count": 5,
-            "duration_ms": 198.295,
+            "disk_bytes_spilled": 0,
+            "duration_ms": 319.71,
+            "executor_run_time_ms": 186,
             "input_bytes": 2134232,
-            "job_group": "benchmark-wdi-v4:early_projection_filter:after:4",
+            "job_group": "benchmark-wdi-v5:early_projection_filter:after:4",
+            "jvm_gc_time_ms": 7,
+            "memory_bytes_spilled": 0,
             "partitions": 1,
+            "peak_execution_memory_bytes": 0,
             "repetition": 4,
             "row_count": 61900,
             "shuffle_read_bytes": 72,
@@ -133,10 +158,15 @@
         "before": [
           {
             "column_count": 10,
-            "duration_ms": 183.939,
+            "disk_bytes_spilled": 0,
+            "duration_ms": 302.201,
+            "executor_run_time_ms": 172,
             "input_bytes": 2134232,
-            "job_group": "benchmark-wdi-v4:early_projection_filter:before:0",
+            "job_group": "benchmark-wdi-v5:early_projection_filter:before:0",
+            "jvm_gc_time_ms": 0,
+            "memory_bytes_spilled": 0,
             "partitions": 1,
+            "peak_execution_memory_bytes": 0,
             "repetition": 0,
             "row_count": 61900,
             "shuffle_read_bytes": 72,
@@ -144,10 +174,15 @@
           },
           {
             "column_count": 10,
-            "duration_ms": 169.678,
+            "disk_bytes_spilled": 0,
+            "duration_ms": 316.372,
+            "executor_run_time_ms": 182,
             "input_bytes": 2134232,
-            "job_group": "benchmark-wdi-v4:early_projection_filter:before:1",
+            "job_group": "benchmark-wdi-v5:early_projection_filter:before:1",
+            "jvm_gc_time_ms": 0,
+            "memory_bytes_spilled": 0,
             "partitions": 1,
+            "peak_execution_memory_bytes": 0,
             "repetition": 1,
             "row_count": 61900,
             "shuffle_read_bytes": 72,
@@ -155,10 +190,15 @@
           },
           {
             "column_count": 10,
-            "duration_ms": 169.968,
+            "disk_bytes_spilled": 0,
+            "duration_ms": 282.918,
+            "executor_run_time_ms": 153,
             "input_bytes": 2134232,
-            "job_group": "benchmark-wdi-v4:early_projection_filter:before:2",
+            "job_group": "benchmark-wdi-v5:early_projection_filter:before:2",
+            "jvm_gc_time_ms": 6,
+            "memory_bytes_spilled": 0,
             "partitions": 1,
+            "peak_execution_memory_bytes": 0,
             "repetition": 2,
             "row_count": 61900,
             "shuffle_read_bytes": 72,
@@ -166,10 +206,15 @@
           },
           {
             "column_count": 10,
-            "duration_ms": 185.193,
+            "disk_bytes_spilled": 0,
+            "duration_ms": 261.792,
+            "executor_run_time_ms": 142,
             "input_bytes": 2134232,
-            "job_group": "benchmark-wdi-v4:early_projection_filter:before:3",
+            "job_group": "benchmark-wdi-v5:early_projection_filter:before:3",
+            "jvm_gc_time_ms": 0,
+            "memory_bytes_spilled": 0,
             "partitions": 1,
+            "peak_execution_memory_bytes": 0,
             "repetition": 3,
             "row_count": 61900,
             "shuffle_read_bytes": 72,
@@ -177,10 +222,15 @@
           },
           {
             "column_count": 10,
-            "duration_ms": 191.009,
+            "disk_bytes_spilled": 0,
+            "duration_ms": 259.71,
+            "executor_run_time_ms": 140,
             "input_bytes": 2134232,
-            "job_group": "benchmark-wdi-v4:early_projection_filter:before:4",
+            "job_group": "benchmark-wdi-v5:early_projection_filter:before:4",
+            "jvm_gc_time_ms": 0,
+            "memory_bytes_spilled": 0,
             "partitions": 1,
+            "peak_execution_memory_bytes": 0,
             "repetition": 4,
             "row_count": 61900,
             "shuffle_read_bytes": 72,
@@ -191,15 +241,40 @@
       "name": "early_projection_filter",
       "summary": {
         "after": {
+          "disk_bytes_spilled": {
+            "maximum": 0,
+            "median": 0,
+            "minimum": 0
+          },
           "duration_ms": {
-            "maximum": 222.3,
-            "median": 216.075,
-            "minimum": 198.295
+            "maximum": 347.414,
+            "median": 325.457,
+            "minimum": 313.642
+          },
+          "executor_run_time_ms": {
+            "maximum": 213,
+            "median": 196,
+            "minimum": 186
           },
           "input_bytes": {
             "maximum": 2134232,
             "median": 2134232,
             "minimum": 2134232
+          },
+          "jvm_gc_time_ms": {
+            "maximum": 7,
+            "median": 6,
+            "minimum": 0
+          },
+          "memory_bytes_spilled": {
+            "maximum": 0,
+            "median": 0,
+            "minimum": 0
+          },
+          "peak_execution_memory_bytes": {
+            "maximum": 0,
+            "median": 0,
+            "minimum": 0
           },
           "shuffle_read_bytes": {
             "maximum": 72,
@@ -213,15 +288,40 @@
           }
         },
         "before": {
+          "disk_bytes_spilled": {
+            "maximum": 0,
+            "median": 0,
+            "minimum": 0
+          },
           "duration_ms": {
-            "maximum": 191.009,
-            "median": 183.939,
-            "minimum": 169.678
+            "maximum": 316.372,
+            "median": 282.918,
+            "minimum": 259.71
+          },
+          "executor_run_time_ms": {
+            "maximum": 182,
+            "median": 153,
+            "minimum": 140
           },
           "input_bytes": {
             "maximum": 2134232,
             "median": 2134232,
             "minimum": 2134232
+          },
+          "jvm_gc_time_ms": {
+            "maximum": 6,
+            "median": 0,
+            "minimum": 0
+          },
+          "memory_bytes_spilled": {
+            "maximum": 0,
+            "median": 0,
+            "minimum": 0
+          },
+          "peak_execution_memory_bytes": {
+            "maximum": 0,
+            "median": 0,
+            "minimum": 0
           },
           "shuffle_read_bytes": {
             "maximum": 72,
@@ -242,7 +342,7 @@
         "datasets": [
           {
             "after": {
-              "content_sha256": "24b6d110ee6137ae55e4743d22fba8b50402f6311ea3ea3549f4bbb0abfdf722",
+              "content_sha256": "bbfb87e8396d214f2d0634474e855638ffcae2c0cd285d8c9fd7590dbaa3a5b0",
               "distinct_row_hash_count": 61900,
               "row_count": 61900,
               "schema": [
@@ -400,7 +500,7 @@
               "schema_sha256": "6d3861afa3a7ee5735b6eedba587e09e9c09396518e5c0585d5a378403a95b0a"
             },
             "before": {
-              "content_sha256": "24b6d110ee6137ae55e4743d22fba8b50402f6311ea3ea3549f4bbb0abfdf722",
+              "content_sha256": "bbfb87e8396d214f2d0634474e855638ffcae2c0cd285d8c9fd7590dbaa3a5b0",
               "distinct_row_hash_count": 61900,
               "row_count": 61900,
               "schema": [
@@ -575,153 +675,253 @@
       "measurements": {
         "after": [
           {
-            "duration_ms": 648.46,
+            "disk_bytes_spilled": 0,
+            "duration_ms": 1069.456,
+            "executor_run_time_ms": 951,
             "input_bytes": 3028695,
-            "job_group": "benchmark-wdi-v4:broadcast_joins:after:0",
+            "job_group": "benchmark-wdi-v5:broadcast_joins:after:0",
+            "jvm_gc_time_ms": 26,
+            "memory_bytes_spilled": 0,
             "partitions": 1,
+            "peak_execution_memory_bytes": 35684288,
             "repetition": 0,
             "row_count": 61900,
-            "shuffle_read_bytes": 1646361,
-            "shuffle_write_bytes": 1646361
+            "shuffle_read_bytes": 1489961,
+            "shuffle_write_bytes": 1489961
           },
           {
-            "duration_ms": 521.223,
+            "disk_bytes_spilled": 0,
+            "duration_ms": 876.748,
+            "executor_run_time_ms": 689,
             "input_bytes": 3028695,
-            "job_group": "benchmark-wdi-v4:broadcast_joins:after:1",
+            "job_group": "benchmark-wdi-v5:broadcast_joins:after:1",
+            "jvm_gc_time_ms": 11,
+            "memory_bytes_spilled": 0,
             "partitions": 1,
+            "peak_execution_memory_bytes": 35684288,
             "repetition": 1,
             "row_count": 61900,
-            "shuffle_read_bytes": 1646361,
-            "shuffle_write_bytes": 1646361
+            "shuffle_read_bytes": 1489961,
+            "shuffle_write_bytes": 1489961
           },
           {
-            "duration_ms": 561.944,
+            "disk_bytes_spilled": 0,
+            "duration_ms": 1431.364,
+            "executor_run_time_ms": 1229,
             "input_bytes": 3028695,
-            "job_group": "benchmark-wdi-v4:broadcast_joins:after:2",
+            "job_group": "benchmark-wdi-v5:broadcast_joins:after:2",
+            "jvm_gc_time_ms": 17,
+            "memory_bytes_spilled": 0,
             "partitions": 1,
+            "peak_execution_memory_bytes": 35684288,
             "repetition": 2,
             "row_count": 61900,
-            "shuffle_read_bytes": 1646361,
-            "shuffle_write_bytes": 1646361
+            "shuffle_read_bytes": 1489961,
+            "shuffle_write_bytes": 1489961
           },
           {
-            "duration_ms": 477.199,
+            "disk_bytes_spilled": 0,
+            "duration_ms": 1150.329,
+            "executor_run_time_ms": 976,
             "input_bytes": 3028695,
-            "job_group": "benchmark-wdi-v4:broadcast_joins:after:3",
+            "job_group": "benchmark-wdi-v5:broadcast_joins:after:3",
+            "jvm_gc_time_ms": 5,
+            "memory_bytes_spilled": 0,
             "partitions": 1,
+            "peak_execution_memory_bytes": 35684288,
             "repetition": 3,
             "row_count": 61900,
-            "shuffle_read_bytes": 1646361,
-            "shuffle_write_bytes": 1646361
+            "shuffle_read_bytes": 1489961,
+            "shuffle_write_bytes": 1489961
           },
           {
-            "duration_ms": 577.508,
+            "disk_bytes_spilled": 0,
+            "duration_ms": 1492.731,
+            "executor_run_time_ms": 1367,
             "input_bytes": 3028695,
-            "job_group": "benchmark-wdi-v4:broadcast_joins:after:4",
+            "job_group": "benchmark-wdi-v5:broadcast_joins:after:4",
+            "jvm_gc_time_ms": 54,
+            "memory_bytes_spilled": 0,
             "partitions": 1,
+            "peak_execution_memory_bytes": 35684288,
             "repetition": 4,
             "row_count": 61900,
-            "shuffle_read_bytes": 1646361,
-            "shuffle_write_bytes": 1646361
+            "shuffle_read_bytes": 1489961,
+            "shuffle_write_bytes": 1489961
           }
         ],
         "before": [
           {
-            "duration_ms": 1066.446,
+            "disk_bytes_spilled": 0,
+            "duration_ms": 1912.961,
+            "executor_run_time_ms": 1587,
             "input_bytes": 3028695,
-            "job_group": "benchmark-wdi-v4:broadcast_joins:before:0",
+            "job_group": "benchmark-wdi-v5:broadcast_joins:before:0",
+            "jvm_gc_time_ms": 32,
+            "memory_bytes_spilled": 0,
             "partitions": 1,
+            "peak_execution_memory_bytes": 37814208,
             "repetition": 0,
             "row_count": 61900,
-            "shuffle_read_bytes": 1274038,
-            "shuffle_write_bytes": 1274038
+            "shuffle_read_bytes": 1198775,
+            "shuffle_write_bytes": 1198775
           },
           {
-            "duration_ms": 886.004,
+            "disk_bytes_spilled": 0,
+            "duration_ms": 1698.491,
+            "executor_run_time_ms": 1455,
             "input_bytes": 3028695,
-            "job_group": "benchmark-wdi-v4:broadcast_joins:before:1",
+            "job_group": "benchmark-wdi-v5:broadcast_joins:before:1",
+            "jvm_gc_time_ms": 27,
+            "memory_bytes_spilled": 0,
             "partitions": 1,
+            "peak_execution_memory_bytes": 37814208,
             "repetition": 1,
             "row_count": 61900,
-            "shuffle_read_bytes": 1274038,
-            "shuffle_write_bytes": 1274038
+            "shuffle_read_bytes": 1198775,
+            "shuffle_write_bytes": 1198775
           },
           {
-            "duration_ms": 744.86,
+            "disk_bytes_spilled": 0,
+            "duration_ms": 1676.362,
+            "executor_run_time_ms": 1441,
             "input_bytes": 3028695,
-            "job_group": "benchmark-wdi-v4:broadcast_joins:before:2",
+            "job_group": "benchmark-wdi-v5:broadcast_joins:before:2",
+            "jvm_gc_time_ms": 38,
+            "memory_bytes_spilled": 0,
             "partitions": 1,
+            "peak_execution_memory_bytes": 37814208,
             "repetition": 2,
             "row_count": 61900,
-            "shuffle_read_bytes": 1274038,
-            "shuffle_write_bytes": 1274038
+            "shuffle_read_bytes": 1198775,
+            "shuffle_write_bytes": 1198775
           },
           {
-            "duration_ms": 762.517,
+            "disk_bytes_spilled": 0,
+            "duration_ms": 1780.488,
+            "executor_run_time_ms": 1454,
             "input_bytes": 3028695,
-            "job_group": "benchmark-wdi-v4:broadcast_joins:before:3",
+            "job_group": "benchmark-wdi-v5:broadcast_joins:before:3",
+            "jvm_gc_time_ms": 45,
+            "memory_bytes_spilled": 0,
             "partitions": 1,
+            "peak_execution_memory_bytes": 37814208,
             "repetition": 3,
             "row_count": 61900,
-            "shuffle_read_bytes": 1274038,
-            "shuffle_write_bytes": 1274038
+            "shuffle_read_bytes": 1198775,
+            "shuffle_write_bytes": 1198775
           },
           {
-            "duration_ms": 706.652,
+            "disk_bytes_spilled": 0,
+            "duration_ms": 1645.46,
+            "executor_run_time_ms": 1515,
             "input_bytes": 3028695,
-            "job_group": "benchmark-wdi-v4:broadcast_joins:before:4",
+            "job_group": "benchmark-wdi-v5:broadcast_joins:before:4",
+            "jvm_gc_time_ms": 35,
+            "memory_bytes_spilled": 0,
             "partitions": 1,
+            "peak_execution_memory_bytes": 37814208,
             "repetition": 4,
             "row_count": 61900,
-            "shuffle_read_bytes": 1274038,
-            "shuffle_write_bytes": 1274038
+            "shuffle_read_bytes": 1198775,
+            "shuffle_write_bytes": 1198775
           }
         ]
       },
       "name": "broadcast_joins",
       "summary": {
         "after": {
+          "disk_bytes_spilled": {
+            "maximum": 0,
+            "median": 0,
+            "minimum": 0
+          },
           "duration_ms": {
-            "maximum": 648.46,
-            "median": 561.944,
-            "minimum": 477.199
+            "maximum": 1492.731,
+            "median": 1150.329,
+            "minimum": 876.748
+          },
+          "executor_run_time_ms": {
+            "maximum": 1367,
+            "median": 976,
+            "minimum": 689
           },
           "input_bytes": {
             "maximum": 3028695,
             "median": 3028695,
             "minimum": 3028695
           },
+          "jvm_gc_time_ms": {
+            "maximum": 54,
+            "median": 17,
+            "minimum": 5
+          },
+          "memory_bytes_spilled": {
+            "maximum": 0,
+            "median": 0,
+            "minimum": 0
+          },
+          "peak_execution_memory_bytes": {
+            "maximum": 35684288,
+            "median": 35684288,
+            "minimum": 35684288
+          },
           "shuffle_read_bytes": {
-            "maximum": 1646361,
-            "median": 1646361,
-            "minimum": 1646361
+            "maximum": 1489961,
+            "median": 1489961,
+            "minimum": 1489961
           },
           "shuffle_write_bytes": {
-            "maximum": 1646361,
-            "median": 1646361,
-            "minimum": 1646361
+            "maximum": 1489961,
+            "median": 1489961,
+            "minimum": 1489961
           }
         },
         "before": {
+          "disk_bytes_spilled": {
+            "maximum": 0,
+            "median": 0,
+            "minimum": 0
+          },
           "duration_ms": {
-            "maximum": 1066.446,
-            "median": 762.517,
-            "minimum": 706.652
+            "maximum": 1912.961,
+            "median": 1698.491,
+            "minimum": 1645.46
+          },
+          "executor_run_time_ms": {
+            "maximum": 1587,
+            "median": 1455,
+            "minimum": 1441
           },
           "input_bytes": {
             "maximum": 3028695,
             "median": 3028695,
             "minimum": 3028695
           },
+          "jvm_gc_time_ms": {
+            "maximum": 45,
+            "median": 35,
+            "minimum": 27
+          },
+          "memory_bytes_spilled": {
+            "maximum": 0,
+            "median": 0,
+            "minimum": 0
+          },
+          "peak_execution_memory_bytes": {
+            "maximum": 37814208,
+            "median": 37814208,
+            "minimum": 37814208
+          },
           "shuffle_read_bytes": {
-            "maximum": 1274038,
-            "median": 1274038,
-            "minimum": 1274038
+            "maximum": 1198775,
+            "median": 1198775,
+            "minimum": 1198775
           },
           "shuffle_write_bytes": {
-            "maximum": 1274038,
-            "median": 1274038,
-            "minimum": 1274038
+            "maximum": 1198775,
+            "median": 1198775,
+            "minimum": 1198775
           }
         }
       },
@@ -813,153 +1013,253 @@
       "measurements": {
         "after": [
           {
-            "duration_ms": 427.352,
+            "disk_bytes_spilled": 0,
+            "duration_ms": 1438.517,
+            "executor_run_time_ms": 1180,
             "input_bytes": 4268464,
-            "job_group": "benchmark-wdi-v4:adaptive_duplicate_aggregation:after:0",
+            "job_group": "benchmark-wdi-v5:adaptive_duplicate_aggregation:after:0",
+            "jvm_gc_time_ms": 17,
+            "memory_bytes_spilled": 0,
             "partitions": 1,
+            "peak_execution_memory_bytes": 8912880,
             "repetition": 0,
             "row_count": 61900,
-            "shuffle_read_bytes": 794801,
-            "shuffle_write_bytes": 1898262
+            "shuffle_read_bytes": 673197,
+            "shuffle_write_bytes": 1650854
           },
           {
-            "duration_ms": 426.586,
+            "disk_bytes_spilled": 0,
+            "duration_ms": 1095.922,
+            "executor_run_time_ms": 853,
             "input_bytes": 4268464,
-            "job_group": "benchmark-wdi-v4:adaptive_duplicate_aggregation:after:1",
+            "job_group": "benchmark-wdi-v5:adaptive_duplicate_aggregation:after:1",
+            "jvm_gc_time_ms": 0,
+            "memory_bytes_spilled": 0,
             "partitions": 1,
+            "peak_execution_memory_bytes": 8912880,
             "repetition": 1,
             "row_count": 61900,
-            "shuffle_read_bytes": 794801,
-            "shuffle_write_bytes": 1898262
+            "shuffle_read_bytes": 673197,
+            "shuffle_write_bytes": 1650854
           },
           {
-            "duration_ms": 424.53,
+            "disk_bytes_spilled": 0,
+            "duration_ms": 909.677,
+            "executor_run_time_ms": 687,
             "input_bytes": 4268464,
-            "job_group": "benchmark-wdi-v4:adaptive_duplicate_aggregation:after:2",
+            "job_group": "benchmark-wdi-v5:adaptive_duplicate_aggregation:after:2",
+            "jvm_gc_time_ms": 12,
+            "memory_bytes_spilled": 0,
             "partitions": 1,
+            "peak_execution_memory_bytes": 8912880,
             "repetition": 2,
             "row_count": 61900,
-            "shuffle_read_bytes": 794801,
-            "shuffle_write_bytes": 1898262
+            "shuffle_read_bytes": 673197,
+            "shuffle_write_bytes": 1650854
           },
           {
-            "duration_ms": 403.742,
+            "disk_bytes_spilled": 0,
+            "duration_ms": 1245.694,
+            "executor_run_time_ms": 964,
             "input_bytes": 4268464,
-            "job_group": "benchmark-wdi-v4:adaptive_duplicate_aggregation:after:3",
+            "job_group": "benchmark-wdi-v5:adaptive_duplicate_aggregation:after:3",
+            "jvm_gc_time_ms": 8,
+            "memory_bytes_spilled": 0,
             "partitions": 1,
+            "peak_execution_memory_bytes": 8912880,
             "repetition": 3,
             "row_count": 61900,
-            "shuffle_read_bytes": 794801,
-            "shuffle_write_bytes": 1898262
+            "shuffle_read_bytes": 673197,
+            "shuffle_write_bytes": 1650854
           },
           {
-            "duration_ms": 428.393,
+            "disk_bytes_spilled": 0,
+            "duration_ms": 1524.602,
+            "executor_run_time_ms": 1190,
             "input_bytes": 4268464,
-            "job_group": "benchmark-wdi-v4:adaptive_duplicate_aggregation:after:4",
+            "job_group": "benchmark-wdi-v5:adaptive_duplicate_aggregation:after:4",
+            "jvm_gc_time_ms": 6,
+            "memory_bytes_spilled": 0,
             "partitions": 1,
+            "peak_execution_memory_bytes": 8912880,
             "repetition": 4,
             "row_count": 61900,
-            "shuffle_read_bytes": 794801,
-            "shuffle_write_bytes": 1898262
+            "shuffle_read_bytes": 673197,
+            "shuffle_write_bytes": 1650854
           }
         ],
         "before": [
           {
-            "duration_ms": 391.643,
+            "disk_bytes_spilled": 0,
+            "duration_ms": 589.043,
+            "executor_run_time_ms": 427,
             "input_bytes": 2134232,
-            "job_group": "benchmark-wdi-v4:adaptive_duplicate_aggregation:before:0",
-            "partitions": 32,
+            "job_group": "benchmark-wdi-v5:adaptive_duplicate_aggregation:before:0",
+            "jvm_gc_time_ms": 12,
+            "memory_bytes_spilled": 0,
+            "partitions": 4,
+            "peak_execution_memory_bytes": 8912880,
             "repetition": 0,
             "row_count": 61900,
-            "shuffle_read_bytes": 796630,
-            "shuffle_write_bytes": 796630
+            "shuffle_read_bytes": 673374,
+            "shuffle_write_bytes": 673374
           },
           {
-            "duration_ms": 351.3,
+            "disk_bytes_spilled": 0,
+            "duration_ms": 549.935,
+            "executor_run_time_ms": 386,
             "input_bytes": 2134232,
-            "job_group": "benchmark-wdi-v4:adaptive_duplicate_aggregation:before:1",
-            "partitions": 32,
+            "job_group": "benchmark-wdi-v5:adaptive_duplicate_aggregation:before:1",
+            "jvm_gc_time_ms": 10,
+            "memory_bytes_spilled": 0,
+            "partitions": 4,
+            "peak_execution_memory_bytes": 8912880,
             "repetition": 1,
             "row_count": 61900,
-            "shuffle_read_bytes": 796630,
-            "shuffle_write_bytes": 796630
+            "shuffle_read_bytes": 673374,
+            "shuffle_write_bytes": 673374
           },
           {
-            "duration_ms": 347.056,
+            "disk_bytes_spilled": 0,
+            "duration_ms": 433.603,
+            "executor_run_time_ms": 298,
             "input_bytes": 2134232,
-            "job_group": "benchmark-wdi-v4:adaptive_duplicate_aggregation:before:2",
-            "partitions": 32,
+            "job_group": "benchmark-wdi-v5:adaptive_duplicate_aggregation:before:2",
+            "jvm_gc_time_ms": 0,
+            "memory_bytes_spilled": 0,
+            "partitions": 4,
+            "peak_execution_memory_bytes": 8912880,
             "repetition": 2,
             "row_count": 61900,
-            "shuffle_read_bytes": 796630,
-            "shuffle_write_bytes": 796630
+            "shuffle_read_bytes": 673374,
+            "shuffle_write_bytes": 673374
           },
           {
-            "duration_ms": 342.158,
+            "disk_bytes_spilled": 0,
+            "duration_ms": 931.285,
+            "executor_run_time_ms": 692,
             "input_bytes": 2134232,
-            "job_group": "benchmark-wdi-v4:adaptive_duplicate_aggregation:before:3",
-            "partitions": 32,
+            "job_group": "benchmark-wdi-v5:adaptive_duplicate_aggregation:before:3",
+            "jvm_gc_time_ms": 0,
+            "memory_bytes_spilled": 0,
+            "partitions": 4,
+            "peak_execution_memory_bytes": 8912880,
             "repetition": 3,
             "row_count": 61900,
-            "shuffle_read_bytes": 796630,
-            "shuffle_write_bytes": 796630
+            "shuffle_read_bytes": 673374,
+            "shuffle_write_bytes": 673374
           },
           {
-            "duration_ms": 318.55,
+            "disk_bytes_spilled": 0,
+            "duration_ms": 962.739,
+            "executor_run_time_ms": 742,
             "input_bytes": 2134232,
-            "job_group": "benchmark-wdi-v4:adaptive_duplicate_aggregation:before:4",
-            "partitions": 32,
+            "job_group": "benchmark-wdi-v5:adaptive_duplicate_aggregation:before:4",
+            "jvm_gc_time_ms": 0,
+            "memory_bytes_spilled": 0,
+            "partitions": 4,
+            "peak_execution_memory_bytes": 8912880,
             "repetition": 4,
             "row_count": 61900,
-            "shuffle_read_bytes": 796630,
-            "shuffle_write_bytes": 796630
+            "shuffle_read_bytes": 673374,
+            "shuffle_write_bytes": 673374
           }
         ]
       },
       "name": "adaptive_duplicate_aggregation",
       "summary": {
         "after": {
+          "disk_bytes_spilled": {
+            "maximum": 0,
+            "median": 0,
+            "minimum": 0
+          },
           "duration_ms": {
-            "maximum": 428.393,
-            "median": 426.586,
-            "minimum": 403.742
+            "maximum": 1524.602,
+            "median": 1245.694,
+            "minimum": 909.677
+          },
+          "executor_run_time_ms": {
+            "maximum": 1190,
+            "median": 964,
+            "minimum": 687
           },
           "input_bytes": {
             "maximum": 4268464,
             "median": 4268464,
             "minimum": 4268464
           },
+          "jvm_gc_time_ms": {
+            "maximum": 17,
+            "median": 8,
+            "minimum": 0
+          },
+          "memory_bytes_spilled": {
+            "maximum": 0,
+            "median": 0,
+            "minimum": 0
+          },
+          "peak_execution_memory_bytes": {
+            "maximum": 8912880,
+            "median": 8912880,
+            "minimum": 8912880
+          },
           "shuffle_read_bytes": {
-            "maximum": 794801,
-            "median": 794801,
-            "minimum": 794801
+            "maximum": 673197,
+            "median": 673197,
+            "minimum": 673197
           },
           "shuffle_write_bytes": {
-            "maximum": 1898262,
-            "median": 1898262,
-            "minimum": 1898262
+            "maximum": 1650854,
+            "median": 1650854,
+            "minimum": 1650854
           }
         },
         "before": {
+          "disk_bytes_spilled": {
+            "maximum": 0,
+            "median": 0,
+            "minimum": 0
+          },
           "duration_ms": {
-            "maximum": 391.643,
-            "median": 347.056,
-            "minimum": 318.55
+            "maximum": 962.739,
+            "median": 589.043,
+            "minimum": 433.603
+          },
+          "executor_run_time_ms": {
+            "maximum": 742,
+            "median": 427,
+            "minimum": 298
           },
           "input_bytes": {
             "maximum": 2134232,
             "median": 2134232,
             "minimum": 2134232
           },
+          "jvm_gc_time_ms": {
+            "maximum": 12,
+            "median": 0,
+            "minimum": 0
+          },
+          "memory_bytes_spilled": {
+            "maximum": 0,
+            "median": 0,
+            "minimum": 0
+          },
+          "peak_execution_memory_bytes": {
+            "maximum": 8912880,
+            "median": 8912880,
+            "minimum": 8912880
+          },
           "shuffle_read_bytes": {
-            "maximum": 796630,
-            "median": 796630,
-            "minimum": 796630
+            "maximum": 673374,
+            "median": 673374,
+            "minimum": 673374
           },
           "shuffle_write_bytes": {
-            "maximum": 796630,
-            "median": 796630,
-            "minimum": 796630
+            "maximum": 673374,
+            "median": 673374,
+            "minimum": 673374
           }
         }
       },
@@ -1074,153 +1374,253 @@
       "measurements": {
         "after": [
           {
-            "duration_ms": 356.547,
+            "disk_bytes_spilled": 0,
+            "duration_ms": 488.968,
+            "executor_run_time_ms": 257,
             "input_bytes": 3077288,
-            "job_group": "benchmark-wdi-v4:reused_frame_cache:after:0",
+            "job_group": "benchmark-wdi-v5:reused_frame_cache:after:0",
+            "jvm_gc_time_ms": 12,
+            "memory_bytes_spilled": 0,
             "partitions": 1,
+            "peak_execution_memory_bytes": 8650736,
             "repetition": 0,
             "reuse_count": 2,
-            "shuffle_read_bytes": 7098,
-            "shuffle_write_bytes": 7098
+            "shuffle_read_bytes": 4919,
+            "shuffle_write_bytes": 4919
           },
           {
-            "duration_ms": 381.274,
+            "disk_bytes_spilled": 0,
+            "duration_ms": 422.453,
+            "executor_run_time_ms": 212,
             "input_bytes": 3077288,
-            "job_group": "benchmark-wdi-v4:reused_frame_cache:after:1",
+            "job_group": "benchmark-wdi-v5:reused_frame_cache:after:1",
+            "jvm_gc_time_ms": 6,
+            "memory_bytes_spilled": 0,
             "partitions": 1,
+            "peak_execution_memory_bytes": 8650736,
             "repetition": 1,
             "reuse_count": 2,
-            "shuffle_read_bytes": 7098,
-            "shuffle_write_bytes": 7098
+            "shuffle_read_bytes": 4919,
+            "shuffle_write_bytes": 4919
           },
           {
-            "duration_ms": 361.562,
+            "disk_bytes_spilled": 0,
+            "duration_ms": 426.186,
+            "executor_run_time_ms": 202,
             "input_bytes": 3077288,
-            "job_group": "benchmark-wdi-v4:reused_frame_cache:after:2",
+            "job_group": "benchmark-wdi-v5:reused_frame_cache:after:2",
+            "jvm_gc_time_ms": 6,
+            "memory_bytes_spilled": 0,
             "partitions": 1,
+            "peak_execution_memory_bytes": 8650736,
             "repetition": 2,
             "reuse_count": 2,
-            "shuffle_read_bytes": 7098,
-            "shuffle_write_bytes": 7098
+            "shuffle_read_bytes": 4919,
+            "shuffle_write_bytes": 4919
           },
           {
-            "duration_ms": 381.377,
+            "disk_bytes_spilled": 0,
+            "duration_ms": 424.833,
+            "executor_run_time_ms": 201,
             "input_bytes": 3077288,
-            "job_group": "benchmark-wdi-v4:reused_frame_cache:after:3",
+            "job_group": "benchmark-wdi-v5:reused_frame_cache:after:3",
+            "jvm_gc_time_ms": 5,
+            "memory_bytes_spilled": 0,
             "partitions": 1,
+            "peak_execution_memory_bytes": 8650736,
             "repetition": 3,
             "reuse_count": 2,
-            "shuffle_read_bytes": 7098,
-            "shuffle_write_bytes": 7098
+            "shuffle_read_bytes": 4919,
+            "shuffle_write_bytes": 4919
           },
           {
-            "duration_ms": 372.224,
+            "disk_bytes_spilled": 0,
+            "duration_ms": 431.5,
+            "executor_run_time_ms": 218,
             "input_bytes": 3077288,
-            "job_group": "benchmark-wdi-v4:reused_frame_cache:after:4",
+            "job_group": "benchmark-wdi-v5:reused_frame_cache:after:4",
+            "jvm_gc_time_ms": 10,
+            "memory_bytes_spilled": 0,
             "partitions": 1,
+            "peak_execution_memory_bytes": 8650736,
             "repetition": 4,
             "reuse_count": 2,
-            "shuffle_read_bytes": 7098,
-            "shuffle_write_bytes": 7098
+            "shuffle_read_bytes": 4919,
+            "shuffle_write_bytes": 4919
           }
         ],
         "before": [
           {
-            "duration_ms": 312.745,
+            "disk_bytes_spilled": 0,
+            "duration_ms": 536.951,
+            "executor_run_time_ms": 345,
             "input_bytes": 4268464,
-            "job_group": "benchmark-wdi-v4:reused_frame_cache:before:0",
+            "job_group": "benchmark-wdi-v5:reused_frame_cache:before:0",
+            "jvm_gc_time_ms": 6,
+            "memory_bytes_spilled": 0,
             "partitions": 1,
+            "peak_execution_memory_bytes": 8650736,
             "repetition": 0,
             "reuse_count": 2,
-            "shuffle_read_bytes": 7039,
-            "shuffle_write_bytes": 7039
+            "shuffle_read_bytes": 4860,
+            "shuffle_write_bytes": 4860
           },
           {
-            "duration_ms": 379.394,
+            "disk_bytes_spilled": 0,
+            "duration_ms": 395.312,
+            "executor_run_time_ms": 228,
             "input_bytes": 4268464,
-            "job_group": "benchmark-wdi-v4:reused_frame_cache:before:1",
+            "job_group": "benchmark-wdi-v5:reused_frame_cache:before:1",
+            "jvm_gc_time_ms": 5,
+            "memory_bytes_spilled": 0,
             "partitions": 1,
+            "peak_execution_memory_bytes": 8650736,
             "repetition": 1,
             "reuse_count": 2,
-            "shuffle_read_bytes": 7039,
-            "shuffle_write_bytes": 7039
+            "shuffle_read_bytes": 4860,
+            "shuffle_write_bytes": 4860
           },
           {
-            "duration_ms": 319.957,
+            "disk_bytes_spilled": 0,
+            "duration_ms": 392.701,
+            "executor_run_time_ms": 224,
             "input_bytes": 4268464,
-            "job_group": "benchmark-wdi-v4:reused_frame_cache:before:2",
+            "job_group": "benchmark-wdi-v5:reused_frame_cache:before:2",
+            "jvm_gc_time_ms": 0,
+            "memory_bytes_spilled": 0,
             "partitions": 1,
+            "peak_execution_memory_bytes": 8650736,
             "repetition": 2,
             "reuse_count": 2,
-            "shuffle_read_bytes": 7039,
-            "shuffle_write_bytes": 7039
+            "shuffle_read_bytes": 4860,
+            "shuffle_write_bytes": 4860
           },
           {
-            "duration_ms": 329.407,
+            "disk_bytes_spilled": 0,
+            "duration_ms": 381.651,
+            "executor_run_time_ms": 227,
             "input_bytes": 4268464,
-            "job_group": "benchmark-wdi-v4:reused_frame_cache:before:3",
+            "job_group": "benchmark-wdi-v5:reused_frame_cache:before:3",
+            "jvm_gc_time_ms": 5,
+            "memory_bytes_spilled": 0,
             "partitions": 1,
+            "peak_execution_memory_bytes": 8650736,
             "repetition": 3,
             "reuse_count": 2,
-            "shuffle_read_bytes": 7039,
-            "shuffle_write_bytes": 7039
+            "shuffle_read_bytes": 4860,
+            "shuffle_write_bytes": 4860
           },
           {
-            "duration_ms": 323.322,
+            "disk_bytes_spilled": 0,
+            "duration_ms": 395.56,
+            "executor_run_time_ms": 232,
             "input_bytes": 4268464,
-            "job_group": "benchmark-wdi-v4:reused_frame_cache:before:4",
+            "job_group": "benchmark-wdi-v5:reused_frame_cache:before:4",
+            "jvm_gc_time_ms": 6,
+            "memory_bytes_spilled": 0,
             "partitions": 1,
+            "peak_execution_memory_bytes": 8650736,
             "repetition": 4,
             "reuse_count": 2,
-            "shuffle_read_bytes": 7039,
-            "shuffle_write_bytes": 7039
+            "shuffle_read_bytes": 4860,
+            "shuffle_write_bytes": 4860
           }
         ]
       },
       "name": "reused_frame_cache",
       "summary": {
         "after": {
+          "disk_bytes_spilled": {
+            "maximum": 0,
+            "median": 0,
+            "minimum": 0
+          },
           "duration_ms": {
-            "maximum": 381.377,
-            "median": 372.224,
-            "minimum": 356.547
+            "maximum": 488.968,
+            "median": 426.186,
+            "minimum": 422.453
+          },
+          "executor_run_time_ms": {
+            "maximum": 257,
+            "median": 212,
+            "minimum": 201
           },
           "input_bytes": {
             "maximum": 3077288,
             "median": 3077288,
             "minimum": 3077288
           },
+          "jvm_gc_time_ms": {
+            "maximum": 12,
+            "median": 6,
+            "minimum": 5
+          },
+          "memory_bytes_spilled": {
+            "maximum": 0,
+            "median": 0,
+            "minimum": 0
+          },
+          "peak_execution_memory_bytes": {
+            "maximum": 8650736,
+            "median": 8650736,
+            "minimum": 8650736
+          },
           "shuffle_read_bytes": {
-            "maximum": 7098,
-            "median": 7098,
-            "minimum": 7098
+            "maximum": 4919,
+            "median": 4919,
+            "minimum": 4919
           },
           "shuffle_write_bytes": {
-            "maximum": 7098,
-            "median": 7098,
-            "minimum": 7098
+            "maximum": 4919,
+            "median": 4919,
+            "minimum": 4919
           }
         },
         "before": {
+          "disk_bytes_spilled": {
+            "maximum": 0,
+            "median": 0,
+            "minimum": 0
+          },
           "duration_ms": {
-            "maximum": 379.394,
-            "median": 323.322,
-            "minimum": 312.745
+            "maximum": 536.951,
+            "median": 395.312,
+            "minimum": 381.651
+          },
+          "executor_run_time_ms": {
+            "maximum": 345,
+            "median": 228,
+            "minimum": 224
           },
           "input_bytes": {
             "maximum": 4268464,
             "median": 4268464,
             "minimum": 4268464
           },
+          "jvm_gc_time_ms": {
+            "maximum": 6,
+            "median": 5,
+            "minimum": 0
+          },
+          "memory_bytes_spilled": {
+            "maximum": 0,
+            "median": 0,
+            "minimum": 0
+          },
+          "peak_execution_memory_bytes": {
+            "maximum": 8650736,
+            "median": 8650736,
+            "minimum": 8650736
+          },
           "shuffle_read_bytes": {
-            "maximum": 7039,
-            "median": 7039,
-            "minimum": 7039
+            "maximum": 4860,
+            "median": 4860,
+            "minimum": 4860
           },
           "shuffle_write_bytes": {
-            "maximum": 7039,
-            "median": 7039,
-            "minimum": 7039
+            "maximum": 4860,
+            "median": 4860,
+            "minimum": 4860
           }
         }
       },
@@ -1231,7 +1631,7 @@
         "datasets": [
           {
             "after": {
-              "content_sha256": "24b6d110ee6137ae55e4743d22fba8b50402f6311ea3ea3549f4bbb0abfdf722",
+              "content_sha256": "bbfb87e8396d214f2d0634474e855638ffcae2c0cd285d8c9fd7590dbaa3a5b0",
               "distinct_row_hash_count": 61900,
               "row_count": 61900,
               "schema": [
@@ -1389,7 +1789,7 @@
               "schema_sha256": "d89dfeeebd9a9ab4b176eaff093d8adba605d0af92372a40fa5a8edbb21cde1d"
             },
             "before": {
-              "content_sha256": "24b6d110ee6137ae55e4743d22fba8b50402f6311ea3ea3549f4bbb0abfdf722",
+              "content_sha256": "bbfb87e8396d214f2d0634474e855638ffcae2c0cd285d8c9fd7590dbaa3a5b0",
               "distinct_row_hash_count": 61900,
               "row_count": 61900,
               "schema": [
@@ -1564,176 +1964,803 @@
       "measurements": {
         "after": [
           {
-            "duration_ms": 1642.287,
+            "disk_bytes_spilled": 0,
+            "duration_ms": 1880.695,
+            "executor_run_time_ms": 1384,
             "input_bytes": 3028695,
-            "job_group": "benchmark-wdi-v4:file_layout:after:0",
-            "output_bytes": 421412,
+            "job_group": "benchmark-wdi-v5:file_layout:after:0",
+            "jvm_gc_time_ms": 12,
+            "memory_bytes_spilled": 0,
+            "output_bytes": 421784,
             "output_file_count": 1,
             "partitions": 1,
+            "peak_execution_memory_bytes": 16809952,
             "repetition": 0,
-            "shuffle_read_bytes": 1635523,
-            "shuffle_write_bytes": 1635523
+            "shuffle_read_bytes": 1259880,
+            "shuffle_write_bytes": 1259880
           },
           {
-            "duration_ms": 1590.378,
+            "disk_bytes_spilled": 0,
+            "duration_ms": 2389.387,
+            "executor_run_time_ms": 1845,
             "input_bytes": 3028695,
-            "job_group": "benchmark-wdi-v4:file_layout:after:1",
-            "output_bytes": 421412,
+            "job_group": "benchmark-wdi-v5:file_layout:after:1",
+            "jvm_gc_time_ms": 26,
+            "memory_bytes_spilled": 0,
+            "output_bytes": 421784,
             "output_file_count": 1,
             "partitions": 1,
+            "peak_execution_memory_bytes": 16809952,
             "repetition": 1,
-            "shuffle_read_bytes": 1635523,
-            "shuffle_write_bytes": 1635523
+            "shuffle_read_bytes": 1259880,
+            "shuffle_write_bytes": 1259880
           },
           {
-            "duration_ms": 1668.818,
+            "disk_bytes_spilled": 0,
+            "duration_ms": 1855.919,
+            "executor_run_time_ms": 1387,
             "input_bytes": 3028695,
-            "job_group": "benchmark-wdi-v4:file_layout:after:2",
-            "output_bytes": 421412,
+            "job_group": "benchmark-wdi-v5:file_layout:after:2",
+            "jvm_gc_time_ms": 31,
+            "memory_bytes_spilled": 0,
+            "output_bytes": 421784,
             "output_file_count": 1,
             "partitions": 1,
+            "peak_execution_memory_bytes": 16809952,
             "repetition": 2,
-            "shuffle_read_bytes": 1635523,
-            "shuffle_write_bytes": 1635523
+            "shuffle_read_bytes": 1259880,
+            "shuffle_write_bytes": 1259880
           },
           {
-            "duration_ms": 1655.172,
+            "disk_bytes_spilled": 0,
+            "duration_ms": 2363.636,
+            "executor_run_time_ms": 1763,
             "input_bytes": 3028695,
-            "job_group": "benchmark-wdi-v4:file_layout:after:3",
-            "output_bytes": 421412,
+            "job_group": "benchmark-wdi-v5:file_layout:after:3",
+            "jvm_gc_time_ms": 21,
+            "memory_bytes_spilled": 0,
+            "output_bytes": 421784,
             "output_file_count": 1,
             "partitions": 1,
+            "peak_execution_memory_bytes": 16809952,
             "repetition": 3,
-            "shuffle_read_bytes": 1635523,
-            "shuffle_write_bytes": 1635523
+            "shuffle_read_bytes": 1259880,
+            "shuffle_write_bytes": 1259880
           },
           {
-            "duration_ms": 1645.82,
+            "disk_bytes_spilled": 0,
+            "duration_ms": 1739.301,
+            "executor_run_time_ms": 1248,
             "input_bytes": 3028695,
-            "job_group": "benchmark-wdi-v4:file_layout:after:4",
-            "output_bytes": 421412,
+            "job_group": "benchmark-wdi-v5:file_layout:after:4",
+            "jvm_gc_time_ms": 21,
+            "memory_bytes_spilled": 0,
+            "output_bytes": 421784,
             "output_file_count": 1,
             "partitions": 1,
+            "peak_execution_memory_bytes": 16809952,
             "repetition": 4,
-            "shuffle_read_bytes": 1635523,
-            "shuffle_write_bytes": 1635523
+            "shuffle_read_bytes": 1259880,
+            "shuffle_write_bytes": 1259880
           }
         ],
         "before": [
           {
-            "duration_ms": 2613.754,
+            "disk_bytes_spilled": 0,
+            "duration_ms": 4677.651,
+            "executor_run_time_ms": 3477,
             "input_bytes": 3028695,
-            "job_group": "benchmark-wdi-v4:file_layout:before:0",
-            "output_bytes": 1891286,
+            "job_group": "benchmark-wdi-v5:file_layout:before:0",
+            "jvm_gc_time_ms": 67,
+            "memory_bytes_spilled": 0,
+            "output_bytes": 1894912,
             "output_file_count": 8,
             "partitions": 8,
+            "peak_execution_memory_bytes": 16809952,
             "repetition": 0,
-            "shuffle_read_bytes": 9851941,
-            "shuffle_write_bytes": 9851941
+            "shuffle_read_bytes": 9426249,
+            "shuffle_write_bytes": 9426249
           },
           {
-            "duration_ms": 2992.038,
+            "disk_bytes_spilled": 0,
+            "duration_ms": 4158.977,
+            "executor_run_time_ms": 3069,
             "input_bytes": 3028695,
-            "job_group": "benchmark-wdi-v4:file_layout:before:1",
-            "output_bytes": 1891286,
+            "job_group": "benchmark-wdi-v5:file_layout:before:1",
+            "jvm_gc_time_ms": 46,
+            "memory_bytes_spilled": 0,
+            "output_bytes": 1894912,
             "output_file_count": 8,
             "partitions": 8,
+            "peak_execution_memory_bytes": 16809952,
             "repetition": 1,
-            "shuffle_read_bytes": 9851941,
-            "shuffle_write_bytes": 9851941
+            "shuffle_read_bytes": 9426249,
+            "shuffle_write_bytes": 9426249
           },
           {
-            "duration_ms": 2787.065,
+            "disk_bytes_spilled": 0,
+            "duration_ms": 4162.664,
+            "executor_run_time_ms": 2736,
             "input_bytes": 3028695,
-            "job_group": "benchmark-wdi-v4:file_layout:before:2",
-            "output_bytes": 1891286,
+            "job_group": "benchmark-wdi-v5:file_layout:before:2",
+            "jvm_gc_time_ms": 20,
+            "memory_bytes_spilled": 0,
+            "output_bytes": 1894912,
             "output_file_count": 8,
             "partitions": 8,
+            "peak_execution_memory_bytes": 16809952,
             "repetition": 2,
-            "shuffle_read_bytes": 9851941,
-            "shuffle_write_bytes": 9851941
+            "shuffle_read_bytes": 9426249,
+            "shuffle_write_bytes": 9426249
           },
           {
-            "duration_ms": 2718.901,
+            "disk_bytes_spilled": 0,
+            "duration_ms": 4050.273,
+            "executor_run_time_ms": 2982,
             "input_bytes": 3028695,
-            "job_group": "benchmark-wdi-v4:file_layout:before:3",
-            "output_bytes": 1891286,
+            "job_group": "benchmark-wdi-v5:file_layout:before:3",
+            "jvm_gc_time_ms": 16,
+            "memory_bytes_spilled": 0,
+            "output_bytes": 1894912,
             "output_file_count": 8,
             "partitions": 8,
+            "peak_execution_memory_bytes": 16809952,
             "repetition": 3,
-            "shuffle_read_bytes": 9851941,
-            "shuffle_write_bytes": 9851941
+            "shuffle_read_bytes": 9426249,
+            "shuffle_write_bytes": 9426249
           },
           {
-            "duration_ms": 3069.288,
+            "disk_bytes_spilled": 0,
+            "duration_ms": 3727.722,
+            "executor_run_time_ms": 2531,
             "input_bytes": 3028695,
-            "job_group": "benchmark-wdi-v4:file_layout:before:4",
-            "output_bytes": 1891286,
+            "job_group": "benchmark-wdi-v5:file_layout:before:4",
+            "jvm_gc_time_ms": 20,
+            "memory_bytes_spilled": 0,
+            "output_bytes": 1894912,
             "output_file_count": 8,
             "partitions": 8,
+            "peak_execution_memory_bytes": 16809952,
             "repetition": 4,
-            "shuffle_read_bytes": 9851941,
-            "shuffle_write_bytes": 9851941
+            "shuffle_read_bytes": 9426249,
+            "shuffle_write_bytes": 9426249
           }
         ]
       },
       "name": "file_layout",
       "summary": {
         "after": {
+          "disk_bytes_spilled": {
+            "maximum": 0,
+            "median": 0,
+            "minimum": 0
+          },
           "duration_ms": {
-            "maximum": 1668.818,
-            "median": 1645.82,
-            "minimum": 1590.378
+            "maximum": 2389.387,
+            "median": 1880.695,
+            "minimum": 1739.301
+          },
+          "executor_run_time_ms": {
+            "maximum": 1845,
+            "median": 1387,
+            "minimum": 1248
           },
           "input_bytes": {
             "maximum": 3028695,
             "median": 3028695,
             "minimum": 3028695
           },
+          "jvm_gc_time_ms": {
+            "maximum": 31,
+            "median": 21,
+            "minimum": 12
+          },
+          "memory_bytes_spilled": {
+            "maximum": 0,
+            "median": 0,
+            "minimum": 0
+          },
+          "peak_execution_memory_bytes": {
+            "maximum": 16809952,
+            "median": 16809952,
+            "minimum": 16809952
+          },
           "shuffle_read_bytes": {
-            "maximum": 1635523,
-            "median": 1635523,
-            "minimum": 1635523
+            "maximum": 1259880,
+            "median": 1259880,
+            "minimum": 1259880
           },
           "shuffle_write_bytes": {
-            "maximum": 1635523,
-            "median": 1635523,
-            "minimum": 1635523
+            "maximum": 1259880,
+            "median": 1259880,
+            "minimum": 1259880
           }
         },
         "before": {
+          "disk_bytes_spilled": {
+            "maximum": 0,
+            "median": 0,
+            "minimum": 0
+          },
           "duration_ms": {
-            "maximum": 3069.288,
-            "median": 2787.065,
-            "minimum": 2613.754
+            "maximum": 4677.651,
+            "median": 4158.977,
+            "minimum": 3727.722
+          },
+          "executor_run_time_ms": {
+            "maximum": 3477,
+            "median": 2982,
+            "minimum": 2531
           },
           "input_bytes": {
             "maximum": 3028695,
             "median": 3028695,
             "minimum": 3028695
           },
+          "jvm_gc_time_ms": {
+            "maximum": 67,
+            "median": 20,
+            "minimum": 16
+          },
+          "memory_bytes_spilled": {
+            "maximum": 0,
+            "median": 0,
+            "minimum": 0
+          },
+          "peak_execution_memory_bytes": {
+            "maximum": 16809952,
+            "median": 16809952,
+            "minimum": 16809952
+          },
           "shuffle_read_bytes": {
-            "maximum": 9851941,
-            "median": 9851941,
-            "minimum": 9851941
+            "maximum": 9426249,
+            "median": 9426249,
+            "minimum": 9426249
           },
           "shuffle_write_bytes": {
-            "maximum": 9851941,
-            "median": 9851941,
-            "minimum": 9851941
+            "maximum": 9426249,
+            "median": 9426249,
+            "minimum": 9426249
           }
         }
       },
       "warmup_repetitions": 1
     }
   ],
-  "cold_end_to_end_ms": 121929.932,
+  "broadcast_decisions": {
+    "indicators": true,
+    "mapping": true,
+    "population": true
+  },
+  "clustering": {
+    "assignment_fingerprint": {
+      "content_sha256": "c64ecd70db6fa2b572b8cf4dd0a112fd69a150e053eb196851102ad7f3f29b9e",
+      "distinct_row_hash_count": 211,
+      "row_count": 211,
+      "schema": [
+        {
+          "metadata": {},
+          "name": "country_iso3",
+          "nullable": true,
+          "type": "string"
+        },
+        {
+          "metadata": {},
+          "name": "cluster_id",
+          "nullable": false,
+          "type": "integer"
+        }
+      ],
+      "schema_sha256": "7201c8d8643a44afcaa069e8ed7d51ae54b21758e6e0a0a221747f71595642a7"
+    },
+    "broadcast_decisions": {
+      "indicators": true,
+      "mapping": true,
+      "population": true
+    },
+    "caveats": [
+      "Clusters describe historical reported outcomes, not causal regimes.",
+      "World Bank fields profile clusters after fitting and do not affect membership.",
+      "Cluster identifiers are ordered by standardized centroid burden for stability."
+    ],
+    "country_key_skew": {
+      "key_count": 222,
+      "maximum_row_share": 0.005195,
+      "maximum_rows_per_key": 1165,
+      "maximum_to_median_ratio": 1.067828,
+      "median_rows_per_key": 1091.0,
+      "p95_rows_per_key": 1165,
+      "status": "PASS",
+      "thresholds": {
+        "ratio_warn": 5.0,
+        "share_warn": 0.1
+      },
+      "total_rows": 224265
+    },
+    "diagnostics_version": 1,
+    "document_sha256": "7a6ecb47d92d47a71e2bb23be4eb53c42627a5867484be9893c46ca32325f40e",
+    "eligibility": {
+      "eligible_countries": 211,
+      "excluded_by_reason": {
+        "missing_iso3": 1,
+        "missing_or_invalid_population": 10
+      },
+      "excluded_countries": 11,
+      "minimum_observations": 180,
+      "total_countries": 222
+    },
+    "feature_policy": "covid_only_with_post_fit_wdi_profiles",
+    "feature_version": "covid-country-features-v1",
+    "features": [
+      {
+        "name": "latest_cases_per_100k",
+        "transform": "log1p_then_standardize"
+      },
+      {
+        "name": "latest_deaths_per_100k",
+        "transform": "log1p_then_standardize"
+      },
+      {
+        "name": "peak_14d_cases_per_100k",
+        "transform": "log1p_then_standardize"
+      },
+      {
+        "name": "peak_14d_deaths_per_100k",
+        "transform": "log1p_then_standardize"
+      },
+      {
+        "name": "volatility_14d_cases_per_100k",
+        "transform": "log1p_then_standardize"
+      }
+    ],
+    "local_publication": {
+      "output_bytes": 83597,
+      "output_file_count": 13,
+      "published": true
+    },
+    "method": "spark_ml_kmeans_squared_euclidean",
+    "model_id": "benchmark-wdi-v5",
+    "negative_correction_policy": "source values preserved; incident rates floored at zero only for rolling clustering features",
+    "pipeline_task_metrics": {
+      "disk_bytes_spilled": 0,
+      "executor_run_time_ms": 188088,
+      "input_bytes": 824621043,
+      "jvm_gc_time_ms": 3559,
+      "memory_bytes_spilled": 0,
+      "peak_execution_memory_bytes": 109969232,
+      "shuffle_read_bytes": 235969180,
+      "shuffle_write_bytes": 220065446
+    },
+    "runtime_policy": {
+      "advisory_partition_bytes": 67108864,
+      "broadcast_max_bytes": 8388608,
+      "cluster_k_max": 6,
+      "cluster_k_min": 2,
+      "cluster_min_observations": 180,
+      "max_shuffle_partitions": 200,
+      "min_shuffle_partitions": 4,
+      "shuffle_partition_derivation": "source_bytes_divided_by_advisory_bytes_with_bounds",
+      "shuffle_partitions": 4,
+      "shuffle_partitions_overridden": false,
+      "skew_ratio_warn": 5.0,
+      "skew_share_warn": 0.1,
+      "source_input_bytes": 27910999,
+      "target_file_bytes": 134217728
+    },
+    "selection": {
+      "candidate_k_max": 6,
+      "candidate_k_min": 2,
+      "candidates": [
+        {
+          "k": 2,
+          "median_pairwise_adjusted_rand_index": 0.8356107111065171,
+          "median_silhouette": 0.7350874333726615,
+          "rejected_runs": [],
+          "requested_seeds": [
+            13,
+            29,
+            47,
+            71,
+            97
+          ],
+          "runs": [
+            {
+              "cluster_sizes": {
+                "0": 87,
+                "1": 124
+              },
+              "minimum_cluster_size": 87,
+              "seed": 13,
+              "silhouette": 0.735087
+            },
+            {
+              "cluster_sizes": {
+                "0": 133,
+                "1": 78
+              },
+              "minimum_cluster_size": 78,
+              "seed": 29,
+              "silhouette": 0.734727
+            },
+            {
+              "cluster_sizes": {
+                "0": 133,
+                "1": 78
+              },
+              "minimum_cluster_size": 78,
+              "seed": 47,
+              "silhouette": 0.734727
+            },
+            {
+              "cluster_sizes": {
+                "0": 124,
+                "1": 87
+              },
+              "minimum_cluster_size": 87,
+              "seed": 71,
+              "silhouette": 0.735087
+            },
+            {
+              "cluster_sizes": {
+                "0": 124,
+                "1": 87
+              },
+              "minimum_cluster_size": 87,
+              "seed": 97,
+              "silhouette": 0.735087
+            }
+          ],
+          "valid": true,
+          "valid_seed_runs": 5
+        },
+        {
+          "k": 3,
+          "median_pairwise_adjusted_rand_index": 1.0,
+          "median_silhouette": 0.6257083363786095,
+          "rejected_runs": [],
+          "requested_seeds": [
+            13,
+            29,
+            47,
+            71,
+            97
+          ],
+          "runs": [
+            {
+              "cluster_sizes": {
+                "0": 65,
+                "1": 90,
+                "2": 56
+              },
+              "minimum_cluster_size": 56,
+              "seed": 13,
+              "silhouette": 0.625708
+            },
+            {
+              "cluster_sizes": {
+                "0": 65,
+                "1": 90,
+                "2": 56
+              },
+              "minimum_cluster_size": 56,
+              "seed": 29,
+              "silhouette": 0.625708
+            },
+            {
+              "cluster_sizes": {
+                "0": 90,
+                "1": 56,
+                "2": 65
+              },
+              "minimum_cluster_size": 56,
+              "seed": 47,
+              "silhouette": 0.625708
+            },
+            {
+              "cluster_sizes": {
+                "0": 65,
+                "1": 56,
+                "2": 90
+              },
+              "minimum_cluster_size": 56,
+              "seed": 71,
+              "silhouette": 0.625708
+            },
+            {
+              "cluster_sizes": {
+                "0": 90,
+                "1": 56,
+                "2": 65
+              },
+              "minimum_cluster_size": 56,
+              "seed": 97,
+              "silhouette": 0.625708
+            }
+          ],
+          "valid": true,
+          "valid_seed_runs": 5
+        },
+        {
+          "k": 4,
+          "median_pairwise_adjusted_rand_index": 0.8432684171656399,
+          "median_silhouette": 0.5519632695134286,
+          "rejected_runs": [],
+          "requested_seeds": [
+            13,
+            29,
+            47,
+            71,
+            97
+          ],
+          "runs": [
+            {
+              "cluster_sizes": {
+                "0": 62,
+                "1": 56,
+                "2": 57,
+                "3": 36
+              },
+              "minimum_cluster_size": 36,
+              "seed": 13,
+              "silhouette": 0.562836
+            },
+            {
+              "cluster_sizes": {
+                "0": 55,
+                "1": 71,
+                "2": 49,
+                "3": 36
+              },
+              "minimum_cluster_size": 36,
+              "seed": 29,
+              "silhouette": 0.566217
+            },
+            {
+              "cluster_sizes": {
+                "0": 52,
+                "1": 56,
+                "2": 57,
+                "3": 46
+              },
+              "minimum_cluster_size": 46,
+              "seed": 47,
+              "silhouette": 0.550633
+            },
+            {
+              "cluster_sizes": {
+                "0": 56,
+                "1": 54,
+                "2": 44,
+                "3": 57
+              },
+              "minimum_cluster_size": 44,
+              "seed": 71,
+              "silhouette": 0.551963
+            },
+            {
+              "cluster_sizes": {
+                "0": 51,
+                "1": 55,
+                "2": 64,
+                "3": 41
+              },
+              "minimum_cluster_size": 41,
+              "seed": 97,
+              "silhouette": 0.548683
+            }
+          ],
+          "valid": true,
+          "valid_seed_runs": 5
+        },
+        {
+          "k": 5,
+          "median_pairwise_adjusted_rand_index": 0.6628962114660903,
+          "median_silhouette": 0.5201688817992665,
+          "rejected_runs": [],
+          "requested_seeds": [
+            13,
+            29,
+            47,
+            71,
+            97
+          ],
+          "runs": [
+            {
+              "cluster_sizes": {
+                "0": 39,
+                "1": 54,
+                "2": 57,
+                "3": 35,
+                "4": 26
+              },
+              "minimum_cluster_size": 26,
+              "seed": 13,
+              "silhouette": 0.50832
+            },
+            {
+              "cluster_sizes": {
+                "0": 53,
+                "1": 27,
+                "2": 38,
+                "3": 37,
+                "4": 56
+              },
+              "minimum_cluster_size": 27,
+              "seed": 29,
+              "silhouette": 0.507931
+            },
+            {
+              "cluster_sizes": {
+                "0": 47,
+                "1": 55,
+                "2": 44,
+                "3": 35,
+                "4": 30
+              },
+              "minimum_cluster_size": 30,
+              "seed": 47,
+              "silhouette": 0.520169
+            },
+            {
+              "cluster_sizes": {
+                "0": 42,
+                "1": 43,
+                "2": 27,
+                "3": 45,
+                "4": 54
+              },
+              "minimum_cluster_size": 27,
+              "seed": 71,
+              "silhouette": 0.526478
+            },
+            {
+              "cluster_sizes": {
+                "0": 48,
+                "1": 54,
+                "2": 28,
+                "3": 42,
+                "4": 39
+              },
+              "minimum_cluster_size": 28,
+              "seed": 97,
+              "silhouette": 0.533702
+            }
+          ],
+          "valid": false,
+          "valid_seed_runs": 5
+        },
+        {
+          "k": 6,
+          "median_pairwise_adjusted_rand_index": 0.5849969294787438,
+          "median_silhouette": 0.5006369708031352,
+          "rejected_runs": [
+            {
+              "cluster_sizes": {
+                "0": 44,
+                "1": 2,
+                "2": 34,
+                "3": 25,
+                "4": 53,
+                "5": 53
+              },
+              "reason": "minimum_cluster_size",
+              "seed": 71
+            }
+          ],
+          "requested_seeds": [
+            13,
+            29,
+            47,
+            71,
+            97
+          ],
+          "runs": [
+            {
+              "cluster_sizes": {
+                "0": 36,
+                "1": 55,
+                "2": 45,
+                "3": 17,
+                "4": 27,
+                "5": 31
+              },
+              "minimum_cluster_size": 17,
+              "seed": 13,
+              "silhouette": 0.50828
+            },
+            {
+              "cluster_sizes": {
+                "0": 52,
+                "1": 21,
+                "2": 38,
+                "3": 32,
+                "4": 41,
+                "5": 27
+              },
+              "minimum_cluster_size": 21,
+              "seed": 29,
+              "silhouette": 0.512393
+            },
+            {
+              "cluster_sizes": {
+                "0": 34,
+                "1": 28,
+                "2": 36,
+                "3": 47,
+                "4": 28,
+                "5": 38
+              },
+              "minimum_cluster_size": 28,
+              "seed": 47,
+              "silhouette": 0.439633
+            },
+            {
+              "cluster_sizes": {
+                "0": 43,
+                "1": 43,
+                "2": 45,
+                "3": 27,
+                "4": 13,
+                "5": 40
+              },
+              "minimum_cluster_size": 13,
+              "seed": 97,
+              "silhouette": 0.492994
+            }
+          ],
+          "valid": false,
+          "valid_seed_runs": 4
+        }
+      ],
+      "cluster_burden_scores": {
+        "1": -4.81055,
+        "2": 3.375144
+      },
+      "cluster_label_policy": "ascending sum of standardized centroid coordinates",
+      "cluster_sizes": {
+        "1": 87,
+        "2": 124
+      },
+      "minimum_cluster_size": 5,
+      "minimum_stability_adjusted_rand_index": 0.75,
+      "seeds": [
+        13,
+        29,
+        47,
+        71,
+        97
+      ],
+      "selected_k": 2,
+      "selected_median_adjusted_rand_index": 0.8356107111065171,
+      "selected_median_silhouette": 0.7350874333726615,
+      "selected_seed": 13,
+      "selected_silhouette": 0.735087,
+      "silhouette_tie_tolerance": 0.01
+    },
+    "source_lineage": {
+      "extended_source": {
+        "byte_count": 24882304,
+        "country_count": 221,
+        "maximum_report_date": "2023-03-09",
+        "minimum_report_date": "2019-12-31",
+        "row_count": 224265,
+        "sha256": "b8f7127e8f07015bfb3663e5ba16b51ce2c5333c0fbef675d95d29346c5a22ac",
+        "snowflake_object": "COVID_ANALYTICS.MARTS.COVID_ENRICHED_EXTENDED"
+      },
+      "snowflake_publication_generation_id": "548e6113-ef7a-4243-8f4b-e79aab0e6e5b",
+      "source_batch_id": "extended-context-20260731-v1",
+      "source_batch_sha256": "64b3fa095be168b8d8d9c255813c58864e32352e00322e2083cfbe43205bdf7a",
+      "source_kind": "snowflake_export",
+      "world_bank_snapshot_id": "wdi2-2019-2021-372906f371e0391f"
+    }
+  },
+  "cold_end_to_end_ms": 277097.669,
   "conclusions": [
-    "early_projection_filter: optimized median was not faster (216.075 ms versus 183.939 ms).",
-    "broadcast_joins: optimized median was faster (561.944 ms versus 762.517 ms).",
-    "adaptive_duplicate_aggregation: optimized median was not faster (426.586 ms versus 347.056 ms).",
-    "reused_frame_cache: optimized median was not faster (372.224 ms versus 323.322 ms).",
-    "file_layout: optimized median was faster (1645.82 ms versus 2787.065 ms)."
+    "early_projection_filter: optimized median was not faster (325.457 ms versus 282.918 ms).",
+    "broadcast_joins: optimized median was faster (1150.329 ms versus 1698.491 ms).",
+    "adaptive_duplicate_aggregation: optimized median was not faster (1245.694 ms versus 589.043 ms).",
+    "reused_frame_cache: optimized median was not faster (426.186 ms versus 395.312 ms).",
+    "file_layout: optimized median was faster (1880.695 ms versus 4158.977 ms)."
   ],
   "country_context_equivalence": {
     "baseline_projection_canonical_bytes": 20199,
@@ -1757,33 +2784,65 @@
     },
     "unmatched_location_count": 11
   },
+  "country_key_skew": {
+    "key_count": 222,
+    "maximum_row_share": 0.005195,
+    "maximum_rows_per_key": 1165,
+    "maximum_to_median_ratio": 1.067828,
+    "median_rows_per_key": 1091.0,
+    "p95_rows_per_key": 1165,
+    "status": "PASS",
+    "thresholds": {
+      "ratio_warn": 5.0,
+      "share_warn": 0.1
+    },
+    "total_rows": 224265
+  },
   "environment": {
     "adaptive_enabled": "true",
+    "advisory_partition_bytes": "67108864",
     "java": "17.0.19",
     "java_image": "eclipse-temurin:17.0.19_10-jre-jammy",
     "master": "local[2]",
     "pyspark": "3.5.6",
     "python": "3.12.13",
     "python_image": "python:3.12.13-slim-bookworm",
-    "shuffle_partitions": "32",
-    "spark_application_id": "local-1785427322022",
+    "runtime_policy": {
+      "advisory_partition_bytes": 67108864,
+      "broadcast_max_bytes": 8388608,
+      "cluster_k_max": 6,
+      "cluster_k_min": 2,
+      "cluster_min_observations": 180,
+      "max_shuffle_partitions": 200,
+      "min_shuffle_partitions": 4,
+      "shuffle_partition_derivation": "source_bytes_divided_by_advisory_bytes_with_bounds",
+      "shuffle_partitions": 4,
+      "shuffle_partitions_overridden": false,
+      "skew_ratio_warn": 5.0,
+      "skew_share_warn": 0.1,
+      "source_input_bytes": 27910999,
+      "target_file_bytes": 134217728
+    },
+    "shuffle_partitions": "4",
+    "spark_application_id": "local-1785499712005",
     "uv": "0.11.29"
   },
-  "evidence_version": 3,
+  "evidence_version": 4,
   "fingerprint_protocol": {
     "algorithm": "sha256-row-multiset-v1",
     "canonicalization": "spark-scalar-json-v1",
     "fingerprint_version": 1
   },
-  "generated_at_utc": "2026-07-30T16:04:00.772805+00:00",
-  "ingestion_id": "bronze-wdi-v4",
+  "generated_at_utc": "2026-07-31T12:13:05.761157+00:00",
+  "ingestion_id": "bronze-wdi-v5",
   "layout": {
-    "measured_parquet_bytes": 1891286,
-    "median_month_parquet_bytes": 191542,
+    "measured_parquet_bytes": 1894912,
+    "median_month_parquet_bytes": 70267,
     "month_count": 13,
+    "monthly_measurement": "actual_partition_directories",
     "partition_columns": [],
     "published_output": {
-      "output_bytes": 421412,
+      "output_bytes": 421784,
       "output_file_count": 1
     },
     "reason": "unpartitioned output avoids tiny month directories",
@@ -1794,8 +2853,19 @@
     "The workload is too small for Spark throughput benefits.",
     "Measurements are local-mode results and do not represent a cluster.",
     "Warm runs reduce startup and JIT noise but cannot remove filesystem-cache effects.",
-    "Snowflake SQL remains the production semantic layer."
+    "Snowflake SQL remains the production semantic layer.",
+    "Clustering segments historical reporting outcomes and is not causal."
   ],
+  "pipeline_task_metrics": {
+    "disk_bytes_spilled": 0,
+    "executor_run_time_ms": 188088,
+    "input_bytes": 824621043,
+    "jvm_gc_time_ms": 3559,
+    "memory_bytes_spilled": 0,
+    "peak_execution_memory_bytes": 109969232,
+    "shuffle_read_bytes": 235969180,
+    "shuffle_write_bytes": 220065446
+  },
   "plans": {
     "baseline": {
       "adaptive_final": true,
@@ -1806,8 +2876,8 @@
         ":                 +- *(13) SortMergeJoin [population_lookup_key#<id>], [population_lookup_key#<id>], LeftOuter",
         ":                    :                                +- *(10) SortMergeJoin [source_name_key#<id>, coalesce(source_code_key#<id>, ), isnull(source_code_key#<id>)], [mapping_name_key#<id>, coalesce(mapping_code_key#<id>, ), isnull(mapping_code_key#<id>)], LeftOuter"
       ],
-      "null_safe_mapping_key_present": false,
-      "sha256": "7fc8db8e98be82feb90b63e4ed44700b9b595a7dd6a654e7d740f9a3989e6678",
+      "null_safe_mapping_key_present": true,
+      "sha256": "37323ab2ccbf97493973ba9934a028c7343b91a52746be0f01c173d62399d9f2",
       "typed_population_key_present": true
     },
     "optimized": {
@@ -1820,18 +2890,39 @@
         ":        :                    +- *(5) BroadcastHashJoin [source_name_key#<id>, coalesce(source_code_key#<id>, ), isnull(source_code_key#<id>)], [mapping_name_key#<id>, coalesce(mapping_code_key#<id>, ), isnull(mapping_code_key#<id>)], LeftOuter, BuildRight, false"
       ],
       "null_safe_mapping_key_present": true,
-      "sha256": "55123164a6554b7fc79ccf98845e899d9f8396197bbca8532284d7a621a06d40",
+      "sha256": "2b5dbfe2db9063710bf2cb4d1dffe7c1f8ec8251504c1d62000d8f195ff1d4a6",
       "typed_population_key_present": true
     }
   },
   "quality": {
-    "quality_document_sha256": "6eaf6ce3753b85077e2caaa882de895bebb626ac742d6f010ec4554501f2c266",
-    "ruleset_version": "bronze-quality-v1",
+    "quality_document_sha256": "592d3b22873b0fbc3347fbfe5daeeda3d073ae774ba284a5280e7731c5e2ec12",
+    "ruleset_version": "bronze-quality-v2",
     "status": "WARN"
   },
+  "runtime_policy": {
+    "advisory_partition_bytes": 67108864,
+    "broadcast_max_bytes": 8388608,
+    "cluster_k_max": 6,
+    "cluster_k_min": 2,
+    "cluster_min_observations": 180,
+    "max_shuffle_partitions": 200,
+    "min_shuffle_partitions": 4,
+    "shuffle_partition_derivation": "source_bytes_divided_by_advisory_bytes_with_bounds",
+    "shuffle_partitions": 4,
+    "shuffle_partitions_overridden": false,
+    "skew_ratio_warn": 5.0,
+    "skew_share_warn": 0.1,
+    "source_input_bytes": 27910999,
+    "target_file_bytes": 134217728
+  },
   "source_batch": {
-    "batch_sha256": "bac38faba547a89eaf8a2b0b1ec2028df6bf2ee2618bcef091d8acbfe440ddb8",
+    "batch_sha256": "64b3fa095be168b8d8d9c255813c58864e32352e00322e2083cfbe43205bdf7a",
     "files": {
+      "covid_extended": {
+        "byte_count": 24882304,
+        "row_count": 224265,
+        "sha256": "b8f7127e8f07015bfb3663e5ba16b51ce2c5333c0fbef675d95d29346c5a22ac"
+      },
       "ecdc": {
         "byte_count": 2134232,
         "row_count": 61900,
@@ -1853,7 +2944,8 @@
         "sha256": "d2e5e910d7107d04da11faef4b9940bf91930ee282a5b72c628b4ad41f0d1ba6"
       }
     },
-    "source_batch_id": "wdi-context-qa-v1",
+    "snowflake_publication_generation_id": "548e6113-ef7a-4243-8f4b-e79aab0e6e5b",
+    "source_batch_id": "extended-context-20260731-v1",
     "world_bank_snapshot_id": "wdi2-2019-2021-372906f371e0391f"
   }
 }

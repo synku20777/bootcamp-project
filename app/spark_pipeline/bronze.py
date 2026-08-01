@@ -36,6 +36,7 @@ def _publish_bronze(
     quality_summary: dict[str, str],
     world_bank_snapshot_id: str | None,
     snowflake_context_fingerprint: dict[str, Any] | None,
+    snowflake_publication_generation_id: str | None,
     source_kind: str,
     runtime_policy: SparkRuntimePolicy,
 ) -> Path:
@@ -85,6 +86,9 @@ def _publish_bronze(
                 "quality_summary": quality_summary,
                 "world_bank_snapshot_id": world_bank_snapshot_id,
                 "snowflake_context_fingerprint": snowflake_context_fingerprint,
+                "snowflake_publication_generation_id": (
+                    snowflake_publication_generation_id
+                ),
                 "runtime_policy": runtime_policy.as_dict(),
                 "bronze_publication_layout": publication_layout,
             },

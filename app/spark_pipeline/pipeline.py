@@ -403,6 +403,9 @@ def run_ingest_profile(
             snowflake_context_fingerprint=source_manifest.get(
                 "snowflake_context_fingerprint"
             ),
+            snowflake_publication_generation_id=source_manifest.get(
+                "snowflake_publication_generation_id"
+            ),
             source_kind=source_manifest["source_kind"],
             runtime_policy=policy,
         )
@@ -581,6 +584,9 @@ def run_benchmark(
             "source_batch_sha256": bronze_manifest["source_batch_sha256"],
             "source_files": bronze_manifest["source_files"],
             "source_kind": bronze_manifest.get("source_kind"),
+            "snowflake_publication_generation_id": bronze_manifest.get(
+                "snowflake_publication_generation_id"
+            ),
             "world_bank_snapshot_id": bronze_manifest.get("world_bank_snapshot_id"),
         }
         clustering = _clustering_stage(
@@ -605,6 +611,9 @@ def run_benchmark(
         "files": bronze_manifest["source_files"],
         "world_bank_snapshot_id": bronze_manifest.get("world_bank_snapshot_id"),
         "source_kind": bronze_manifest.get("source_kind"),
+        "snowflake_publication_generation_id": bronze_manifest.get(
+            "snowflake_publication_generation_id"
+        ),
     }
     cold_end_to_end_ms = round((time.perf_counter() - started) * 1000, 3)
     evidence = _sanitized_evidence(
